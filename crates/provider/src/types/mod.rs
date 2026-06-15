@@ -1,8 +1,7 @@
 //! Public TRON domain model.
 //!
 //! These are the types users work with. Protobuf-generated types from the
-//! private [`proto`](crate::proto) module never appear in any of these
-//! signatures.
+//! private `proto` module never appear in any of these signatures.
 
 pub mod account;
 pub mod block;

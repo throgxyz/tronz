@@ -27,14 +27,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Sort descending by vote count.
     let mut witnesses = witnesses;
-    witnesses.sort_by(|a, b| b.vote_count.cmp(&a.vote_count));
+    witnesses.sort_by_key(|w| std::cmp::Reverse(w.vote_count));
 
     let active_count = witnesses.iter().filter(|w| w.is_active).count();
     println!("=== Super Representatives ({active_count} active) ===");
     println!();
     println!(
-        "  {:<3}  {:<35}  {:>12}  {:>8}  {:>8}  {}",
-        "#", "Address", "Votes", "Produced", "Missed", "URL"
+        "  {:<3}  {:<35}  {:>12}  {:>8}  {:>8}  URL",
+        "#", "Address", "Votes", "Produced", "Missed"
     );
     println!("  {}", "-".repeat(100));
 

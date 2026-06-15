@@ -19,10 +19,9 @@
 //! ```
 
 // Re-use the static ABI binding from tronz_contract.
-use tronz::contract::trc20::ITRC20;
 use tronz::{
     ProviderBuilder, TRONGRID_NILE, TronProvider,
-    contract::{SolEvent, decode_logs},
+    contract::{SolEvent, decode_logs, trc20::ITRC20},
     primitives::B256,
 };
 

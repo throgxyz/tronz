@@ -26,8 +26,9 @@ pub mod grpc;
 /// Implementations are cheap to clone (typically an `Arc`-backed HTTP client)
 /// and must be `Send + Sync + 'static` for use across spawned tasks.
 pub trait TronTransport: Clone + Send + Sync + 'static {
-    /// The transport's error type.  Must be convertible to [`TransportError`]
-    /// so that the provider layer can wrap it uniformly.
+    /// The transport's error type.  Must be convertible to
+    /// [`crate::error::TransportError`] so that the provider layer can wrap it
+    /// uniformly.
     type Error: std::error::Error + Into<crate::error::TransportError> + Send + Sync + 'static;
 
     // --- Block ---
