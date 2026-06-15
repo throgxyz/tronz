@@ -50,7 +50,9 @@ async fn main() -> anyhow::Result<()> {
 
     // ── Check how much is delegatable ─────────────────────────────────────────
 
-    let max = provider.get_can_delegate_max(me, ResourceCode::Energy).await?;
+    let max = provider
+        .get_can_delegate_max(me, ResourceCode::Energy)
+        .await?;
     println!("=== Delegation ===");
     println!("  from            : {me}");
     println!("  to              : {receiver}");
@@ -113,7 +115,10 @@ async fn main() -> anyhow::Result<()> {
     for d in &after {
         if d.energy_amount.as_sun() > 0 {
             println!("\n=== Confirmed ===");
-            println!("  energy delegated to {receiver}: {} TRX", d.energy_amount.as_trx());
+            println!(
+                "  energy delegated to {receiver}: {} TRX",
+                d.energy_amount.as_trx()
+            );
         }
     }
 

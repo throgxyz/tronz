@@ -54,7 +54,9 @@ async fn main() -> anyhow::Result<()> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis() as i64;
 
-    let withdrawable = provider.get_can_withdraw_unfreeze_amount(me, now_ms).await?;
+    let withdrawable = provider
+        .get_can_withdraw_unfreeze_amount(me, now_ms)
+        .await?;
     println!("\n=== Withdrawable now ===");
     println!("  {} TRX", withdrawable.as_trx());
 

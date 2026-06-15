@@ -25,8 +25,9 @@ async fn main() -> anyhow::Result<()> {
     // ── Load key ──────────────────────────────────────────────────────────────
 
     // Default to a throwaway demo key; override with TRON_PRIVATE_KEY.
-    let key_hex = std::env::var("TRON_PRIVATE_KEY")
-        .unwrap_or_else(|_| "0000000000000000000000000000000000000000000000000000000000000001".to_owned());
+    let key_hex = std::env::var("TRON_PRIVATE_KEY").unwrap_or_else(|_| {
+        "0000000000000000000000000000000000000000000000000000000000000001".to_owned()
+    });
 
     let signer = LocalSigner::from_hex(&key_hex)?;
 
@@ -69,10 +70,18 @@ async fn main() -> anyhow::Result<()> {
 
     let hash2: B256 = B256::repeat_byte(0xcd);
     let sig2 = signer.sign_hash(hash2).await?;
-    assert_ne!(sig.to_bytes(), sig2.to_bytes(), "different hashes → different signatures");
+    assert_ne!(
+        sig.to_bytes(),
+        sig2.to_bytes(),
+        "different hashes → different signatures"
+    );
     println!("\n=== Determinism check ===");
     let sig_again = signer.sign_hash(hash).await?;
-    assert_eq!(sig.to_bytes(), sig_again.to_bytes(), "same hash → same signature (RFC 6979)");
+    assert_eq!(
+        sig.to_bytes(),
+        sig_again.to_bytes(),
+        "same hash → same signature (RFC 6979)"
+    );
     println!("  RFC 6979 deterministic signing: OK");
 
     Ok(())

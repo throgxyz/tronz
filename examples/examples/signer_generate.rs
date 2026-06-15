@@ -14,10 +14,7 @@
 //! throwaway testnet keys.
 
 use k256::ecdsa::SigningKey;
-use tronz::{
-    LocalSigner, TronSigner,
-    primitives::Address,
-};
+use tronz::{LocalSigner, TronSigner, primitives::Address};
 
 fn main() -> anyhow::Result<()> {
     // ── Generate key pair ─────────────────────────────────────────────────────
@@ -51,7 +48,9 @@ fn main() -> anyhow::Result<()> {
     println!("  1. Save the private key to a secure location.");
     println!("  2. Get Nile TRX from the faucet: https://nileex.io/");
     println!("     (send to: {address})");
-    println!("  3. Run examples with: TRON_PRIVATE_KEY={key_hex} cargo run -p examples --example transfer_trx");
+    println!(
+        "  3. Run examples with: TRON_PRIVATE_KEY={key_hex} cargo run -p examples --example transfer_trx"
+    );
 
     Ok(())
 }

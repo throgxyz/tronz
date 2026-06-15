@@ -53,7 +53,10 @@ async fn main() -> anyhow::Result<()> {
 
     println!("=== Account {} ===", me);
     println!("  staked for energy : {} TRX", staked_energy.as_trx());
-    println!("  in-progress unfreeze slots : {}", account.unfrozen_v2.len());
+    println!(
+        "  in-progress unfreeze slots : {}",
+        account.unfrozen_v2.len()
+    );
     for u in &account.unfrozen_v2 {
         println!(
             "    {:?}  {} TRX  expires {} ms",

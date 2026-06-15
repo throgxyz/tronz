@@ -22,10 +22,8 @@ const DEFAULT_ADDR: &str = "TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let addr_str =
-        std::env::var("TRON_ADDRESS").unwrap_or_else(|_| DEFAULT_ADDR.to_owned());
-    let token_id =
-        std::env::var("TRON_TOKEN_ID").unwrap_or_else(|_| "1000001".to_owned());
+    let addr_str = std::env::var("TRON_ADDRESS").unwrap_or_else(|_| DEFAULT_ADDR.to_owned());
+    let token_id = std::env::var("TRON_TOKEN_ID").unwrap_or_else(|_| "1000001".to_owned());
     let api_key = std::env::var("TRON_API_KEY").ok();
 
     let address: tronz::Address = addr_str.parse()?;

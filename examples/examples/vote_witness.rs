@@ -47,7 +47,10 @@ async fn main() -> anyhow::Result<()> {
     println!("  TRON Power limit : {} sun", res.tron_power_limit.as_sun());
 
     let tron_power = res.tron_power_limit.as_sun() - res.tron_power_used.as_sun();
-    println!("  available TP     : {tron_power} sun ({} TP)", tron_power / 1_000_000);
+    println!(
+        "  available TP     : {tron_power} sun ({} TP)",
+        tron_power / 1_000_000
+    );
 
     if tron_power < votes * 1_000_000 {
         anyhow::bail!(
@@ -73,11 +76,7 @@ async fn main() -> anyhow::Result<()> {
     // All votes in a single call replace previously cast votes.
 
     println!("\n=== Casting {votes} vote(s) for {sr} ===");
-    let pending = provider
-        .vote_witness()
-        .vote(sr, votes)
-        .send()
-        .await?;
+    let pending = provider.vote_witness().vote(sr, votes).send().await?;
 
     println!("  tx_id  : 0x{}", hex::encode(pending.tx_id()));
     println!("  waiting for confirmation…");

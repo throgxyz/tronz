@@ -27,10 +27,9 @@ use tronz::{
 async fn main() -> anyhow::Result<()> {
     let key_hex = std::env::var("TRON_PRIVATE_KEY").expect("TRON_PRIVATE_KEY env var required");
     let api_key = std::env::var("TRON_API_KEY").ok();
-    let token_name = std::env::var("TRON_TOKEN_NAME")
-        .unwrap_or_else(|_| "TronzTestToken".to_owned());
-    let token_abbr = std::env::var("TRON_TOKEN_ABBR")
-        .unwrap_or_else(|_| "TZT".to_owned());
+    let token_name =
+        std::env::var("TRON_TOKEN_NAME").unwrap_or_else(|_| "TronzTestToken".to_owned());
+    let token_abbr = std::env::var("TRON_TOKEN_ABBR").unwrap_or_else(|_| "TZT".to_owned());
     let total_supply: i64 = std::env::var("TRON_TOKEN_SUPPLY")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -63,7 +62,10 @@ async fn main() -> anyhow::Result<()> {
     println!("\n=== Issuing TRC10 token ===");
     println!("  name         : {token_name}");
     println!("  symbol       : {token_abbr}");
-    println!("  total supply : {total_supply} (raw, 6 decimals → {} tokens)", total_supply / 1_000_000);
+    println!(
+        "  total supply : {total_supply} (raw, 6 decimals → {} tokens)",
+        total_supply / 1_000_000
+    );
     println!("  url          : {url}");
 
     let pending = provider
@@ -97,7 +99,10 @@ async fn main() -> anyhow::Result<()> {
         println!("  symbol  : {}", token.abbr);
         println!("  supply  : {}", token.total_supply);
         println!("\n  Transfer with:");
-        println!("  TRON_PRIVATE_KEY=<key> TRON_TOKEN_ID={} TRON_TO=<addr> TRON_AMOUNT=1000000 \\", token.id);
+        println!(
+            "  TRON_PRIVATE_KEY=<key> TRON_TOKEN_ID={} TRON_TO=<addr> TRON_AMOUNT=1000000 \\",
+            token.id
+        );
         println!("    cargo run -p examples --example trc10_transfer");
     } else {
         println!("\n  (token confirmed but ID not yet indexed — query shortly)");

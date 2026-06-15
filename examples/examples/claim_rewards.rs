@@ -39,7 +39,11 @@ async fn main() -> anyhow::Result<()> {
 
     println!("=== Account {} ===", me);
     println!("  balance        : {} TRX", balance_before.as_trx());
-    println!("  pending reward : {} TRX ({} sun)", reward.as_trx(), reward.as_sun());
+    println!(
+        "  pending reward : {} TRX ({} sun)",
+        reward.as_trx(),
+        reward.as_sun()
+    );
 
     if reward.as_sun() == 0 {
         println!("\n  no reward to claim");

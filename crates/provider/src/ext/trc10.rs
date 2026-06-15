@@ -251,7 +251,7 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
             precision: 0,
             trx_num: 1,
             num: 1,
-            start_offset_ms: 5 * 60 * 1_000,       // 5 minutes from now
+            start_offset_ms: 5 * 60 * 1_000, // 5 minutes from now
             duration_ms: 30 * 24 * 60 * 60 * 1_000, // 30 days
             free_asset_net_limit: 0,
             public_free_asset_net_limit: 0,
@@ -353,7 +353,9 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
         let name = self.name.ok_or(Error::MissingField("name"))?;
         let abbr = self.abbr.ok_or(Error::MissingField("abbr"))?;
         let url = self.url.ok_or(Error::MissingField("url"))?;
-        let total_supply = self.total_supply.ok_or(Error::MissingField("total_supply"))?;
+        let total_supply = self
+            .total_supply
+            .ok_or(Error::MissingField("total_supply"))?;
 
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

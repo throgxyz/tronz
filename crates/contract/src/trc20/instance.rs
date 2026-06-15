@@ -132,7 +132,10 @@ impl<P: TronProvider> Trc20Instance<P> {
         to: Address,
         amount: U256,
     ) -> Result<PendingTransaction<P>, Trc20Error> {
-        self.inner.call_raw(encode_transfer(to, amount)).send().await
+        self.inner
+            .call_raw(encode_transfer(to, amount))
+            .send()
+            .await
     }
 
     /// Approve `spender` to transfer up to `amount` on the signer's behalf.
@@ -141,7 +144,10 @@ impl<P: TronProvider> Trc20Instance<P> {
         spender: Address,
         amount: U256,
     ) -> Result<PendingTransaction<P>, Trc20Error> {
-        self.inner.call_raw(encode_approve(spender, amount)).send().await
+        self.inner
+            .call_raw(encode_approve(spender, amount))
+            .send()
+            .await
     }
 
     /// Transfer `amount` tokens from `from` to `to`, using the signer's allowance.
@@ -151,7 +157,10 @@ impl<P: TronProvider> Trc20Instance<P> {
         to: Address,
         amount: U256,
     ) -> Result<PendingTransaction<P>, Trc20Error> {
-        self.inner.call_raw(encode_transfer_from(from, to, amount)).send().await
+        self.inner
+            .call_raw(encode_transfer_from(from, to, amount))
+            .send()
+            .await
     }
 }
 

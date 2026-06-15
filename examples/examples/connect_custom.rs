@@ -20,8 +20,8 @@ use tronz::{ProviderBuilder, TronProvider};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let node_url = std::env::var("TRON_NODE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:50051".to_owned());
+    let node_url =
+        std::env::var("TRON_NODE_URL").unwrap_or_else(|_| "http://127.0.0.1:50051".to_owned());
     let api_key = std::env::var("TRON_API_KEY").ok();
 
     println!("=== Connect to custom node ===");

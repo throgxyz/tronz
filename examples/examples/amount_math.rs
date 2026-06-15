@@ -21,11 +21,7 @@
 //! cargo run -p examples --example amount_math
 //! ```
 
-use tronz::{
-    Trx,
-    U256,
-    primitives::SUN_PER_TRX,
-};
+use tronz::{Trx, U256, primitives::SUN_PER_TRX};
 
 fn main() -> anyhow::Result<()> {
     // ── TRX ↔ sun conversions ─────────────────────────────────────────────────
@@ -61,7 +57,10 @@ fn main() -> anyhow::Result<()> {
     // but in practice amounts never reach that boundary).
     let small = Trx::from_sun(1)?;
     let large = Trx::from_sun(i64::MAX)?;
-    println!("\n  saturating add  : small + MAX = {}", (small + large).as_sun());
+    println!(
+        "\n  saturating add  : small + MAX = {}",
+        (small + large).as_sun()
+    );
     println!("  saturating sub  : 1 - MAX = {}", (small - large).as_sun());
 
     // ── Checked arithmetic ────────────────────────────────────────────────────
@@ -73,7 +72,7 @@ fn main() -> anyhow::Result<()> {
 
     match x.checked_sub(y) {
         Some(diff) => println!("  5 - 2 = {diff}  (OK)"),
-        None       => println!("  5 - 2 overflowed  (unexpected)"),
+        None => println!("  5 - 2 overflowed  (unexpected)"),
     }
 
     let overflow = Trx::from_sun(i64::MAX)?.checked_add(Trx::from_sun(1)?);
@@ -111,7 +110,7 @@ fn main() -> anyhow::Result<()> {
 
     // Human-readable formatting helper (divide by 10^decimals).
     let whole = hundred_usdt / one_usdt;
-    let frac  = hundred_usdt % one_usdt;
+    let frac = hundred_usdt % one_usdt;
     println!("  display  : {whole}.{frac:0>6} USDT");
 
     // 18-decimal token (like WETH bridged to TRON).

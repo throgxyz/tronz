@@ -27,8 +27,7 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    let memo = std::env::var("TRON_MEMO")
-        .unwrap_or_else(|_| "tronz example transfer".to_owned());
+    let memo = std::env::var("TRON_MEMO").unwrap_or_else(|_| "tronz example transfer".to_owned());
 
     let signer = LocalSigner::from_hex(&key_hex)?;
     let from = signer.address();
@@ -78,7 +77,10 @@ async fn main() -> anyhow::Result<()> {
     //
     // The memo is stored in `Transaction.raw_data.data` inside the protobuf.
     // Use a block explorer or the full `get_transaction` gRPC call to inspect it.
-    println!("\n  explorer : https://nile.tronscan.org/#/transaction/{}", hex::encode(tx_id));
+    println!(
+        "\n  explorer : https://nile.tronscan.org/#/transaction/{}",
+        hex::encode(tx_id)
+    );
 
     Ok(())
 }

@@ -70,7 +70,12 @@ async fn main() -> anyhow::Result<()> {
     println!("\n=== Activating with {} ===", amount);
     println!("  broadcasting…");
 
-    let pending = provider.send_trx().to(new_addr).amount(amount).send().await?;
+    let pending = provider
+        .send_trx()
+        .to(new_addr)
+        .amount(amount)
+        .send()
+        .await?;
     println!("  tx_id   : 0x{}", hex::encode(pending.tx_id()));
 
     println!("  waiting for confirmation…");

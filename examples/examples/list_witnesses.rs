@@ -47,7 +47,11 @@ async fn main() -> anyhow::Result<()> {
             w.vote_count,
             w.total_produced,
             w.total_missed,
-            if w.url.len() > 40 { &w.url[..40] } else { &w.url },
+            if w.url.len() > 40 {
+                &w.url[..40]
+            } else {
+                &w.url
+            },
         );
 
         // Only show top 30.

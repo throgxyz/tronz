@@ -23,9 +23,8 @@
 
 use tronz::{
     ProviderBuilder, TRONGRID_NILE,
-    contract::{ContractExt, ContractError, Interface, SolCall, SolValue},
+    contract::{ContractError, ContractExt, Interface, SolCall, SolValue, trc20::ITRC20},
 };
-use tronz::contract::trc20::ITRC20;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -61,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
         if data.len() >= 4 && data[..4] == [0x08, 0xc3, 0x79, 0xa0] {
             match String::abi_decode(&data[4..]) {
                 Ok(msg) => println!("  decoded reason: {:?}", msg),
-                Err(e)  => println!("  decode failed: {e}"),
+                Err(e) => println!("  decode failed: {e}"),
             }
         }
     };

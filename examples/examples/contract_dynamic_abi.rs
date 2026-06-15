@@ -98,8 +98,14 @@ async fn main() -> anyhow::Result<()> {
     let interface = Interface::new(abi);
 
     println!("=== Interface ===");
-    println!("  functions : {:?}", interface.abi().functions.keys().collect::<Vec<_>>());
-    println!("  events    : {:?}", interface.abi().events.keys().collect::<Vec<_>>());
+    println!(
+        "  functions : {:?}",
+        interface.abi().functions.keys().collect::<Vec<_>>()
+    );
+    println!(
+        "  events    : {:?}",
+        interface.abi().events.keys().collect::<Vec<_>>()
+    );
 
     // Bind the interface to the contract address.
     let instance = provider.contract(contract, interface);
@@ -129,7 +135,10 @@ async fn main() -> anyhow::Result<()> {
     println!("  raw units : {balance}");
     if decimals > 0 {
         let divisor = 10u128.pow(decimals.into());
-        println!("  display   : {:.6} {symbol}", balance as f64 / divisor as f64);
+        println!(
+            "  display   : {:.6} {symbol}",
+            balance as f64 / divisor as f64
+        );
     }
 
     Ok(())

@@ -40,11 +40,11 @@ const COUNTER_BYTECODE: &str = concat!(
     "603580600b6000396000f3",
     // ── Runtime (53 bytes) ───────────────────────────────────────────────────
     // Dispatcher: calldataload >> 0xe0 → selector
-    "6000",     // PUSH1 0  (calldataload offset)
-    "35",       // CALLDATALOAD
-    "60e0",     // PUSH1 0xe0
-    "1c",       // SHR  → top 4 bytes = selector
-    "80",       // DUP1
+    "6000", // PUSH1 0  (calldataload offset)
+    "35",   // CALLDATALOAD
+    "60e0", // PUSH1 0xe0
+    "1c",   // SHR  → top 4 bytes = selector
+    "80",   // DUP1
     // count() branch
     "6306661abd", // PUSH4 count() selector
     "14",         // EQ
@@ -57,27 +57,27 @@ const COUNTER_BYTECODE: &str = concat!(
     "602a",       // PUSH1 0x2a = 42  (increment() JUMPDEST)
     "57",         // JUMPI
     // fallback: revert
-    "6000",       // PUSH1 0
-    "80",         // DUP1
-    "fd",         // REVERT
+    "6000", // PUSH1 0
+    "80",   // DUP1
+    "fd",   // REVERT
     // count() at PC=30 (0x1e)
-    "5b",         // JUMPDEST
-    "6000",       // PUSH1 0  (storage slot 0)
-    "54",         // SLOAD
-    "6000",       // PUSH1 0  (memory offset)
-    "52",         // MSTORE
-    "6020",       // PUSH1 32 (return size)
-    "6000",       // PUSH1 0  (return offset)
-    "f3",         // RETURN
+    "5b",   // JUMPDEST
+    "6000", // PUSH1 0  (storage slot 0)
+    "54",   // SLOAD
+    "6000", // PUSH1 0  (memory offset)
+    "52",   // MSTORE
+    "6020", // PUSH1 32 (return size)
+    "6000", // PUSH1 0  (return offset)
+    "f3",   // RETURN
     // increment() at PC=42 (0x2a)
-    "5b",         // JUMPDEST
-    "6001",       // PUSH1 1
-    "6000",       // PUSH1 0  (slot 0)
-    "54",         // SLOAD
-    "01",         // ADD
-    "6000",       // PUSH1 0  (slot 0)
-    "55",         // SSTORE
-    "00",         // STOP
+    "5b",   // JUMPDEST
+    "6001", // PUSH1 1
+    "6000", // PUSH1 0  (slot 0)
+    "54",   // SLOAD
+    "01",   // ADD
+    "6000", // PUSH1 0  (slot 0)
+    "55",   // SSTORE
+    "00",   // STOP
 );
 
 // JSON ABI for the Counter contract.
@@ -134,9 +134,9 @@ async fn main() -> anyhow::Result<()> {
     println!("  energy used     : {}", info.energy_usage);
     println!("  energy fee      : {} sun", info.energy_fee.as_sun());
 
-    let contract_addr = info
-        .contract_address
-        .ok_or_else(|| anyhow::anyhow!("no contract address in receipt — deployment may have failed"))?;
+    let contract_addr = info.contract_address.ok_or_else(|| {
+        anyhow::anyhow!("no contract address in receipt — deployment may have failed")
+    })?;
 
     println!("\n=== Deployed contract ===");
     println!("  address : {contract_addr}");
@@ -154,7 +154,11 @@ async fn main() -> anyhow::Result<()> {
 
     let vals = instance.call("count", &[]).await?;
     let count = vals.first().and_then(|v| {
-        if let DynSolValue::Uint(n, _) = v { Some(*n) } else { None }
+        if let DynSolValue::Uint(n, _) = v {
+            Some(*n)
+        } else {
+            None
+        }
     });
     println!("\n=== Initial state ===");
     println!("  count() = {:?}", count);

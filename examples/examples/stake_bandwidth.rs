@@ -45,10 +45,22 @@ async fn main() -> anyhow::Result<()> {
 
     let res_before = provider.get_account_resource(me).await?;
     println!("=== Bandwidth before staking ===");
-    println!("  free     : {}/{}", res_before.free_bandwidth_used, res_before.free_bandwidth_limit);
-    println!("  staked   : {}/{}", res_before.bandwidth_used, res_before.bandwidth_limit);
-    println!("  delegated out : {} TRX", res_before.delegated_bandwidth_for_others.as_trx());
-    println!("  received      : {} TRX", res_before.received_bandwidth.as_trx());
+    println!(
+        "  free     : {}/{}",
+        res_before.free_bandwidth_used, res_before.free_bandwidth_limit
+    );
+    println!(
+        "  staked   : {}/{}",
+        res_before.bandwidth_used, res_before.bandwidth_limit
+    );
+    println!(
+        "  delegated out : {} TRX",
+        res_before.delegated_bandwidth_for_others.as_trx()
+    );
+    println!(
+        "  received      : {} TRX",
+        res_before.received_bandwidth.as_trx()
+    );
 
     // ── Freeze for bandwidth ──────────────────────────────────────────────────
 
@@ -70,11 +82,21 @@ async fn main() -> anyhow::Result<()> {
 
     let res_after = provider.get_account_resource(me).await?;
     println!("\n=== Bandwidth after staking ===");
-    println!("  free     : {}/{}", res_after.free_bandwidth_used, res_after.free_bandwidth_limit);
-    println!("  staked   : {}/{}", res_after.bandwidth_used, res_after.bandwidth_limit);
+    println!(
+        "  free     : {}/{}",
+        res_after.free_bandwidth_used, res_after.free_bandwidth_limit
+    );
+    println!(
+        "  staked   : {}/{}",
+        res_after.bandwidth_used, res_after.bandwidth_limit
+    );
 
     let gained = res_after.bandwidth_limit - res_before.bandwidth_limit;
-    println!("  gained   : {} bandwidth units from {} TRX staked", gained, amount.as_trx());
+    println!(
+        "  gained   : {} bandwidth units from {} TRX staked",
+        gained,
+        amount.as_trx()
+    );
 
     Ok(())
 }

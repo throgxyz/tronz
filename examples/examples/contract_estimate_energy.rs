@@ -21,14 +21,12 @@
 
 use tronz::{
     ProviderBuilder, TRONGRID_NILE, TronProvider, U256,
-    contract::{ContractExt, Interface, SolCall},
-    contract::trc20::ITRC20,
+    contract::{ContractExt, Interface, SolCall, trc20::ITRC20},
 };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let contract_str =
-        std::env::var("TRON_CONTRACT").expect("TRON_CONTRACT env var required");
+    let contract_str = std::env::var("TRON_CONTRACT").expect("TRON_CONTRACT env var required");
     let api_key = std::env::var("TRON_API_KEY").ok();
 
     let contract: tronz::Address = contract_str.parse()?;
@@ -58,7 +56,11 @@ async fn main() -> anyhow::Result<()> {
     // Convert to approximate TRX cost.
     // Dynamic energy price varies; 420 sun/energy is a typical ballpark.
     let approx_sun = energy_estimate * 420;
-    println!("  approx fee : {} sun  (~{:.6} TRX at 420 sun/energy)", approx_sun, approx_sun as f64 / 1_000_000.0);
+    println!(
+        "  approx fee : {} sun  (~{:.6} TRX at 420 sun/energy)",
+        approx_sun,
+        approx_sun as f64 / 1_000_000.0
+    );
 
     // ── Estimate energy for `transfer` ────────────────────────────────────────
     //
@@ -66,18 +68,25 @@ async fn main() -> anyhow::Result<()> {
     // The estimate uses the current state; actual cost may differ slightly.
 
     let transfer_calldata: tronz::primitives::Bytes = ITRC20::transferCall {
-        to: contract.into(),    // dummy: transfer to self
+        to: contract.into(), // dummy: transfer to self
         amount: U256::from(1u64),
     }
     .abi_encode()
     .into();
 
-    let transfer_energy = instance.call_raw(transfer_calldata).estimate_energy().await?;
+    let transfer_energy = instance
+        .call_raw(transfer_calldata)
+        .estimate_energy()
+        .await?;
     println!("\n  function   : transfer(address,uint256)");
     println!("  energy     : {transfer_energy} units");
 
     let approx_sun2 = transfer_energy * 420;
-    println!("  approx fee : {} sun  (~{:.6} TRX at 420 sun/energy)", approx_sun2, approx_sun2 as f64 / 1_000_000.0);
+    println!(
+        "  approx fee : {} sun  (~{:.6} TRX at 420 sun/energy)",
+        approx_sun2,
+        approx_sun2 as f64 / 1_000_000.0
+    );
 
     // ── Chain parameters ──────────────────────────────────────────────────────
     //
@@ -87,7 +96,11 @@ async fn main() -> anyhow::Result<()> {
     if let Some(price) = params.get("getEnergyFee") {
         println!("\n=== Current energy price ===");
         println!("  getEnergyFee  : {price} sun/energy");
-        println!("  transfer cost : {} sun  ({:.6} TRX)", transfer_energy * price, transfer_energy as f64 * *price as f64 / 1_000_000.0);
+        println!(
+            "  transfer cost : {} sun  ({:.6} TRX)",
+            transfer_energy * price,
+            transfer_energy as f64 * *price as f64 / 1_000_000.0
+        );
     }
 
     Ok(())

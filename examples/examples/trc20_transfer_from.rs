@@ -24,10 +24,7 @@
 //!   cargo run -p examples --example trc20_transfer_from
 //! ```
 
-use tronz::{
-    LocalSigner, ProviderBuilder, TRONGRID_NILE, TronSigner, U256,
-    contract::Trc20Ext,
-};
+use tronz::{LocalSigner, ProviderBuilder, TRONGRID_NILE, TronSigner, U256, contract::Trc20Ext};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

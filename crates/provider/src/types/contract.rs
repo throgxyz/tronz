@@ -212,7 +212,8 @@ pub struct CreateSmartContract {
 /// Issue (create) a new TRC10 native token.
 ///
 /// After submission the token receives a numeric ID assigned by the network.
-/// Query it via [`Trc10Api::get_asset_issue_by_account`](crate::ext::Trc10Api::get_asset_issue_by_account).
+/// Query it via
+/// [`Trc10Api::get_asset_issue_by_account`](crate::ext::Trc10Api::get_asset_issue_by_account).
 #[derive(Clone, Debug)]
 pub struct AssetIssueContract {
     /// Issuer address.

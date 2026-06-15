@@ -26,14 +26,12 @@ use alloy_dyn_abi::DynSolValue;
 use alloy_json_abi::JsonAbi;
 use tronz::{
     ProviderBuilder, TRONGRID_NILE,
-    contract::{ContractExt, Interface, SolCall, Trc20Ext},
-    contract::trc20::ITRC20,
+    contract::{ContractExt, Interface, SolCall, Trc20Ext, trc20::ITRC20},
 };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let contract_str =
-        std::env::var("TRON_CONTRACT").expect("TRON_CONTRACT env var required");
+    let contract_str = std::env::var("TRON_CONTRACT").expect("TRON_CONTRACT env var required");
     let api_key = std::env::var("TRON_API_KEY").ok();
 
     let contract: tronz::Address = contract_str.parse()?;

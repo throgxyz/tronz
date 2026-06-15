@@ -19,8 +19,7 @@
 //! ```
 
 use tronz::{
-    LocalSigner, ProviderBuilder, TRONGRID_NILE, TronSigner,
-    providers::ext::Trc10Api as _,
+    LocalSigner, ProviderBuilder, TRONGRID_NILE, TronSigner, providers::ext::Trc10Api as _,
 };
 
 #[tokio::main]
@@ -58,9 +57,7 @@ async fn main() -> anyhow::Result<()> {
     println!("  balance : {balance_before} (raw, before)");
 
     if balance_before < amount {
-        anyhow::bail!(
-            "insufficient balance: have {balance_before}, need {amount}"
-        );
+        anyhow::bail!("insufficient balance: have {balance_before}, need {amount}");
     }
 
     // ── Send ──────────────────────────────────────────────────────────────────

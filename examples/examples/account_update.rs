@@ -45,11 +45,7 @@ async fn main() -> anyhow::Result<()> {
     // ── Send update ───────────────────────────────────────────────────────────
 
     println!("\n=== Setting name to {:?} ===", name);
-    let pending = provider
-        .update_account_name()
-        .name(&name)
-        .send()
-        .await?;
+    let pending = provider.update_account_name().name(&name).send().await?;
 
     println!("  tx_id  : 0x{}", hex::encode(pending.tx_id()));
     println!("  waiting for confirmation…");

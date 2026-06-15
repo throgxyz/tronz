@@ -2,11 +2,15 @@
 # TRON protocol buffer definitions are third-party — do not check for typos.
 extend-exclude = ["crates/provider/proto/"]
 
+[default.extend-ignore-re]
+# TRON base58 addresses contain arbitrary letter combinations that look like
+# typos (e.g. "ot" in TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t).  Ignore any
+# 34-character string that starts with "T" followed by base58 characters.
+"T[1-9A-HJ-NP-Za-km-z]{33}"
+# EVM function selectors (0x<8 hex digits>) can contain letter sequences that
+# look like words, e.g. 0x06661abd.
+"0x[0-9a-fA-F]{8}"
+
 [default.extend-words]
-# "ot" appears in the well-known TRON base58 address TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
-# and is not a misspelling.
-ot = "ot"
-# "abd" appears in the EVM function selector 0x06661abd (count() on the Counter contract).
-abd = "abd"
 # "entrys" is the literal JSON field name in the ABI format returned by TRON nodes.
 entrys = "entrys"

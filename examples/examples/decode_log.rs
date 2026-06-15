@@ -3,8 +3,7 @@
 //! Demonstrates two log-decoding approaches:
 //!
 //! 1. **Static** — `sol!`-generated type + `decode_logs::<E>()` helper
-//! 2. **Dynamic** — `Interface::decode_logs()` when the ABI is only known at
-//!    runtime
+//! 2. **Dynamic** — `Interface::decode_logs()` when the ABI is only known at runtime
 //!
 //! No private key required (read-only).
 //!
@@ -22,9 +21,9 @@
 
 use alloy_json_abi::JsonAbi;
 use tronz::{
-    ProviderBuilder, TRONGRID_NILE, TronProvider, primitives::B256,
-    contract::{ContractExt, Interface, SolEvent, decode_logs},
-    contract::trc20::ITRC20,
+    ProviderBuilder, TRONGRID_NILE, TronProvider,
+    contract::{ContractExt, Interface, SolEvent, decode_logs, trc20::ITRC20},
+    primitives::B256,
 };
 
 #[tokio::main]
@@ -57,29 +56,32 @@ async fn main() -> anyhow::Result<()> {
         hex::encode(ITRC20::Transfer::SIGNATURE_HASH)
     );
 
-    let transfers: Vec<_> = decode_logs::<ITRC20::Transfer>(&info.logs)
-        .collect::<Result<_, _>>()?;
+    let transfers: Vec<_> =
+        decode_logs::<ITRC20::Transfer>(&info.logs).collect::<Result<_, _>>()?;
 
     if transfers.is_empty() {
         println!("  no Transfer events found");
     } else {
         for (i, t) in transfers.iter().enumerate() {
             let from: tronz::Address = t.from.into();
-            let to: tronz::Address   = t.to.into();
+            let to: tronz::Address = t.to.into();
             println!("  [{}] from={from} to={to} value={}", i, t.value);
         }
     }
 
     // Also decode Approval events.
-    let approvals: Vec<_> = decode_logs::<ITRC20::Approval>(&info.logs)
-        .collect::<Result<_, _>>()?;
+    let approvals: Vec<_> =
+        decode_logs::<ITRC20::Approval>(&info.logs).collect::<Result<_, _>>()?;
 
     if !approvals.is_empty() {
         println!("\n  Approval events:");
         for (i, a) in approvals.iter().enumerate() {
-            let owner: tronz::Address   = a.owner.into();
+            let owner: tronz::Address = a.owner.into();
             let spender: tronz::Address = a.spender.into();
-            println!("  [{}] owner={owner} spender={spender} value={}", i, a.value);
+            println!(
+                "  [{}] owner={owner} spender={spender} value={}",
+                i, a.value
+            );
         }
     }
 

@@ -23,8 +23,7 @@
 
 use tronz::{
     LocalSigner, ProviderBuilder, TRONGRID_NILE, TronSigner, U256,
-    contract::{ContractExt, Interface, SolCall},
-    contract::trc20::ITRC20,
+    contract::{ContractExt, Interface, SolCall, trc20::ITRC20},
 };
 
 #[tokio::main]
@@ -100,8 +99,8 @@ async fn main() -> anyhow::Result<()> {
     // ── Decode Transfer event from logs ───────────────────────────────────────
 
     use tronz::contract::decode_logs;
-    let transfers: Vec<_> = decode_logs::<ITRC20::Transfer>(&info.logs)
-        .collect::<Result<_, _>>()?;
+    let transfers: Vec<_> =
+        decode_logs::<ITRC20::Transfer>(&info.logs).collect::<Result<_, _>>()?;
 
     if !transfers.is_empty() {
         println!("\n=== Transfer events ===");

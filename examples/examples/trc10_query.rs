@@ -21,8 +21,7 @@ use tronz::{ProviderBuilder, TRONGRID_NILE, providers::ext::Trc10Api as _};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let token_id =
-        std::env::var("TRON_TOKEN_ID").unwrap_or_else(|_| "1000001".to_owned());
+    let token_id = std::env::var("TRON_TOKEN_ID").unwrap_or_else(|_| "1000001".to_owned());
     let api_key = std::env::var("TRON_API_KEY").ok();
 
     let provider = ProviderBuilder::new()

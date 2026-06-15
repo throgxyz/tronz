@@ -18,11 +18,13 @@
 //! TRON_TX_ID=<txid> cargo run -p examples --example trc20_decode_transfer_event
 //! ```
 
-use tronz::{ProviderBuilder, TRONGRID_NILE, TronProvider, primitives::B256};
-use tronz::contract::{SolEvent, decode_logs};
-
 // Re-use the static ABI binding from tronz_contract.
 use tronz::contract::trc20::ITRC20;
+use tronz::{
+    ProviderBuilder, TRONGRID_NILE, TronProvider,
+    contract::{SolEvent, decode_logs},
+    primitives::B256,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -55,8 +57,8 @@ async fn main() -> anyhow::Result<()> {
     println!("\n=== Transfer event signature ===");
     println!("  topic0 : 0x{}", hex::encode(transfer_topic0));
 
-    let transfers: Vec<_> = decode_logs::<ITRC20::Transfer>(&info.logs)
-        .collect::<Result<_, _>>()?;
+    let transfers: Vec<_> =
+        decode_logs::<ITRC20::Transfer>(&info.logs).collect::<Result<_, _>>()?;
 
     if transfers.is_empty() {
         println!("\n  no Transfer events in this transaction");
@@ -68,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
         // The `from` / `to` fields are `alloy_primitives::Address` (20 bytes).
         // Convert to tronz::Address to display in base58check.
         let from: tronz::Address = t.from.into();
-        let to: tronz::Address   = t.to.into();
+        let to: tronz::Address = t.to.into();
         println!("  [{i}] from  : {from}");
         println!("       to    : {to}");
         println!("       value : {}", t.value);

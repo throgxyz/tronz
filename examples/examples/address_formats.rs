@@ -3,11 +3,10 @@
 //! Demonstrates how to parse and convert between all three address
 //! representations:
 //!
-//! - **base58check** (`T…`) — the human-readable form shown in wallets and
-//!   block explorers.
+//! - **base58check** (`T…`) — the human-readable form shown in wallets and block explorers.
 //! - **hex** (`41…`) — the raw 21-byte representation prefixed with `0x41`.
-//! - **EVM** (20-byte) — the body without the `0x41` prefix, used for ABI
-//!   encoding (e.g. TRC20 contract calls).
+//! - **EVM** (20-byte) — the body without the `0x41` prefix, used for ABI encoding (e.g. TRC20
+//!   contract calls).
 //!
 //! Also shows how to derive a TRON address from a private key using
 //! `LocalSigner`.
@@ -34,7 +33,11 @@ fn main() -> anyhow::Result<()> {
     println!("  base58  : {}", addr.to_base58());
     println!("  hex     : {}", addr.to_hex());
     println!("  evm     : 0x{}", hex::encode(addr.as_evm_bytes()));
-    println!("  prefix  : 0x{:02x} (must be 0x{:02x})", addr.as_bytes()[0], ADDRESS_PREFIX);
+    println!(
+        "  prefix  : 0x{:02x} (must be 0x{:02x})",
+        addr.as_bytes()[0],
+        ADDRESS_PREFIX
+    );
 
     // ── Parse hex ────────────────────────────────────────────────────────────
 

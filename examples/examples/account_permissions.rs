@@ -36,7 +36,8 @@ use tronz::{
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let key_hex = std::env::var("TRON_PRIVATE_KEY").expect("TRON_PRIVATE_KEY env var required");
-    let second_key_str = std::env::var("TRON_TO").expect("TRON_TO env var required (second key address)");
+    let second_key_str =
+        std::env::var("TRON_TO").expect("TRON_TO env var required (second key address)");
     let api_key = std::env::var("TRON_API_KEY").ok();
 
     let signer = LocalSigner::from_hex(&key_hex)?;
@@ -69,7 +70,10 @@ async fn main() -> anyhow::Result<()> {
         println!("    (default)");
     }
     for perm in &account.permissions.actives {
-        println!("    id={}  name={:?}  threshold={}", perm.id, perm.permission_name, perm.threshold);
+        println!(
+            "    id={}  name={:?}  threshold={}",
+            perm.id, perm.permission_name, perm.threshold
+        );
         for k in &perm.keys {
             println!("      key : {}  weight={}", k.address, k.weight);
         }
@@ -89,7 +93,10 @@ async fn main() -> anyhow::Result<()> {
         id: 0,
         permission_name: "owner".to_owned(),
         threshold: 1,
-        keys: vec![PermissionKey { address: me, weight: 1 }],
+        keys: vec![PermissionKey {
+            address: me,
+            weight: 1,
+        }],
     };
 
     // Active permission: both keys, threshold 1 (1-of-2).
@@ -98,8 +105,14 @@ async fn main() -> anyhow::Result<()> {
         permission_name: "active".to_owned(),
         threshold: 1,
         keys: vec![
-            PermissionKey { address: me,         weight: 1 },
-            PermissionKey { address: second_key, weight: 1 },
+            PermissionKey {
+                address: me,
+                weight: 1,
+            },
+            PermissionKey {
+                address: second_key,
+                weight: 1,
+            },
         ],
     };
 
