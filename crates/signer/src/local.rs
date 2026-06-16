@@ -61,7 +61,7 @@ impl LocalSigner {
         )
     }
 
-    /// Load and decrypt a keystore file created by [`encrypt_keystore`].
+    /// Load and decrypt a keystore file created by [`Self::encrypt_keystore`].
     ///
     /// Returns [`crate::keystore::KeystoreError::InvalidPassword`] if the
     /// password is wrong.
