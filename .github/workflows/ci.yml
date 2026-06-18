@@ -28,7 +28,7 @@ jobs:
         rust:
           - "stable"
           - "nightly"
-          - "1.85" # MSRV
+          - "1.90" # MSRV
         flags:
           # No TLS (plain HTTP/2 transport only)
           - "--no-default-features --features provider-grpc,contract"
@@ -38,7 +38,7 @@ jobs:
           - "--all-features"
         exclude:
           # Skip --all-features on MSRV to keep the matrix lean
-          - rust: "1.85" # MSRV
+          - rust: "1.90" # MSRV
             flags: "--all-features"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -56,15 +56,15 @@ jobs:
           cache-on-failure: true
       # MSRV: only build, do not run tests (nextest requires a newer Rust)
       - name: build (MSRV)
-        if: ${{ matrix.rust == '1.85' }}
+        if: ${{ matrix.rust == '1.90' }}
         run: cargo build --workspace ${{ matrix.flags }}
       - name: Install cargo-nextest
-        if: ${{ matrix.rust != '1.85' }}
+        if: ${{ matrix.rust != '1.90' }}
         uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: nextest
       - name: test
-        if: ${{ matrix.rust != '1.85' }}
+        if: ${{ matrix.rust != '1.90' }}
         run: cargo nextest run --workspace ${{ matrix.flags }}
 
   doctest:
@@ -173,6 +173,27 @@ jobs:
         env:
           RUSTDOCFLAGS: --cfg docsrs -D warnings -Zunstable-options --show-type-layout --generate-link-to-definition
 
+  examples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+      - run: cargo check --workspace --examples --all-features
+
   fmt:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -240,6 +261,7 @@ jobs:
       - typos
       - clippy
       - docs
+      - examples
       - fmt
       - deny
       - codeql

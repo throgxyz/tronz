@@ -5,7 +5,7 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 [![Crates.io](https://img.shields.io/crates/v/tronz.svg)](https://crates.io/crates/tronz)
 [![docs.rs](https://docs.rs/tronz/badge.svg)](https://docs.rs/tronz)
 [![License: MIT / Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](#license)
-[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.90+](https://img.shields.io/badge/rust-1.90%2B-orange.svg)](https://www.rust-lang.org)
 [![CI](https://github.com/throgxyz/tronz/actions/workflows/ci.yml/badge.svg)](https://github.com/throgxyz/tronz/actions/workflows/ci.yml)
 
 ## Features
@@ -43,6 +43,7 @@ Optional features:
 |---|---|
 | `signer-mnemonic` | BIP-39 mnemonic generation + BIP-44 HD derivation (`MnemonicBuilder`) |
 | `signer-keystore` | Web3 Secret Storage V3 encrypt/decrypt (`LocalSigner::encrypt_keystore`, `decrypt_keystore`) |
+| `provider-grpc-tls` | gRPC transport with TLS for TronGrid mainnet (enabled by default) |
 | `provider-grpc` | gRPC transport without TLS — use for local or private nodes |
 
 ## Quick start
@@ -262,6 +263,20 @@ async fn main() -> anyhow::Result<()> {
 | [`tronz-provider`](https://crates.io/crates/tronz-provider) | gRPC transport, provider, fillers, domain types, extension traits |
 | [`tronz-contract`](https://crates.io/crates/tronz-contract) | `ContractInstance`, `DeployBuilder`, TRC20 bindings, event decoding |
 
+## Documentation
+
+Guides live in [`docs/`](docs/):
+
+- [Getting started](docs/getting-started.md)
+- [Providers](docs/providers.md)
+- [Transactions](docs/transactions.md)
+- [Signers](docs/signers.md)
+- [Contracts](docs/contracts.md)
+- [TRC10](docs/trc10.md)
+- [Staking](docs/staking.md)
+- [Governance and witnesses](docs/governance-witness.md)
+- [Testing and examples](docs/testing.md)
+
 ## Extension traits
 
 Import these to unlock additional methods on any provider:
@@ -274,12 +289,11 @@ Import these to unlock additional methods on any provider:
 
 ## Examples
 
-42 runnable examples are in [throgxyz/examples](https://github.com/throgxyz/examples), organized by category. All target the Nile testnet.
+42 runnable examples are included in this workspace under [`examples/`](examples/),
+organized by category. They use local path dependencies, so they compile against
+the current checkout. All network examples target the Nile testnet by default.
 
 ```bash
-git clone https://github.com/throgxyz/examples
-cd examples
-
 # Read-only queries (no key needed)
 cargo run -p examples-queries --example query
 cargo run -p examples-queries --example list_witnesses
@@ -288,8 +302,10 @@ cargo run -p examples-queries --example governance_list
 # Send TRX on Nile testnet
 TRON_PRIVATE_KEY=<hex> cargo run -p examples-transfers --example transfer_trx
 
-# TRC20 balance + transfer
-TRON_PRIVATE_KEY=<hex> cargo run -p examples-trc20 --example trc20
+# TRC20 balance on Nile testnet
+TRON_CONTRACT=TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf \
+TRON_ADDRESS=TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf \
+  cargo run -p examples-trc20 --example trc20
 
 # Stake 2.0: freeze + delegate + claim rewards
 TRON_PRIVATE_KEY=<hex> cargo run -p examples-staking --example stake
@@ -304,6 +320,8 @@ TRON_PRIVATE_KEY=<hex> cargo run -p examples-contracts --example contract_deploy
 cargo run -p examples-signers --example signer_mnemonic
 ```
 
+See [`examples/README.md`](examples/README.md) for the full catalog.
+
 ## Endpoints
 
 | Network | Constant | Endpoint |
@@ -317,7 +335,8 @@ use tronz::{TRONGRID_MAINNET, TRONGRID_NILE};
 
 ## Minimum Supported Rust Version
 
-**1.85** (Rust 2024 edition, required for stable RPITIT).
+**1.90**. The SDK uses Rust 2024 and stable RPITIT, and the current dependency
+tree requires rustc 1.90 or newer.
 
 ## License
 

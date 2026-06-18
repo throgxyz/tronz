@@ -23,7 +23,7 @@ full    = ["default"]
 # Transport backends (forwarded to tronz-provider).
 provider-grpc-tls = ["tronz-provider/grpc-tls"]
 provider-grpc     = ["tronz-provider/grpc"]
-# Contract bindings (TRC20/TRC721).
+# Contract bindings (TRC20 and dynamic ABI helpers).
 contract = ["dep:tronz-contract"]
 # LocalSigner is always compiled in tronz-signer; this is a documentation flag.
 signer-local = []
@@ -31,4 +31,3 @@ signer-local = []
 signer-mnemonic = ["tronz-signer/mnemonic"]
 # Web3 Secret Storage V3 keystore.
 signer-keystore = ["tronz-signer/keystore"]
-

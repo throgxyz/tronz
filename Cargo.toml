@@ -1,17 +1,32 @@
 [workspace]
-members  = ["crates/*"]
+members  = ["crates/*", "examples/*"]
 resolver = "2"
 
 [workspace.package]
 version      = "0.1.2"
 edition      = "2024"
-rust-version = "1.85"
+rust-version = "1.90"
 license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/throgxyz/tronz"
 readme       = "README.md"
+publish      = false
+
+[workspace.lints.rust]
+rust_2018_idioms              = { level = "deny", priority = -1 }
+unused_must_use               = "deny"
+unreachable_pub               = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+explicit_iter_loop = "warn"
+manual_assert      = "warn"
+needless_continue  = "warn"
+redundant_clone    = "warn"
+use_self           = "warn"
 
 [workspace.dependencies]
 # internal
+tronz            = { path = "crates/tronz", version = "0.1.2", default-features = true, features = ["signer-mnemonic", "signer-keystore"] }
 tronz-primitives = { path = "crates/primitives", version = "0.1.2", default-features = false }
 tronz-signer     = { path = "crates/signer",     version = "0.1.2", default-features = false }
 tronz-provider   = { path = "crates/provider",   version = "0.1.2", default-features = false }
@@ -59,3 +74,5 @@ thiserror = { version = "2" }
 tracing = { version = "0.1" }
 hex     = { version = "0.4" }
 rand    = { version = "0.8" }
+anyhow  = { version = "1" }
+tempfile = { version = "3" }

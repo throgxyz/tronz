@@ -20,7 +20,7 @@ body:
         - tronz-signer
         - tronz-provider (transport / gRPC)
         - tronz-provider (provider / fillers / builders)
-        - tronz-contract (TRC20 / TRC721)
+        - tronz-contract (TRC20 / dynamic ABI)
         - examples
         - other
     validations:

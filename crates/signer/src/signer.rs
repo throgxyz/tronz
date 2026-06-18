@@ -10,7 +10,7 @@ use crate::error::SignerError;
 /// transaction hash.
 ///
 /// Uses RPITIT (`-> impl Future`) rather than `async_trait` for zero-cost,
-/// allocation-free async. See `DESIGN.md` §10 / OQ-1 for object-safety notes.
+/// allocation-free async. See `docs/design.md` for the broader async-trait rationale.
 pub trait TronSigner: Clone + Send + Sync + 'static {
     /// The TRON address that corresponds to this signer's key.
     fn address(&self) -> Address;

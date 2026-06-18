@@ -65,7 +65,7 @@ println!("Status: {:?}", receipt.status);
 # }
 ```
 
-For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/main/examples) directory.
+For more examples, see the workspace [`examples/`](https://github.com/throgxyz/tronz/tree/main/examples) directory.
 
 ## Crates
 
@@ -75,7 +75,7 @@ For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/
 | [`tronz-primitives`] | `Address`, `Trx`, `ResourceCode`, signatures |
 | [`tronz-signer`] | `TronSigner` trait and `LocalSigner` implementation |
 | [`tronz-provider`] | Transport, provider, fillers, and domain types |
-| [`tronz-contract`] | TRC20 / TRC721 ABI bindings |
+| [`tronz-contract`] | TRC20 ABI bindings and dynamic contract helpers |
 
 [`tronz`]: https://github.com/throgxyz/tronz/tree/main/crates/tronz
 [`tronz-primitives`]: https://github.com/throgxyz/tronz/tree/main/crates/primitives
@@ -85,7 +85,7 @@ For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/
 
 ## Supported Rust Versions (MSRV)
 
-The minimum supported Rust version is **1.85**.
+The minimum supported Rust version is **1.90**.
 
 ## Contributing
 

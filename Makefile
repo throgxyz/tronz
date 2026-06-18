@@ -1,7 +1,7 @@
-.PHONY: ci fmt clippy test doctest docs typos deny features
+.PHONY: ci fmt clippy test doctest docs examples typos deny features
 
 # Run all CI checks in the same order as .github/workflows/ci.yml
-ci: fmt clippy test doctest docs typos deny features
+ci: fmt clippy test doctest docs examples typos deny features
 
 fmt:
 	cargo +nightly fmt --all --check
@@ -19,6 +19,9 @@ doctest:
 docs:
 	RUSTDOCFLAGS="--cfg docsrs -D warnings -Zunstable-options --show-type-layout --generate-link-to-definition" \
 		cargo +nightly doc --workspace --all-features --no-deps --document-private-items
+
+examples:
+	cargo check --workspace --examples --all-features
 
 typos:
 	typos

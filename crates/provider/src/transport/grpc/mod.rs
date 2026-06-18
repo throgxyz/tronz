@@ -149,11 +149,11 @@ impl GrpcTransport {
 
     /// Check a `Return` message, converting failures to [`TransportError::NodeError`].
     fn check_return(ret: Option<proto::Return>) -> Result<(), TransportError> {
-        if let Some(r) = ret {
-            if !r.result {
-                let msg = String::from_utf8_lossy(&r.message).into_owned();
-                return Err(TransportError::NodeError(msg));
-            }
+        if let Some(r) = ret
+            && !r.result
+        {
+            let msg = String::from_utf8_lossy(&r.message).into_owned();
+            return Err(TransportError::NodeError(msg));
         }
         Ok(())
     }
@@ -181,7 +181,7 @@ impl GrpcTransport {
 
 /// Decode a lowercase hex string into bytes using only the standard library.
 fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err("odd number of hex digits".into());
     }
     s.as_bytes()

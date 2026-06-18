@@ -1,6 +1,6 @@
 //! [`ProviderBuilder`] and the [`FilledProvider`] it produces.
 //!
-//! Mirrors alloy's `ProviderBuilder` + `JoinFill` pattern (see `DESIGN.md` §5.3).
+//! Mirrors alloy's `ProviderBuilder` + `JoinFill` pattern (see `docs/design.md`).
 
 use std::collections::HashMap;
 

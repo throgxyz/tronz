@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Workspace `docs/` guides covering getting started, providers, transactions, signers, contracts, TRC10, staking, governance/witnesses, local nodes, testing, and design notes.
+- 42 runnable examples under `examples/*`, organized as workspace packages with local path dependencies.
+- CI and Makefile examples check via `cargo check --workspace --examples --all-features`.
+
+### Changed
+
+- MSRV raised to Rust 1.90 to match the current dependency tree.
+- README and internal context now point to in-workspace docs/examples instead of the separate examples repository.
+
 ## [0.1.2] - 2026-06-17
 
 ### Added
@@ -111,6 +122,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - With private key: `transfer_trx`, `transfer_trx_memo`, `stake`, `stake_bandwidth`, `delegate`, `undelegate`, `unfreeze`, `cancel_unfreeze`, `withdraw_unfreeze`, `claim_rewards`, `vote_witness`, `trc10_transfer`, `trc10_issue`, `account_create`, `account_update`, `account_permissions`, `trc20`, `trc20_approve`, `trc20_transfer_from`, `contract_send`, `contract_deploy`, `contract_dynamic_abi`
 
 #### CI / tooling
-- GitHub Actions: test matrix (ubuntu + windows, stable + nightly + MSRV 1.85), clippy, fmt, docs, typos, cargo-deny, feature-powerset check, CodeQL
+- GitHub Actions: test matrix (ubuntu + windows, stable + nightly + MSRV 1.90), clippy, fmt, docs, typos, cargo-deny, feature-powerset check, CodeQL
 - `.config/nextest.toml`, `deny.toml`, `cliff.toml`
 - GitHub issue templates, PR template, Dependabot config

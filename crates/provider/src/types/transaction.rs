@@ -134,10 +134,10 @@ impl RawTransaction {
             if let Some(m) = memo {
                 raw_data.data = m.to_vec();
             }
-            if let Some(pid) = permission_id {
-                if let Some(contract) = raw_data.contract.first_mut() {
-                    contract.permission_id = pid;
-                }
+            if let Some(pid) = permission_id
+                && let Some(contract) = raw_data.contract.first_mut()
+            {
+                contract.permission_id = pid;
             }
 
             // Recompute tx_id = sha256(encoded raw_data)

@@ -61,7 +61,7 @@ pub use tronz_provider::transport::grpc::{TRONGRID_MAINNET, TRONGRID_NILE};
 
 /* --------------------------------- Contracts ---------------------------------- */
 
-/// TRC20 / TRC721 contract bindings and provider-bound instances.
+/// TRC20 contract bindings and provider-bound dynamic ABI helpers.
 #[cfg(feature = "contract")]
 pub mod contract {
     #[doc(inline)]

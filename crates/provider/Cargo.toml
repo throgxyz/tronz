@@ -26,6 +26,7 @@ tracing     = { workspace = true }
 thiserror   = { workspace = true }
 
 [build-dependencies]
+protoc-bin-vendored = "3.2.0"
 tonic-prost-build = { version = "0.14" }
 
 [features]

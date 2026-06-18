@@ -8,8 +8,9 @@ Signing traits and local key signer for the [tronz](https://github.com/throgxyz/
 secp256k1 signature over a 32-byte transaction hash. [`LocalSigner`] is the
 default in-memory implementation backed by a `k256` private key.
 
-Future implementations (keystore, mnemonic, hardware wallet) implement the
-same trait without changing the provider or contract layers.
+Mnemonic and keystore support are available behind feature flags; future
+hardware-wallet signers can implement the same trait without changing the
+provider or contract layers.
 
 ## Usage
 
