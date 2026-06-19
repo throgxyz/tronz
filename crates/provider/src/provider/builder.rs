@@ -197,7 +197,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for Fille
             .transport()
             .broadcast_transaction(&signed)
             .await
-            .map_err(|e| Error::Transport(e.into()))?;
+            .map_err(|e| Error::from(e.into()))?;
 
         Ok(PendingTransaction::new(self.clone(), tx_id))
     }
@@ -268,7 +268,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> FilledProvider<T, F> {
             ContractType::MarketSellAsset(c) => transport.market_sell_asset(c).await,
             ContractType::MarketCancelOrder(c) => transport.market_cancel_order(c).await,
         };
-        let mut raw = raw_result.map_err(|e| Error::Transport(e.into()))?;
+        let mut raw = raw_result.map_err(|e| Error::from(e.into()))?;
 
         // ── 3. Apply fee_limit / memo / permission_id ────────────────────────
         raw.apply_request_fields(

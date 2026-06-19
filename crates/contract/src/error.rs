@@ -4,7 +4,7 @@ use alloy_primitives::{B256, Selector};
 use alloy_sol_types::{SolError, SolInterface};
 use thiserror::Error;
 use tronz_primitives::Bytes;
-use tronz_provider::{PendingTransactionError, ProviderError};
+use tronz_provider::{PendingTransactionError, ProviderError, types::TransactionInfo};
 
 /// The result type for contract operations.
 pub type Result<T, E = ContractError> = core::result::Result<T, E>;
@@ -55,6 +55,13 @@ pub enum ContractError {
     /// [`From`] impl so callers can match it directly without nesting.
     #[error("timed out waiting for transaction confirmation")]
     ConfirmationTimeout,
+
+    /// The transaction was confirmed on-chain but its execution did not succeed
+    /// (reverted, ran out of energy, etc.). Carries the full receipt.
+    ///
+    /// Flattened from [`PendingTransactionError::Reverted`].
+    #[error("transaction confirmed but execution failed: {:?}", .0.contract_result)]
+    ExecutionFailed(Box<TransactionInfo>),
 }
 
 impl From<alloy_sol_types::Error> for ContractError {
@@ -68,11 +75,13 @@ impl From<alloy_sol_types::Error> for ContractError {
 ///
 /// - [`PendingTransactionError::Transport`] → [`ContractError::Provider`]
 /// - [`PendingTransactionError::ConfirmationTimeout`] → [`ContractError::ConfirmationTimeout`]
+/// - [`PendingTransactionError::Reverted`] → [`ContractError::ExecutionFailed`]
 impl From<PendingTransactionError> for ContractError {
     fn from(e: PendingTransactionError) -> Self {
         match e {
             PendingTransactionError::Transport(e) => Self::Provider(e),
             PendingTransactionError::ConfirmationTimeout => Self::ConfirmationTimeout,
+            PendingTransactionError::Reverted(info) => Self::ExecutionFailed(info),
             // Forward any future variants added to PendingTransactionError as a
             // LocalUsageError so this From impl doesn't need updating on every
             // minor version of tronz-provider.

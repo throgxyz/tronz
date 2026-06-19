@@ -72,7 +72,7 @@ impl<P: TronProvider> GovernanceApi for P {
         self.transport()
             .list_proposals()
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn get_paginated_proposal_list(
@@ -83,14 +83,14 @@ impl<P: TronProvider> GovernanceApi for P {
         self.transport()
             .get_paginated_proposal_list(offset, limit)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn get_proposal_by_id(&self, proposal_id: i64) -> Result<ProposalInfo> {
         self.transport()
             .get_proposal_by_id(proposal_id)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     fn submit_proposal(&self) -> SubmitProposalBuilder<'_, Self> {

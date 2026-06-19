@@ -75,14 +75,14 @@ impl<P: TronProvider> WitnessApi for P {
         self.transport()
             .get_brokerage(address)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn get_reward_info(&self, address: Address) -> Result<u64> {
         self.transport()
             .get_reward_info(address)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     fn become_witness(&self) -> BecomeWitnessBuilder<'_, Self> {

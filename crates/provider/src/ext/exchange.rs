@@ -78,7 +78,7 @@ impl<P: TronProvider> ExchangeApi for P {
         self.transport()
             .list_exchanges()
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn get_paginated_exchange_list(
@@ -89,14 +89,14 @@ impl<P: TronProvider> ExchangeApi for P {
         self.transport()
             .get_paginated_exchange_list(offset, limit)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn get_exchange_by_id(&self, exchange_id: i64) -> Result<Option<ExchangeInfo>> {
         self.transport()
             .get_exchange_by_id(exchange_id)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     fn exchange_create(&self) -> ExchangeCreateBuilder<'_, Self> {

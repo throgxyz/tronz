@@ -132,21 +132,21 @@ impl<P: TronProvider> Trc10Api for P {
         self.transport()
             .get_asset_issue_by_id(token_id)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn get_asset_issue_by_account(&self, address: Address) -> Result<Vec<AssetInfo>> {
         self.transport()
             .get_asset_issue_by_account(address)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn get_asset_issue_list(&self, offset: i64, limit: i64) -> Result<Vec<AssetInfo>> {
         self.transport()
             .get_paginated_asset_issue_list(offset, limit)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn trc10_balance(&self, address: Address, token_id: &str) -> Result<i64> {
@@ -158,14 +158,14 @@ impl<P: TronProvider> Trc10Api for P {
         self.transport()
             .get_asset_issue_by_name(name)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     async fn get_asset_issue_list_by_name(&self, name: &str) -> Result<Vec<AssetInfo>> {
         self.transport()
             .get_asset_issue_list_by_name(name)
             .await
-            .map_err(|e| Error::Transport(e.into()))
+            .map_err(|e| Error::from(e.into()))
     }
 
     fn transfer_trc10(&self) -> TransferTrc10Builder<'_, Self> {
