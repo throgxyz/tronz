@@ -86,12 +86,12 @@ impl RawTransaction {
         raw_proto: Vec<u8>,
         expiration: i64,
         timestamp: i64,
-    ) -> Result<Self, crate::error::TransportError> {
-        use crate::error::TransportError;
+    ) -> Result<Self, crate::error::TransportErrorKind> {
+        use crate::error::TransportErrorKind;
 
         let tx_id_bytes: [u8; 32] = txid
             .try_into()
-            .map_err(|_| TransportError::Malformed("txid must be 32 bytes".into()))?;
+            .map_err(|_| TransportErrorKind::Malformed("txid must be 32 bytes".into()))?;
 
         Ok(Self {
             expiration,
@@ -117,7 +117,7 @@ impl RawTransaction {
         fee_limit_sun: Option<i64>,
         memo: Option<&[u8]>,
         permission_id: Option<i32>,
-    ) -> Result<(), crate::error::TransportError> {
+    ) -> Result<(), crate::error::TransportErrorKind> {
         use prost::Message as _;
         use sha2::{Digest, Sha256};
 
@@ -144,7 +144,7 @@ impl RawTransaction {
             let new_tx_id_bytes: [u8; 32] = Sha256::digest(raw_data.encode_to_vec()).into();
             self.tx_id = TxId::from(new_tx_id_bytes);
         } else {
-            return Err(crate::error::TransportError::Malformed(
+            return Err(crate::error::TransportErrorKind::Malformed(
                 "missing raw_data in Transaction".into(),
             ));
         }

@@ -17,7 +17,7 @@ use tonic::{
 use tronz_primitives::{Address, B256, ResourceCode, Trx, TxId};
 
 use crate::{
-    error::TransportError,
+    error::TransportErrorKind,
     proto::{
         self, EmptyMessage, database_client::DatabaseClient, wallet_client::WalletClient,
         wallet_extension_client::WalletExtensionClient,
@@ -104,14 +104,14 @@ impl GrpcTransport {
     /// `uri` may be:
     /// - `"https://grpc.trongrid.io:443"` (TronGrid mainnet, TLS)
     /// - `"http://127.0.0.1:50051"` (local node, plain HTTP/2)
-    pub async fn connect(uri: impl AsRef<str>) -> Result<Self, TransportError> {
+    pub async fn connect(uri: impl AsRef<str>) -> Result<Self, TransportErrorKind> {
         let endpoint = Endpoint::from_shared(uri.as_ref().to_owned())
-            .map_err(|e| TransportError::Malformed(e.to_string()))?;
+            .map_err(|e| TransportErrorKind::Malformed(e.to_string()))?;
 
         #[cfg(feature = "grpc-tls")]
         let endpoint = endpoint
             .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-            .map_err(TransportError::Connect)?;
+            .map_err(TransportErrorKind::Connect)?;
 
         let channel = endpoint.connect().await?;
         Ok(Self {
@@ -147,12 +147,12 @@ impl GrpcTransport {
         )
     }
 
-    /// Check a `Return` message, converting failures to [`TransportError::NodeError`].
-    fn check_return(ret: Option<proto::Return>) -> Result<(), TransportError> {
+    /// Check a `Return` message, converting failures to [`TransportErrorKind::NodeError`].
+    fn check_return(ret: Option<proto::Return>) -> Result<(), TransportErrorKind> {
         if let Some(r) = ret {
             if !r.result {
                 let msg = String::from_utf8_lossy(&r.message).into_owned();
-                return Err(TransportError::NodeError(msg));
+                return Err(TransportErrorKind::NodeError(msg));
             }
         }
         Ok(())
@@ -161,12 +161,12 @@ impl GrpcTransport {
     /// Extract a [`RawTransaction`] from a [`proto::TransactionExtention`].
     fn raw_from_extention(
         ext: proto::TransactionExtention,
-    ) -> Result<RawTransaction, TransportError> {
+    ) -> Result<RawTransaction, TransportErrorKind> {
         Self::check_return(ext.result)?;
 
-        let tx = ext
-            .transaction
-            .ok_or_else(|| TransportError::Malformed("missing transaction in extention".into()))?;
+        let tx = ext.transaction.ok_or_else(|| {
+            TransportErrorKind::Malformed("missing transaction in extention".into())
+        })?;
 
         let (expiration, timestamp) = tx
             .raw_data
@@ -204,7 +204,7 @@ fn hex_digit(b: u8) -> Result<u8, String> {
 }
 
 impl TronTransport for GrpcTransport {
-    type Error = TransportError;
+    type Error = TransportErrorKind;
 
     // --- Block ---
 
@@ -280,7 +280,10 @@ impl TronTransport for GrpcTransport {
         codec::signed_tx_from_proto(tx)
     }
 
-    async fn get_transaction_info(&self, tx_id: TxId) -> Result<TransactionInfo, Self::Error> {
+    async fn get_transaction_info(
+        &self,
+        tx_id: TxId,
+    ) -> Result<Option<TransactionInfo>, Self::Error> {
         let req = proto::BytesMessage {
             value: tx_id.as_slice().to_vec(),
         };
@@ -791,7 +794,10 @@ impl TronTransport for GrpcTransport {
         Self::raw_from_extention(ext)
     }
 
-    async fn get_asset_issue_by_id(&self, token_id: &str) -> Result<AssetInfo, Self::Error> {
+    async fn get_asset_issue_by_id(
+        &self,
+        token_id: &str,
+    ) -> Result<Option<AssetInfo>, Self::Error> {
         let req = proto::BytesMessage {
             value: token_id.as_bytes().to_vec(),
         };
@@ -818,7 +824,7 @@ impl TronTransport for GrpcTransport {
             .into_inner();
         list.asset_issue
             .into_iter()
-            .map(codec::asset_info_from_proto)
+            .filter_map(|a| codec::asset_info_from_proto(a).transpose())
             .collect()
     }
 
@@ -835,11 +841,11 @@ impl TronTransport for GrpcTransport {
             .into_inner();
         list.asset_issue
             .into_iter()
-            .map(codec::asset_info_from_proto)
+            .filter_map(|a| codec::asset_info_from_proto(a).transpose())
             .collect()
     }
 
-    async fn get_asset_issue_by_name(&self, name: &str) -> Result<AssetInfo, Self::Error> {
+    async fn get_asset_issue_by_name(&self, name: &str) -> Result<Option<AssetInfo>, Self::Error> {
         let req = proto::BytesMessage {
             value: name.as_bytes().to_vec(),
         };
@@ -865,7 +871,7 @@ impl TronTransport for GrpcTransport {
             .into_inner();
         list.asset_issue
             .into_iter()
-            .map(codec::asset_info_from_proto)
+            .filter_map(|a| codec::asset_info_from_proto(a).transpose())
             .collect()
     }
 
@@ -1242,7 +1248,7 @@ impl TronTransport for GrpcTransport {
             .into_inner();
         list.transaction_info
             .into_iter()
-            .map(codec::transaction_info_from_proto)
+            .filter_map(|info| codec::transaction_info_from_proto(info).transpose())
             .collect()
     }
 
@@ -1286,7 +1292,7 @@ impl TronTransport for GrpcTransport {
             let transport = self.clone();
             async move {
                 let id_bytes = decode_hex(&tx_id_hex)
-                    .map_err(|e| TransportError::Malformed(format!("bad tx id hex: {e}")))?;
+                    .map_err(|e| TransportErrorKind::Malformed(format!("bad tx id hex: {e}")))?;
                 let req = proto::BytesMessage { value: id_bytes };
                 let tx = transport
                     .wallet_client()
@@ -1331,7 +1337,7 @@ impl TronTransport for GrpcTransport {
             .into_iter()
             .map(|bytes| {
                 Address::from_slice(&bytes)
-                    .map_err(|e| TransportError::Malformed(format!("bad address: {e}")))
+                    .map_err(|e| TransportErrorKind::Malformed(format!("bad address: {e}")))
             })
             .collect()
     }

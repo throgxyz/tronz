@@ -6,7 +6,7 @@ use prost::Message as _;
 use tronz_primitives::{Address, B256, Bytes, RecoverableSignature, Trx, TxId};
 
 use crate::{
-    error::TransportError,
+    error::TransportErrorKind,
     proto,
     types::{
         AccountInfo, AccountPermissionUpdateContract, AccountPermissions, AccountResource,
@@ -37,8 +37,9 @@ fn str_bytes(s: String) -> Vec<u8> {
     s.into_bytes()
 }
 
-fn addr(bytes: Vec<u8>) -> Result<Address, TransportError> {
-    Address::from_slice(&bytes).map_err(|e| TransportError::Malformed(format!("bad address: {e}")))
+fn addr(bytes: Vec<u8>) -> Result<Address, TransportErrorKind> {
+    Address::from_slice(&bytes)
+        .map_err(|e| TransportErrorKind::Malformed(format!("bad address: {e}")))
 }
 
 fn opt_addr(bytes: Vec<u8>) -> Option<Address> {
@@ -50,15 +51,21 @@ fn opt_addr(bytes: Vec<u8>) -> Option<Address> {
 }
 
 /// Convert a byte vec to a B256. Returns `B256::ZERO` when the slice is not
-/// exactly 32 bytes.  Acceptable for log topics (wrong-length data from the
-/// node simply won't match any filter), but **not** for block hashes —
-/// see [`block_from_extention`] which validates the length explicitly.
+/// exactly 32 bytes, and emits a `tracing::warn!`.
+///
+/// This is acceptable for log topics (a wrong-length topic simply won't match
+/// any filter) but **not** for block hashes — see [`block_from_extention`]
+/// which validates the length explicitly.
 fn b256(bytes: Vec<u8>) -> B256 {
     if bytes.len() == 32 {
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
         B256::from(arr)
     } else {
+        tracing::warn!(
+            len = bytes.len(),
+            "unexpected b256 byte length from node, substituting B256::ZERO"
+        );
         B256::ZERO
     }
 }
@@ -67,19 +74,19 @@ fn b256(bytes: Vec<u8>) -> B256 {
 
 pub(super) fn block_from_extention(
     ext: proto::BlockExtention,
-) -> Result<BlockInfo, TransportError> {
+) -> Result<BlockInfo, TransportErrorKind> {
     let header = ext
         .block_header
-        .ok_or_else(|| TransportError::Malformed("missing block_header".into()))?;
+        .ok_or_else(|| TransportErrorKind::Malformed("missing block_header".into()))?;
     let raw = header
         .raw_data
-        .ok_or_else(|| TransportError::Malformed("missing block_header.raw_data".into()))?;
+        .ok_or_else(|| TransportErrorKind::Malformed("missing block_header.raw_data".into()))?;
 
     // Block id must be exactly 32 bytes — a wrong length here would silently
     // corrupt TAPOS (ref_block_hash becomes zero → node rejects the tx).
     let blockid = ext.blockid;
     if blockid.len() != 32 {
-        return Err(TransportError::Malformed(format!(
+        return Err(TransportErrorKind::Malformed(format!(
             "blockid must be 32 bytes, got {}",
             blockid.len()
         )));
@@ -102,7 +109,7 @@ pub(super) fn block_from_extention(
 pub(super) fn account_from_proto(
     a: proto::Account,
     queried: Address,
-) -> Result<AccountInfo, TransportError> {
+) -> Result<AccountInfo, TransportErrorKind> {
     let is_activated = !a.address.is_empty();
     let address = if a.address.is_empty() {
         queried
@@ -137,24 +144,35 @@ pub(super) fn account_from_proto(
         .votes
         .into_iter()
         .filter_map(|v| {
-            addr(v.vote_address).ok().map(|va| Vote {
-                vote_address: va,
-                vote_count: v.vote_count,
-            })
+            addr(v.vote_address)
+                .inspect_err(|e| tracing::warn!("skipping vote entry with bad address: {e}"))
+                .ok()
+                .map(|va| Vote {
+                    vote_address: va,
+                    vote_count: v.vote_count,
+                })
         })
         .collect();
 
     let permissions = AccountPermissions {
-        owner: a
-            .owner_permission
-            .and_then(|p| permission_from_proto(p).ok()),
-        witness: a
-            .witness_permission
-            .and_then(|p| permission_from_proto(p).ok()),
+        owner: a.owner_permission.and_then(|p| {
+            permission_from_proto(p)
+                .inspect_err(|e| tracing::warn!("skipping malformed owner permission: {e}"))
+                .ok()
+        }),
+        witness: a.witness_permission.and_then(|p| {
+            permission_from_proto(p)
+                .inspect_err(|e| tracing::warn!("skipping malformed witness permission: {e}"))
+                .ok()
+        }),
         actives: a
             .active_permission
             .into_iter()
-            .filter_map(|p| permission_from_proto(p).ok())
+            .filter_map(|p| {
+                permission_from_proto(p)
+                    .inspect_err(|e| tracing::warn!("skipping malformed active permission: {e}"))
+                    .ok()
+            })
             .collect(),
     };
 
@@ -171,15 +189,18 @@ pub(super) fn account_from_proto(
     })
 }
 
-fn permission_from_proto(p: proto::Permission) -> Result<Permission, TransportError> {
+fn permission_from_proto(p: proto::Permission) -> Result<Permission, TransportErrorKind> {
     let keys = p
         .keys
         .into_iter()
         .filter_map(|k| {
-            addr(k.address).ok().map(|a| PermissionKey {
-                address: a,
-                weight: k.weight,
-            })
+            addr(k.address)
+                .inspect_err(|e| tracing::warn!("skipping permission key with bad address: {e}"))
+                .ok()
+                .map(|a| PermissionKey {
+                    address: a,
+                    weight: k.weight,
+                })
         })
         .collect();
     Ok(Permission {
@@ -210,27 +231,28 @@ pub(super) fn account_resource_from_proto(r: proto::AccountResourceMessage) -> A
 
 pub(super) fn signed_tx_from_proto(
     tx: proto::Transaction,
-) -> Result<SignedTransaction, TransportError> {
-    let (expiration, timestamp) = tx
+) -> Result<SignedTransaction, TransportErrorKind> {
+    use sha2::{Digest, Sha256};
+
+    let raw_data = tx
         .raw_data
         .as_ref()
-        .map(|r| (r.expiration, r.timestamp))
-        .unwrap_or((0, 0));
+        .ok_or_else(|| TransportErrorKind::Malformed("Transaction has no raw_data".into()))?;
+
+    let (expiration, timestamp) = (raw_data.expiration, raw_data.timestamp);
 
     // Compute txid = sha256(raw_data encoded bytes)
-    let tx_id_bytes: [u8; 32] = if let Some(ref raw) = tx.raw_data {
-        use sha2::{Digest, Sha256};
-        let encoded = raw.encode_to_vec();
-        Sha256::digest(&encoded).into()
-    } else {
-        [0u8; 32]
-    };
+    let tx_id_bytes: [u8; 32] = Sha256::digest(raw_data.encode_to_vec()).into();
     let tx_id = TxId::from(tx_id_bytes);
 
     let signatures: Vec<RecoverableSignature> = tx
         .signature
         .iter()
-        .filter_map(|s| RecoverableSignature::from_bytes(s).ok())
+        .filter_map(|s| {
+            RecoverableSignature::from_bytes(s)
+                .inspect_err(|e| tracing::warn!("skipping malformed signature: {e}"))
+                .ok()
+        })
         .collect();
 
     let raw_proto = tx.encode_to_vec();
@@ -246,19 +268,22 @@ pub(super) fn signed_tx_from_proto(
 
 // ── Transaction info ───────────────────────────────────────────────────────────
 
+/// Returns `Ok(None)` when the node has not yet indexed the transaction
+/// (empty `id` field).  Callers that need to wait for confirmation should
+/// poll until they receive `Ok(Some(_))`.
 pub(super) fn transaction_info_from_proto(
     info: proto::TransactionInfo,
-) -> Result<TransactionInfo, TransportError> {
+) -> Result<Option<TransactionInfo>, TransportErrorKind> {
     // An empty id means the node hasn't indexed this transaction yet.
     if info.id.is_empty() {
-        return Err(TransportError::NotFound);
+        return Ok(None);
     }
 
     let tx_id = {
         let bytes: [u8; 32] = info
             .id
             .try_into()
-            .map_err(|_| TransportError::Malformed("bad txid length".into()))?;
+            .map_err(|_| TransportErrorKind::Malformed("bad txid length".into()))?;
         TxId::from(bytes)
     };
 
@@ -293,7 +318,7 @@ pub(super) fn transaction_info_from_proto(
         Some(String::from_utf8_lossy(&info.res_message).into_owned())
     };
 
-    Ok(TransactionInfo {
+    Ok(Some(TransactionInfo {
         tx_id,
         block_number: info.block_number,
         block_timestamp: info.block_time_stamp,
@@ -306,7 +331,7 @@ pub(super) fn transaction_info_from_proto(
         contract_address: opt_addr(info.contract_address),
         logs,
         revert_reason,
-    })
+    }))
 }
 
 // ── Smart contract ─────────────────────────────────────────────────────────────
@@ -326,7 +351,7 @@ pub(super) fn trigger_smart_contract_to_proto(
 
 pub(super) fn constant_result_from_extention(
     ext: proto::TransactionExtention,
-) -> Result<ConstantCallResult, TransportError> {
+) -> Result<ConstantCallResult, TransportErrorKind> {
     let output = ext.constant_result.into_iter().next().unwrap_or_default();
 
     let revert_reason = if let Some(ref r) = ext.result {
@@ -334,7 +359,7 @@ pub(super) fn constant_result_from_extention(
             let msg = String::from_utf8_lossy(&r.message).into_owned();
             if output.is_empty() {
                 // Protocol-level failure with no EVM output — surface as an error.
-                return Err(TransportError::NodeError(msg));
+                return Err(TransportErrorKind::NodeError(msg));
             }
             // EVM reverted and left ABI-encoded revert data in output.
             Some(msg)
@@ -461,7 +486,7 @@ pub(super) fn witness_from_proto(w: proto::Witness) -> Option<WitnessInfo> {
 
 pub(super) fn delegated_resource_from_proto(
     d: proto::DelegatedResource,
-) -> Result<DelegatedResource, TransportError> {
+) -> Result<DelegatedResource, TransportErrorKind> {
     Ok(DelegatedResource {
         from: addr(d.from)?,
         to: addr(d.to)?,
@@ -684,15 +709,16 @@ pub(super) fn update_account_to_proto(p: UpdateAccountContract) -> proto::Accoun
     }
 }
 
+/// Returns `Ok(None)` when the token was not found (empty `id` field).
 pub(super) fn asset_info_from_proto(
     a: proto::AssetIssueContract,
-) -> Result<AssetInfo, TransportError> {
+) -> Result<Option<AssetInfo>, TransportErrorKind> {
     // An empty id means the token was not found.
     if a.id.is_empty() {
-        return Err(TransportError::NotFound);
+        return Ok(None);
     }
     let owner = addr(a.owner_address)?;
-    Ok(AssetInfo {
+    Ok(Some(AssetInfo {
         id: a.id,
         name: String::from_utf8_lossy(&a.name).into_owned(),
         abbr: String::from_utf8_lossy(&a.abbr).into_owned(),
@@ -700,12 +726,12 @@ pub(super) fn asset_info_from_proto(
         owner,
         total_supply: a.total_supply,
         url: String::from_utf8_lossy(&a.url).into_owned(),
-    })
+    }))
 }
 
 pub(super) fn delegated_resource_index_from_proto(
     idx: proto::DelegatedResourceAccountIndex,
-) -> Result<DelegatedResourceIndex, TransportError> {
+) -> Result<DelegatedResourceIndex, TransportErrorKind> {
     Ok(DelegatedResourceIndex {
         account: addr(idx.account)?,
         from_accounts: idx
@@ -831,13 +857,13 @@ pub(super) fn update_energy_limit_to_proto(
 // ── Block (plain, non-extention) ───────────────────────────────────────────────
 
 /// Convert a plain `Block` proto (returned by `GetBlockById`, etc.) into `BlockInfo`.
-pub(super) fn block_from_plain(block: proto::Block) -> Result<BlockInfo, TransportError> {
+pub(super) fn block_from_plain(block: proto::Block) -> Result<BlockInfo, TransportErrorKind> {
     let header = block
         .block_header
-        .ok_or_else(|| TransportError::Malformed("missing block_header".into()))?;
+        .ok_or_else(|| TransportErrorKind::Malformed("missing block_header".into()))?;
     let raw = header
         .raw_data
-        .ok_or_else(|| TransportError::Malformed("missing block_header.raw_data".into()))?;
+        .ok_or_else(|| TransportErrorKind::Malformed("missing block_header.raw_data".into()))?;
 
     // For plain Block the block id isn't included — derive it from the header bytes.
     use prost::Message as _;
@@ -859,7 +885,7 @@ pub(super) fn block_from_plain(block: proto::Block) -> Result<BlockInfo, Transpo
 // ── Raw transaction from plain Transaction proto ───────────────────────────────
 
 /// Convert a plain `Transaction` proto into a `RawTransaction`.
-pub(super) fn raw_from_plain(tx: proto::Transaction) -> Result<RawTransaction, TransportError> {
+pub(super) fn raw_from_plain(tx: proto::Transaction) -> Result<RawTransaction, TransportErrorKind> {
     use prost::Message as _;
     use sha2::{Digest, Sha256};
 
@@ -883,13 +909,13 @@ pub(super) fn raw_from_plain(tx: proto::Transaction) -> Result<RawTransaction, T
 
 pub(super) fn sign_weight_from_proto(
     w: proto::TransactionSignWeight,
-) -> Result<SignWeight, TransportError> {
+) -> Result<SignWeight, TransportErrorKind> {
     let approved_list = w
         .approved_list
         .into_iter()
         .map(|bytes| {
             Address::from_slice(&bytes)
-                .map_err(|e| TransportError::Malformed(format!("bad address: {e}")))
+                .map_err(|e| TransportErrorKind::Malformed(format!("bad address: {e}")))
         })
         .collect::<Result<Vec<_>, _>>()?;
 

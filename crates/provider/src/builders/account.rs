@@ -55,7 +55,7 @@ impl<'a, P: TronProvider> CreateAccountBuilder<'a, P> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let account_address = self
             .account_address
-            .ok_or(Error::MissingField("account_address"))?;
+            .ok_or(Error::missing_field("account_address"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::CreateAccount(CreateAccountContract {
@@ -112,7 +112,7 @@ impl<'a, P: TronProvider> UpdateAccountBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let name = self.name.ok_or(Error::MissingField("name"))?;
+        let name = self.name.ok_or(Error::missing_field("name"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::UpdateAccount(UpdateAccountContract {

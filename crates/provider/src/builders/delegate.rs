@@ -67,8 +67,8 @@ impl<'a, P: TronProvider> DelegateBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let to = self.to.ok_or(Error::MissingField("to"))?;
-        let amount = self.amount.ok_or(Error::MissingField("amount"))?;
+        let to = self.to.ok_or(Error::missing_field("to"))?;
+        let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::DelegateResource(DelegateResourceContract {
@@ -132,8 +132,8 @@ impl<'a, P: TronProvider> UndelegateBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let receiver = self.receiver.ok_or(Error::MissingField("receiver"))?;
-        let amount = self.amount.ok_or(Error::MissingField("amount"))?;
+        let receiver = self.receiver.ok_or(Error::missing_field("receiver"))?;
+        let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::UnDelegateResource(

@@ -743,6 +743,7 @@ mod tests {
 
 /// Metadata about a deployed smart contract.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct SmartContractInfo {
     /// Contract address.
     pub address: Option<Address>,

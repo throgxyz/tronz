@@ -158,7 +158,7 @@ impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
         if self.parameters.is_empty() {
-            return Err(Error::MissingField("parameters"));
+            return Err(Error::missing_field("parameters"));
         }
 
         let req = TransactionRequest {
@@ -226,7 +226,9 @@ impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let proposal_id = self.proposal_id.ok_or(Error::MissingField("proposal_id"))?;
+        let proposal_id = self
+            .proposal_id
+            .ok_or(Error::missing_field("proposal_id"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::ProposalApprove(ProposalApproveContract {
@@ -284,7 +286,9 @@ impl<'a, P: TronProvider> CancelProposalBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let proposal_id = self.proposal_id.ok_or(Error::MissingField("proposal_id"))?;
+        let proposal_id = self
+            .proposal_id
+            .ok_or(Error::missing_field("proposal_id"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::ProposalDelete(ProposalDeleteContract {

@@ -8,7 +8,7 @@ use core::future::Future;
 use std::collections::HashMap;
 
 pub use builder::{FilledProvider, ProviderBuilder};
-pub use pending::PendingTransaction;
+pub use pending::{PendingTransaction, PendingTransactionError};
 pub use root::RootProvider;
 use tronz_primitives::{Address, B256, ResourceCode, Trx, TxId};
 
@@ -20,7 +20,7 @@ use crate::{
         UpdateAccountBuilder, UpdateContractEnergyLimitBuilder, UpdateContractSettingBuilder,
         VoteBuilder, WithdrawBalanceBuilder, WithdrawExpireBuilder,
     },
-    error::Result,
+    error::{Error, ProviderError, Result},
     transport::TronTransport,
     types::{
         AccountInfo, AccountNet, AccountResource, BlockInfo, ChainProperties, DelegatedResource,
@@ -45,127 +45,319 @@ pub trait TronProvider: Clone + Send + Sync + 'static {
     // ---------- Reads ----------
 
     /// Fetch the latest block.
-    fn get_now_block(&self) -> impl Future<Output = Result<BlockInfo>> + Send;
+    fn get_now_block(&self) -> impl Future<Output = Result<BlockInfo>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_now_block()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch on-chain account state.
-    fn get_account(&self, address: Address) -> impl Future<Output = Result<AccountInfo>> + Send;
+    fn get_account(&self, address: Address) -> impl Future<Output = Result<AccountInfo>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_account(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch account resource usage.
     fn get_account_resource(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<AccountResource>> + Send;
+    ) -> impl Future<Output = Result<AccountResource>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_account_resource(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch a transaction by id.
     fn get_transaction(
         &self,
         tx_id: TxId,
-    ) -> impl Future<Output = Result<SignedTransaction>> + Send;
+    ) -> impl Future<Output = Result<SignedTransaction>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_transaction_by_id(tx_id)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch a transaction's receipt/info.
+    ///
+    /// Returns `None` if the node has not yet indexed the transaction.
+    /// Use [`PendingTransaction::get_receipt`] to poll until confirmed.
     fn get_transaction_info(
         &self,
         tx_id: TxId,
-    ) -> impl Future<Output = Result<TransactionInfo>> + Send;
+    ) -> impl Future<Output = Result<Option<TransactionInfo>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_transaction_info(tx_id)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Query delegations between two accounts (Stake 1.0, legacy).
     fn get_delegated_resource_v1(
         &self,
         from: Address,
         to: Address,
-    ) -> impl Future<Output = Result<Vec<DelegatedResource>>> + Send;
+    ) -> impl Future<Output = Result<Vec<DelegatedResource>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_delegated_resource_v1(from, to)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Query the delegation index for an account (Stake 1.0, legacy).
     fn get_delegated_resource_index_v1(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<DelegatedResourceIndex>> + Send;
+    ) -> impl Future<Output = Result<DelegatedResourceIndex>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_delegated_resource_index_v1(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Query delegations between two accounts (Stake 2.0).
     fn get_delegated_resource(
         &self,
         from: Address,
         to: Address,
-    ) -> impl Future<Output = Result<Vec<DelegatedResource>>> + Send;
+    ) -> impl Future<Output = Result<Vec<DelegatedResource>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_delegated_resource(from, to)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Query the delegation index for an account (Stake 2.0).
     fn get_delegated_resource_index(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<DelegatedResourceIndex>> + Send;
+    ) -> impl Future<Output = Result<DelegatedResourceIndex>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_delegated_resource_index(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Query the max amount still delegatable for a resource.
     fn get_can_delegate_max(
         &self,
         address: Address,
         resource: ResourceCode,
-    ) -> impl Future<Output = Result<Trx>> + Send;
+    ) -> impl Future<Output = Result<Trx>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_can_delegate_max(address, resource)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Query the pending (unclaimed) reward.
-    fn get_reward(&self, address: Address) -> impl Future<Output = Result<Trx>> + Send;
+    fn get_reward(&self, address: Address) -> impl Future<Output = Result<Trx>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_reward(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch chain parameters.
-    fn chain_parameters(&self) -> impl Future<Output = Result<HashMap<String, i64>>> + Send;
+    fn chain_parameters(&self) -> impl Future<Output = Result<HashMap<String, i64>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_chain_parameters()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch contract metadata including the deployed runtime bytecode.
     fn get_contract_info(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<SmartContractInfo>> + Send;
+    ) -> impl Future<Output = Result<SmartContractInfo>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_contract_info(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// List all super representatives and candidates.
-    fn list_witnesses(&self) -> impl Future<Output = Result<Vec<WitnessInfo>>> + Send;
+    fn list_witnesses(&self) -> impl Future<Output = Result<Vec<WitnessInfo>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.list_witnesses()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     // ---------- New pure query methods ----------
 
     /// Fetch the bandwidth price schedule string.
-    fn get_bandwidth_prices(&self) -> impl Future<Output = Result<String>> + Send;
+    fn get_bandwidth_prices(&self) -> impl Future<Output = Result<String>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_bandwidth_prices()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the energy price schedule string.
-    fn get_energy_prices(&self) -> impl Future<Output = Result<String>> + Send;
+    fn get_energy_prices(&self) -> impl Future<Output = Result<String>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_energy_prices()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the memo fee schedule.
-    fn get_memo_fee(&self) -> impl Future<Output = Result<u64>> + Send;
+    fn get_memo_fee(&self) -> impl Future<Output = Result<u64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_memo_fee()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the next maintenance time (unix ms).
-    fn get_next_maintenance_time(&self) -> impl Future<Output = Result<i64>> + Send;
+    fn get_next_maintenance_time(&self) -> impl Future<Output = Result<i64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_next_maintenance_time()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the total amount of TRX burned.
-    fn get_burn_trx(&self) -> impl Future<Output = Result<u64>> + Send;
+    fn get_burn_trx(&self) -> impl Future<Output = Result<u64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_burn_trx()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the total number of transactions ever processed.
-    fn get_total_transactions(&self) -> impl Future<Output = Result<u64>> + Send;
+    fn get_total_transactions(&self) -> impl Future<Output = Result<u64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_total_transactions()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch basic info about the connected node.
-    fn get_node_info(&self) -> impl Future<Output = Result<NodeInfo>> + Send;
+    fn get_node_info(&self) -> impl Future<Output = Result<NodeInfo>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_node_info()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// List known gossip-network peer addresses.
-    fn list_nodes(&self) -> impl Future<Output = Result<Vec<NodeAddress>>> + Send;
+    fn list_nodes(&self) -> impl Future<Output = Result<Vec<NodeAddress>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.list_nodes()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch dynamic chain properties.
-    fn get_dynamic_properties(&self) -> impl Future<Output = Result<ChainProperties>> + Send;
+    fn get_dynamic_properties(&self) -> impl Future<Output = Result<ChainProperties>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_dynamic_properties()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch a block by its hash.
-    fn get_block_by_id(&self, block_id: B256) -> impl Future<Output = Result<BlockInfo>> + Send;
+    fn get_block_by_id(&self, block_id: B256) -> impl Future<Output = Result<BlockInfo>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_block_by_id(block_id)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the `count` most recent blocks.
     fn get_blocks_by_latest_num(
         &self,
         count: i64,
-    ) -> impl Future<Output = Result<Vec<BlockInfo>>> + Send;
+    ) -> impl Future<Output = Result<Vec<BlockInfo>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_blocks_by_latest_num(count)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch blocks in the range `[start, end)`.
     fn get_blocks_by_limit(
         &self,
         start: i64,
         end: i64,
-    ) -> impl Future<Output = Result<Vec<BlockInfo>>> + Send;
+    ) -> impl Future<Output = Result<Vec<BlockInfo>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_blocks_by_limit(start, end)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Count transactions in a block by block number.
     fn get_transaction_count_by_block_num(
         &self,
         block_num: i64,
-    ) -> impl Future<Output = Result<u64>> + Send;
+    ) -> impl Future<Output = Result<u64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_transaction_count_by_block_num(block_num)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch paginated transactions sent *from* an address.
     fn get_transactions_from(
@@ -173,7 +365,14 @@ pub trait TronProvider: Clone + Send + Sync + 'static {
         address: Address,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send;
+    ) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_transactions_from(address, offset, limit)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch paginated transactions sent *to* an address.
     fn get_transactions_to(
@@ -181,46 +380,118 @@ pub trait TronProvider: Clone + Send + Sync + 'static {
         address: Address,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send;
+    ) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_transactions_to(address, offset, limit)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch transaction infos for all transactions in a block.
     fn get_transaction_info_by_block_num(
         &self,
         block_num: i64,
-    ) -> impl Future<Output = Result<Vec<TransactionInfo>>> + Send;
+    ) -> impl Future<Output = Result<Vec<TransactionInfo>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_transaction_info_by_block_num(block_num)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the number of pending transactions.
-    fn get_pending_size(&self) -> impl Future<Output = Result<u64>> + Send;
+    fn get_pending_size(&self) -> impl Future<Output = Result<u64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_pending_size()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch a single pending transaction by id.
     fn get_transaction_from_pending(
         &self,
         tx_id: TxId,
-    ) -> impl Future<Output = Result<RawTransaction>> + Send;
+    ) -> impl Future<Output = Result<RawTransaction>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_transaction_from_pending(tx_id)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch all pending transactions.
-    fn get_pending_transactions(&self) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send;
+    fn get_pending_transactions(&self) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_pending_transactions()
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Query sign-weight for a transaction.
     fn get_transaction_sign_weight(
         &self,
         tx: &RawTransaction,
-    ) -> impl Future<Output = Result<SignWeight>> + Send;
+    ) -> impl Future<Output = Result<SignWeight>> + Send {
+        let t = self.transport().clone();
+        let tx = tx.clone();
+        async move {
+            t.get_transaction_sign_weight(&tx)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch addresses that have already signed a transaction.
     fn get_transaction_approved_list(
         &self,
         tx: &RawTransaction,
-    ) -> impl Future<Output = Result<Vec<Address>>> + Send;
+    ) -> impl Future<Output = Result<Vec<Address>>> + Send {
+        let t = self.transport().clone();
+        let tx = tx.clone();
+        async move {
+            t.get_transaction_approved_list(&tx)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch bandwidth/energy net-usage for an account.
-    fn get_account_net(&self, address: Address) -> impl Future<Output = Result<AccountNet>> + Send;
+    fn get_account_net(&self, address: Address) -> impl Future<Output = Result<AccountNet>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_account_net(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the brokerage ratio for a super representative.
-    fn get_brokerage(&self, address: Address) -> impl Future<Output = Result<u64>> + Send;
+    fn get_brokerage(&self, address: Address) -> impl Future<Output = Result<u64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_brokerage(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Fetch the unclaimed reward (raw sun) for an address.
-    fn get_reward_info(&self, address: Address) -> impl Future<Output = Result<u64>> + Send;
+    fn get_reward_info(&self, address: Address) -> impl Future<Output = Result<u64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_reward_info(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     // ---------- Transaction builders (lazy — no I/O until `.send()`) ----------
 
@@ -322,7 +593,14 @@ pub trait TronProvider: Clone + Send + Sync + 'static {
         &self,
         address: Address,
         timestamp_ms: i64,
-    ) -> impl Future<Output = Result<Trx>> + Send;
+    ) -> impl Future<Output = Result<Trx>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_can_withdraw_unfreeze_amount(address, timestamp_ms)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Query how many more unfreeze operations the account can still initiate.
     ///
@@ -330,7 +608,14 @@ pub trait TronProvider: Clone + Send + Sync + 'static {
     fn get_available_unfreeze_count(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<i64>> + Send;
+    ) -> impl Future<Output = Result<i64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_available_unfreeze_count(address)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     /// Activate a new account on-chain.
     fn create_account(&self) -> CreateAccountBuilder<'_, Self>
@@ -415,17 +700,30 @@ pub trait TronProvider: Clone + Send + Sync + 'static {
     fn estimate_energy(
         &self,
         params: TriggerSmartContract,
-    ) -> impl Future<Output = Result<i64>> + Send;
+    ) -> impl Future<Output = Result<i64>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.estimate_energy(params)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
 
     // ---------- Low-level ----------
 
     /// Fill, sign, and broadcast a pre-built request.
+    ///
+    /// The default implementation returns [`Error::no_signer`] — a signer filler
+    /// (e.g. `SignerFiller`) must be in the filler chain for this to succeed.
     fn send_transaction(
         &self,
-        req: TransactionRequest,
+        _req: TransactionRequest,
     ) -> impl Future<Output = Result<PendingTransaction<Self>>> + Send
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        async move { Err(Error::no_signer()) }
+    }
 
     /// Broadcast an already-signed transaction.
     fn broadcast(
@@ -433,5 +731,16 @@ pub trait TronProvider: Clone + Send + Sync + 'static {
         tx: SignedTransaction,
     ) -> impl Future<Output = Result<PendingTransaction<Self>>> + Send
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        let t = self.transport().clone();
+        let this = self.clone();
+        async move {
+            let tx_id = tx.raw.tx_id();
+            t.broadcast_transaction(&tx)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))?;
+            Ok(PendingTransaction::new(this, tx_id))
+        }
+    }
 }

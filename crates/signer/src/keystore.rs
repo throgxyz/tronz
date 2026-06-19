@@ -107,6 +107,7 @@ pub struct KdfparamsJson {
 
 /// Errors specific to keystore operations.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum KeystoreError {
     /// Wrong password — MAC verification failed.
     #[error("invalid password or corrupted keystore")]

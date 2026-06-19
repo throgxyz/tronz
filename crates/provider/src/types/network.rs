@@ -6,6 +6,7 @@ use tronz_primitives::Address;
 
 /// Summary of network node info returned by [`crate::provider::TronProvider::get_node_info`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct NodeInfo {
     /// Latest full-node block string (e.g. `"Num:12345,ID:..."`).
     pub block: String,
@@ -17,6 +18,7 @@ pub struct NodeInfo {
 
 /// A gossip-network peer address.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct NodeAddress {
     /// Peer hostname or IP.
     pub host: String,
@@ -28,6 +30,7 @@ pub struct NodeAddress {
 ///
 /// Returned by [`crate::provider::TronProvider::get_dynamic_properties`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ChainProperties {
     /// Head block id (hex string as returned by the node).
     pub head_block_id: String,
@@ -41,6 +44,7 @@ pub struct ChainProperties {
 ///
 /// Returned by [`crate::provider::TronProvider::get_account_net`].
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct AccountNet {
     /// Free bandwidth used.
     pub free_net_used: i64,
@@ -91,6 +95,7 @@ impl From<i32> for ProposalState {
 ///
 /// Returned by governance query methods on [`GovernanceApi`](crate::ext::GovernanceApi).
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ProposalInfo {
     /// Unique proposal ID.
     pub proposal_id: i64,

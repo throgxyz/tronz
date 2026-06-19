@@ -346,6 +346,7 @@ impl Iterator for MnemonicSignerIter {
 
 /// Errors specific to [`MnemonicBuilder`] misuse (wrong call sequence).
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MnemonicBuilderError {
     /// [`build`](MnemonicBuilder::build) requires a phrase but none was set.
     #[error("phrase is required but was not set — call .phrase() first")]

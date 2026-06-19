@@ -8,6 +8,7 @@ use crate::types::contract::Permission;
 
 /// On-chain account state.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct AccountInfo {
     /// Account address.
     pub address: Address,
@@ -31,6 +32,7 @@ pub struct AccountInfo {
 
 /// A Stake 2.0 frozen-balance entry.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct FreezeV2 {
     /// Resource the stake provides.
     pub resource: ResourceCode,
@@ -40,6 +42,7 @@ pub struct FreezeV2 {
 
 /// A Stake 2.0 in-progress unfreeze entry.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct UnfreezeV2 {
     /// Resource being released.
     pub resource: ResourceCode,
@@ -51,6 +54,7 @@ pub struct UnfreezeV2 {
 
 /// A witness vote.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Vote {
     /// Witness (super representative) address.
     pub vote_address: Address,
@@ -60,6 +64,7 @@ pub struct Vote {
 
 /// The set of permissions on an account.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct AccountPermissions {
     /// Owner permission.
     pub owner: Option<Permission>,
@@ -71,6 +76,7 @@ pub struct AccountPermissions {
 
 /// Bandwidth + energy usage/limits and delegation totals for an account.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct AccountResource {
     /// Free bandwidth consumed.
     pub free_bandwidth_used: i64,
@@ -100,6 +106,7 @@ pub struct AccountResource {
 
 /// A single delegation relationship between two accounts.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct DelegatedResource {
     /// Delegator.
     pub from: Address,
@@ -117,6 +124,7 @@ pub struct DelegatedResource {
 
 /// On-chain super representative (SR) or SR candidate.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct WitnessInfo {
     /// SR address.
     pub address: Address,
@@ -134,6 +142,7 @@ pub struct WitnessInfo {
 
 /// Index of all delegation relationships for an account.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct DelegatedResourceIndex {
     /// The account this index describes.
     pub account: Address,

@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Resolve the explicit `owner` override, falling back to the provider's
-/// attached signer. Returns [`Error::NoSigner`] when neither is present.
+/// attached signer. Returns [`Error::no_signer()`] when neither is present.
 ///
 /// Used by every builder's `send()` to avoid repeating the same 3-line
 /// `or_else / ok_or` pattern across 27 call sites.
@@ -33,7 +33,7 @@ pub(crate) fn resolve_owner<P: TronProvider>(
 ) -> Result<Address> {
     owner
         .or_else(|| provider.signer_address())
-        .ok_or(Error::NoSigner)
+        .ok_or(Error::no_signer())
 }
 
 pub use account::{CreateAccountBuilder, UpdateAccountBuilder};

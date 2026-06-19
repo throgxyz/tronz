@@ -73,7 +73,7 @@ impl<'a, P: TronProvider> FreezeV1Builder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let amount = self.amount.ok_or(Error::MissingField("amount"))?;
+        let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::FreezeBalanceV1(FreezeBalanceV1Contract {
@@ -189,7 +189,7 @@ impl<'a, P: TronProvider> FreezeBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let amount = self.amount.ok_or(Error::MissingField("amount"))?;
+        let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::FreezeBalanceV2(FreezeBalanceV2Contract {
@@ -243,7 +243,7 @@ impl<'a, P: TronProvider> UnfreezeBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let amount = self.amount.ok_or(Error::MissingField("amount"))?;
+        let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::UnfreezeBalanceV2(UnfreezeBalanceV2Contract {

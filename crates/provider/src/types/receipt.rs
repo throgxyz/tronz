@@ -4,6 +4,7 @@ use tronz_primitives::{Address, B256, Bytes, Trx, TxId};
 
 /// Receipt returned after a transaction is confirmed on-chain.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct TransactionInfo {
     /// Transaction id.
     pub tx_id: TxId,
@@ -33,6 +34,7 @@ pub struct TransactionInfo {
 
 /// Top-level transaction status.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum TxStatus {
     /// The transaction succeeded.
     Success,
@@ -58,6 +60,7 @@ pub enum ContractResult {
 
 /// An EVM-style event log emitted during contract execution.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Log {
     /// Emitting contract address.
     pub address: Address,
@@ -69,6 +72,7 @@ pub struct Log {
 
 /// Resource usage receipt for a transaction.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct ResourceReceipt {
     /// Energy paid for from staked resource.
     pub energy_usage: i64,

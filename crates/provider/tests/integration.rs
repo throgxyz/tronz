@@ -16,10 +16,9 @@
 //! # What these tests validate
 //!
 //! 1. **Connectivity** — the gRPC endpoint responds and codec round-trips work.
-//! 2. **Not-found edge cases** — the codec correctly returns `TransportError::NotFound` (not
-//!    `Malformed`) when the node returns default/empty proto messages. This is critical:
-//!    `PendingTransaction` polls on `NotFound` to detect unconfirmed transactions; any other error
-//!    variant aborts the poll early.
+//! 2. **Not-found edge cases** — the codec correctly returns `Ok(None)` (not `Err(...)`) when the
+//!    node returns default/empty proto messages. This is critical: `PendingTransaction` polls on
+//!    `Ok(None)` to detect unconfirmed transactions; any `Err` variant aborts the poll early.
 //! 3. **Never-activated accounts** — node returns `Account { address: [] }` for addresses that have
 //!    never received funds; we must fill in the queried address and set `is_activated = false`, NOT
 //!    return an error.
@@ -27,7 +26,7 @@
 
 use tronz_primitives::{Address, TxId};
 use tronz_provider::{
-    Error, ProviderBuilder, TransportError, TronProvider,
+    ProviderBuilder, TronProvider,
     ext::Trc10Api as _,
     transport::{TronTransport as _, grpc::TRONGRID_NILE},
 };
@@ -165,9 +164,9 @@ async fn test_get_account_activated() {
 // ── Transaction not found ─────────────────────────────────────────────────────
 
 /// TRON nodes return an empty `TransactionInfo { id: [] }` for unknown/unconfirmed
-/// tx IDs. Our codec MUST translate that into `TransportError::NotFound`.
+/// tx IDs. Our codec MUST translate that into `Ok(None)`.
 ///
-/// If it returns `TransportError::Malformed` instead, the `PendingTransaction`
+/// If it returns `Err(TransportErrorKind::Malformed)` instead, the `PendingTransaction`
 /// polling loop will abort immediately on the first poll (which happens before
 /// the tx is even indexed), making all `.send().await?.get_receipt().await`
 /// calls time out immediately.
@@ -180,14 +179,14 @@ async fn test_get_transaction_info_returns_not_found_for_unknown_txid() {
 
     let result = provider.get_transaction_info(fake_id).await;
     match result {
-        Err(Error::Transport(TransportError::NotFound)) => {
-            // Correct — polling will continue.
+        Ok(None) => {
+            // Correct — node hasn't indexed this tx, polling will continue.
         }
         Err(other) => panic!(
-            "Expected NotFound for unknown txid, got a different error: {other:?}\n\
+            "Expected Ok(None) for unknown txid, got an error: {other:?}\n\
              This will break PendingTransaction polling!"
         ),
-        Ok(info) => panic!("Expected NotFound for all-zero txid, got: {info:?}"),
+        Ok(Some(info)) => panic!("Expected Ok(None) for all-zero txid, got: {info:?}"),
     }
 }
 
@@ -200,7 +199,8 @@ async fn test_get_asset_info_existing_token() {
     let info = provider
         .get_asset_info(NILE_TRC10_TOKEN_ID)
         .await
-        .expect("get_asset_info failed for a known token");
+        .expect("get_asset_info failed for a known token")
+        .expect("known token should be found");
 
     assert_eq!(
         info.id, NILE_TRC10_TOKEN_ID,
@@ -214,19 +214,21 @@ async fn test_get_asset_info_existing_token() {
     );
 }
 
-/// Querying a non-existent TRC10 token should return `NotFound`, not a panic
+/// Querying a non-existent TRC10 token should return `Ok(None)`, not a panic
 /// or a `Malformed` error.
 #[tokio::test]
 #[ignore = "requires network"]
 async fn test_get_asset_info_nonexistent_token_returns_not_found() {
     let provider = read_provider().await;
-    let result = provider.get_asset_info(NILE_BOGUS_TOKEN_ID).await;
+    let result = provider
+        .get_asset_info(NILE_BOGUS_TOKEN_ID)
+        .await
+        .expect("transport should not error for bogus token");
 
-    match result {
-        Err(Error::Transport(TransportError::NotFound)) => {}
-        Err(other) => panic!("Expected NotFound for bogus token, got: {other:?}"),
-        Ok(info) => panic!("Expected NotFound for bogus token, got: {info:?}"),
-    }
+    assert!(
+        result.is_none(),
+        "expected None for bogus token, got: {result:?}"
+    );
 }
 
 /// `trc10_balance` for an account that holds none of the token must return `0`,

@@ -143,7 +143,7 @@ impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let url = self.url.ok_or(Error::MissingField("url"))?;
+        let url = self.url.ok_or(Error::missing_field("url"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::CreateWitness(CreateWitnessContract {
@@ -200,7 +200,7 @@ impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let update_url = self.update_url.ok_or(Error::MissingField("url"))?;
+        let update_url = self.update_url.ok_or(Error::missing_field("url"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::UpdateWitness(UpdateWitnessContract {
@@ -260,7 +260,7 @@ impl<'a, P: TronProvider> UpdateBrokerageBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let brokerage = self.brokerage.ok_or(Error::MissingField("brokerage"))?;
+        let brokerage = self.brokerage.ok_or(Error::missing_field("brokerage"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::UpdateBrokerage(UpdateBrokerageContract {

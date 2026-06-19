@@ -32,9 +32,9 @@ pub mod grpc;
 /// and must be `Send + Sync + 'static` for use across spawned tasks.
 pub trait TronTransport: Clone + Send + Sync + 'static {
     /// The transport's error type.  Must be convertible to
-    /// [`crate::error::TransportError`] so that the provider layer can wrap it
+    /// [`crate::error::TransportErrorKind`] so that the provider layer can wrap it
     /// uniformly.
-    type Error: std::error::Error + Into<crate::error::TransportError> + Send + Sync + 'static;
+    type Error: std::error::Error + Into<crate::error::TransportErrorKind> + Send + Sync + 'static;
 
     // --- Block ---
 
@@ -76,10 +76,12 @@ pub trait TronTransport: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<SignedTransaction, Self::Error>> + Send;
 
     /// Fetch a transaction's post-confirmation info/receipt.
+    ///
+    /// Returns `None` if the node has not yet indexed the transaction.
     fn get_transaction_info(
         &self,
         tx_id: TxId,
-    ) -> impl Future<Output = Result<TransactionInfo, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Option<TransactionInfo>, Self::Error>> + Send;
 
     // --- Smart contracts ---
 
@@ -293,10 +295,12 @@ pub trait TronTransport: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
 
     /// Fetch metadata for a TRC10 token by its numeric ID.
+    ///
+    /// Returns `None` if no token with that ID exists.
     fn get_asset_issue_by_id(
         &self,
         token_id: &str,
-    ) -> impl Future<Output = Result<AssetInfo, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Option<AssetInfo>, Self::Error>> + Send;
 
     /// Fetch all TRC10 tokens issued by `address`.
     fn get_asset_issue_by_account(
@@ -313,13 +317,15 @@ pub trait TronTransport: Clone + Send + Sync + 'static {
 
     /// Fetch a TRC10 token by name.
     ///
+    /// Returns `None` if no token with that name exists.
+    ///
     /// Token names are not unique after the `ALLOW_SAME_TOKEN_NAME` proposal;
     /// use [`get_asset_issue_list_by_name`](Self::get_asset_issue_list_by_name)
     /// if multiple tokens share the same name.
     fn get_asset_issue_by_name(
         &self,
         name: &str,
-    ) -> impl Future<Output = Result<AssetInfo, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Option<AssetInfo>, Self::Error>> + Send;
 
     /// Fetch all TRC10 tokens with a given name.
     fn get_asset_issue_list_by_name(

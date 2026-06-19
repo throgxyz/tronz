@@ -114,7 +114,7 @@ impl<P: TronProvider> CallBuilder<P> {
             .await
             .map_err(|e| ContractError::Provider(ProviderError::Transport(e.into())))?;
         if result.revert_reason.is_some() {
-            return Err(ContractError::ContractRevert(result.output.into()));
+            return Err(ContractError::Revert(result.output.into()));
         }
         Ok(result.output.into())
     }
@@ -127,7 +127,8 @@ impl<P: TronProvider> CallBuilder<P> {
         let caller = self
             .provider
             .signer_address()
-            .ok_or(ContractError::NoSigner)?;
+            .ok_or_else(ProviderError::no_signer)
+            .map_err(ContractError::Provider)?;
         let req = TransactionRequest::default().with_contract(ContractType::TriggerSmartContract(
             TriggerSmartContract {
                 owner_address: caller,

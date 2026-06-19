@@ -56,7 +56,7 @@ impl<'a, P: TronProvider> SetAccountIdBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let account_id = self.account_id.ok_or(Error::MissingField("account_id"))?;
+        let account_id = self.account_id.ok_or(Error::missing_field("account_id"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::SetAccountId(SetAccountIdContract {
@@ -116,7 +116,7 @@ impl<'a, P: TronProvider> ClearContractAbiBuilder<'a, P> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let contract_address = self
             .contract_address
-            .ok_or(Error::MissingField("contract_address"))?;
+            .ok_or(Error::missing_field("contract_address"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::ClearContractAbi(ClearContractAbiContract {
@@ -184,10 +184,10 @@ impl<'a, P: TronProvider> UpdateContractSettingBuilder<'a, P> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let contract_address = self
             .contract_address
-            .ok_or(Error::MissingField("contract_address"))?;
+            .ok_or(Error::missing_field("contract_address"))?;
         let consume_user_resource_percent = self
             .consume_user_resource_percent
-            .ok_or(Error::MissingField("consume_user_resource_percent"))?;
+            .ok_or(Error::missing_field("consume_user_resource_percent"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::UpdateSetting(UpdateSettingContract {
@@ -256,10 +256,10 @@ impl<'a, P: TronProvider> UpdateContractEnergyLimitBuilder<'a, P> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let contract_address = self
             .contract_address
-            .ok_or(Error::MissingField("contract_address"))?;
+            .ok_or(Error::missing_field("contract_address"))?;
         let origin_energy_limit = self
             .origin_energy_limit
-            .ok_or(Error::MissingField("origin_energy_limit"))?;
+            .ok_or(Error::missing_field("origin_energy_limit"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::UpdateEnergyLimit(UpdateEnergyLimitContract {

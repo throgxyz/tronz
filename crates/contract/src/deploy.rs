@@ -1,8 +1,14 @@
 //! [`DeployBuilder`] — a lazy smart-contract deployment transaction.
 //!
 //! Mirrors the role of alloy's `ContractDeployer`: wraps a
-//! [`CreateSmartContract`] request with a fluent builder API.  Call
-//! [`send`](DeployBuilder::send) to fill, sign, and broadcast the deployment.
+//! [`CreateSmartContract`] request with a fluent builder API.
+//!
+//! ## Two deployment paths
+//!
+//! | Method | Returns | Use when |
+//! |--------|---------|----------|
+//! | [`send`](DeployBuilder::send) | `PendingTransaction` | you want the tx id or a custom poll loop |
+//! | [`deploy`](DeployBuilder::deploy) | `Address` | you just need the deployed address |
 //!
 //! # Example
 //!
@@ -14,22 +20,28 @@
 //! #     bytecode: tronz_primitives::Bytes,
 //! #     abi: &[u8],
 //! # ) -> tronz_contract::Result<()> {
+//! // One-shot: broadcast + wait + return address
+//! let address = provider
+//!     .deploy(bytecode.clone())
+//!     .abi(abi)
+//!     .name("MyToken")
+//!     .deploy()
+//!     .await?;
+//!
+//! // Or split into broadcast + poll separately:
 //! let pending = provider
 //!     .deploy(bytecode)
 //!     .abi(abi)
-//!     .name("MyToken")
-//!     .origin_energy_limit(10_000_000)
 //!     .send()
 //!     .await?;
-//!
 //! let info = pending.get_receipt().await?;
 //! let contract_address = info.contract_address;
 //! # Ok(()) }
 //! ```
 
-use tronz_primitives::{Bytes, Trx};
+use tronz_primitives::{Address, Bytes, Trx};
 use tronz_provider::{
-    PendingTransaction, TronProvider,
+    Error as ProviderError, PendingTransaction, TronProvider,
     types::{ContractType, CreateSmartContract, TransactionRequest},
 };
 
@@ -114,6 +126,25 @@ impl<P: TronProvider> DeployBuilder<P> {
         self
     }
 
+    /// Build, sign, broadcast, wait for confirmation, and return the deployed
+    /// contract address.
+    ///
+    /// Returns [`ContractError::ContractNotDeployed`] if the transaction was
+    /// confirmed but `contract_address` was absent from the receipt (e.g. the
+    /// deployment transaction reverted or the node rejected it).
+    ///
+    /// For a lower-level path that gives you the [`PendingTransaction`] handle,
+    /// use [`send`](Self::send) instead.
+    pub async fn deploy(self) -> Result<Address> {
+        let pending = self.send().await?;
+        // `?` uses `From<PendingTransactionError> for ContractError`:
+        // Transport errors → ContractError::Provider,
+        // timeout → ContractError::ConfirmationTimeout.
+        let info = pending.get_receipt().await?;
+        info.contract_address
+            .ok_or(ContractError::ContractNotDeployed)
+    }
+
     /// Build, sign, and broadcast the deployment transaction.
     ///
     /// The returned [`PendingTransaction`] can be awaited with
@@ -125,7 +156,8 @@ impl<P: TronProvider> DeployBuilder<P> {
         let owner = self
             .provider
             .signer_address()
-            .ok_or(ContractError::NoSigner)?;
+            .ok_or_else(ProviderError::no_signer)
+            .map_err(ContractError::Provider)?;
 
         let mut req = TransactionRequest::default().with_contract(
             ContractType::CreateSmartContract(CreateSmartContract {

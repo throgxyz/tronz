@@ -2,13 +2,29 @@
 
 use core::time::Duration;
 
+use thiserror::Error;
 use tronz_primitives::TxId;
 
-use crate::{
-    error::{Error, Result, TransportError},
-    provider::TronProvider,
-    types::TransactionInfo,
-};
+use crate::{error::ProviderError, provider::TronProvider, types::TransactionInfo};
+
+/// Errors that can occur while waiting for a pending transaction to be confirmed.
+///
+/// Separating polling errors from [`ProviderError`] keeps the two concerns
+/// orthogonal: transport failures during polling are wrapped in [`Transport`],
+/// while a clean timeout is its own variant.
+///
+/// [`Transport`]: PendingTransactionError::Transport
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum PendingTransactionError {
+    /// A transport or provider error occurred while polling.
+    #[error(transparent)]
+    Transport(#[from] ProviderError),
+
+    /// Polling exhausted all attempts without the transaction being indexed.
+    #[error("timed out waiting for transaction confirmation")]
+    ConfirmationTimeout,
+}
 
 /// Handle to a broadcast transaction; can be awaited to confirmation.
 ///
@@ -30,15 +46,15 @@ impl<P: TronProvider> PendingTransaction<P> {
         self.tx_id
     }
 
-    /// Poll until the transaction is confirmed. Defaults to every 3s, up to
-    /// 20 attempts (~60s).
-    pub async fn await_confirmed(self) -> Result<TransactionInfo> {
+    /// Poll until the transaction is confirmed. Defaults to every 3 s, up to
+    /// 20 attempts (~60 s total).
+    pub async fn await_confirmed(self) -> Result<TransactionInfo, PendingTransactionError> {
         self.await_confirmed_with(Duration::from_secs(3), 20).await
     }
 
     /// Alias for [`await_confirmed`](Self::await_confirmed) — mirrors alloy's
     /// `PendingTransactionBuilder::get_receipt`.
-    pub async fn get_receipt(self) -> Result<TransactionInfo> {
+    pub async fn get_receipt(self) -> Result<TransactionInfo, PendingTransactionError> {
         self.await_confirmed().await
     }
 
@@ -47,16 +63,16 @@ impl<P: TronProvider> PendingTransaction<P> {
         self,
         interval: Duration,
         max_attempts: u32,
-    ) -> Result<TransactionInfo> {
+    ) -> Result<TransactionInfo, PendingTransactionError> {
         for _ in 0..max_attempts {
             tokio::time::sleep(interval).await;
             match self.provider.get_transaction_info(self.tx_id).await {
-                Ok(info) => return Ok(info),
+                Ok(Some(info)) => return Ok(info),
                 // Not yet indexed — keep polling.
-                Err(Error::Transport(TransportError::NotFound)) => continue,
-                Err(e) => return Err(e),
+                Ok(None) => continue,
+                Err(e) => return Err(PendingTransactionError::Transport(e)),
             }
         }
-        Err(Error::ConfirmationTimeout)
+        Err(PendingTransactionError::ConfirmationTimeout)
     }
 }

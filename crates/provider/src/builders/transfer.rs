@@ -57,8 +57,8 @@ impl<'a, P: TronProvider> TransferBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let to = self.to.ok_or(Error::MissingField("to"))?;
-        let amount = self.amount.ok_or(Error::MissingField("amount"))?;
+        let to = self.to.ok_or(Error::missing_field("to"))?;
+        let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::Transfer(TransferContract {

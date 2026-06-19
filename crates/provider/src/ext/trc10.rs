@@ -23,7 +23,7 @@ use crate::{
 /// use tronz_provider::ext::Trc10Api;
 /// # async fn run(provider: impl tronz_provider::TronProvider, recipient: tronz_primitives::Address) -> tronz_provider::Result<()> {
 /// // Query token metadata
-/// let info = provider.get_asset_info("1000001").await?;
+/// let info = provider.get_asset_info("1000001").await?.expect("token exists");
 /// println!("{} ({}), decimals={}", info.name, info.abbr, info.decimals);
 ///
 /// // Check a TRC10 balance (reads from get_account)
@@ -41,10 +41,12 @@ use crate::{
 /// ```
 pub trait Trc10Api: TronProvider + Sized {
     /// Fetch metadata for a TRC10 token by its numeric ID (e.g. `"1000001"`).
+    ///
+    /// Returns `None` if no token with that ID exists.
     fn get_asset_info(
         &self,
         token_id: &str,
-    ) -> impl std::future::Future<Output = Result<AssetInfo>> + Send;
+    ) -> impl std::future::Future<Output = Result<Option<AssetInfo>>> + Send;
 
     /// Return the raw TRC10 balance of `address` for `token_id`.
     ///
@@ -75,13 +77,15 @@ pub trait Trc10Api: TronProvider + Sized {
 
     /// Fetch a TRC10 token by name.
     ///
+    /// Returns `None` if no token with that name exists.
+    ///
     /// Token names are not unique after the `ALLOW_SAME_TOKEN_NAME` proposal.
     /// Use [`get_asset_issue_list_by_name`](Trc10Api::get_asset_issue_list_by_name) when
     /// multiple tokens may share the same name.
     fn get_asset_issue_by_name(
         &self,
         name: &str,
-    ) -> impl std::future::Future<Output = Result<AssetInfo>> + Send;
+    ) -> impl std::future::Future<Output = Result<Option<AssetInfo>>> + Send;
 
     /// Fetch all TRC10 tokens with a given name.
     fn get_asset_issue_list_by_name(
@@ -124,7 +128,7 @@ pub trait Trc10Api: TronProvider + Sized {
 }
 
 impl<P: TronProvider> Trc10Api for P {
-    async fn get_asset_info(&self, token_id: &str) -> Result<AssetInfo> {
+    async fn get_asset_info(&self, token_id: &str) -> Result<Option<AssetInfo>> {
         self.transport()
             .get_asset_issue_by_id(token_id)
             .await
@@ -150,7 +154,7 @@ impl<P: TronProvider> Trc10Api for P {
         Ok(account.trc10_balances.get(token_id).copied().unwrap_or(0))
     }
 
-    async fn get_asset_issue_by_name(&self, name: &str) -> Result<AssetInfo> {
+    async fn get_asset_issue_by_name(&self, name: &str) -> Result<Option<AssetInfo>> {
         self.transport()
             .get_asset_issue_by_name(name)
             .await
@@ -244,9 +248,9 @@ impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
     /// Build, sign, and broadcast the transfer.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let to = self.to.ok_or(Error::MissingField("to"))?;
-        let token_id = self.token_id.ok_or(Error::MissingField("token_id"))?;
-        let amount = self.amount.ok_or(Error::MissingField("amount"))?;
+        let to = self.to.ok_or(Error::missing_field("to"))?;
+        let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
+        let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::TransferAsset(TransferAssetContract {
@@ -396,12 +400,12 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
     /// Build, sign, and broadcast the token issuance.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let name = self.name.ok_or(Error::MissingField("name"))?;
-        let abbr = self.abbr.ok_or(Error::MissingField("abbr"))?;
-        let url = self.url.ok_or(Error::MissingField("url"))?;
+        let name = self.name.ok_or(Error::missing_field("name"))?;
+        let abbr = self.abbr.ok_or(Error::missing_field("abbr"))?;
+        let url = self.url.ok_or(Error::missing_field("url"))?;
         let total_supply = self
             .total_supply
-            .ok_or(Error::MissingField("total_supply"))?;
+            .ok_or(Error::missing_field("total_supply"))?;
 
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -492,9 +496,9 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
     /// Build, sign, and broadcast the participation.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let to = self.to.ok_or(Error::MissingField("to"))?;
-        let token_id = self.token_id.ok_or(Error::MissingField("token_id"))?;
-        let amount = self.amount.ok_or(Error::MissingField("amount"))?;
+        let to = self.to.ok_or(Error::missing_field("to"))?;
+        let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
+        let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::ParticipateAssetIssue(
@@ -626,7 +630,7 @@ impl<'a, P: TronProvider> UpdateTrc10Builder<'a, P> {
     /// Build, sign, and broadcast the metadata update.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let url = self.url.ok_or(Error::MissingField("url"))?;
+        let url = self.url.ok_or(Error::missing_field("url"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::UpdateAsset(UpdateAssetContract {

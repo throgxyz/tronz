@@ -6,6 +6,7 @@ use tronz_primitives::Address;
 ///
 /// Returned by [`Trc10Api::get_asset_info`](crate::ext::Trc10Api::get_asset_info).
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct AssetInfo {
     /// Numeric token ID (e.g. `"1000001"`).
     pub id: String,

@@ -11,13 +11,16 @@ pub mod transport;
 pub mod types;
 
 mod error;
-pub use error::{Error, Result, TransportError};
+pub use error::{ProviderError, Result, RpcError, TransportErrorKind, TransportResult};
+/// Backward-compatible alias — prefer [`ProviderError`] in new code.
+pub type Error = ProviderError;
 
 mod provider;
 pub use ext::{GovernanceApi, Trc10Api, WitnessApi};
 pub use fillers::HasSigner;
 pub use provider::{
-    FilledProvider, PendingTransaction, ProviderBuilder, RootProvider, TronProvider,
+    FilledProvider, PendingTransaction, PendingTransactionError, ProviderBuilder, RootProvider,
+    TronProvider,
 };
 pub use transport::TronTransport;
 pub use types::{

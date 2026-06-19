@@ -4,6 +4,7 @@ use tronz_primitives::B256;
 
 /// Summary information about a block, including the bits needed for TAPOS.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct BlockInfo {
     /// Block height.
     pub number: i64,

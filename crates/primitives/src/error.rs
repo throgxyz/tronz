@@ -2,6 +2,7 @@
 
 /// Errors produced when parsing or validating a TRON [`Address`](crate::Address).
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum AddressError {
     /// The raw address did not start with the mainnet prefix byte `0x41`.
     #[error("invalid prefix byte: expected 0x41, got 0x{0:02x}")]
@@ -27,6 +28,7 @@ pub enum AddressError {
 
 /// Errors produced when constructing a [`Trx`](crate::Trx) amount.
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum AmountError {
     /// A negative value was supplied where only non-negative amounts are valid.
     #[error("negative amount is invalid: {0} sun")]
@@ -39,6 +41,7 @@ pub enum AmountError {
 
 /// Errors produced when constructing a [`RecoverableSignature`](crate::RecoverableSignature).
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum SignatureError {
     /// The signature byte slice was not exactly 65 bytes (`r || s || v`).
     #[error("bad signature length: expected 65 bytes, got {0}")]
