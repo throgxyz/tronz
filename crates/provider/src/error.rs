@@ -73,12 +73,12 @@ impl TransportErrorKind {
     /// Returns `true` if the error is likely transient and may be retried.
     pub fn is_retryable(&self) -> bool {
         match self {
+            // `DeadlineExceeded` is intentionally excluded: with channel-level
+            // `Endpoint::timeout()` it is almost always the client's own
+            // request timeout firing, so retrying just multiplies latency.
             Self::Grpc(s) => matches!(
                 s.code(),
-                tonic::Code::Unavailable
-                    | tonic::Code::ResourceExhausted
-                    | tonic::Code::DeadlineExceeded
-                    | tonic::Code::Aborted
+                tonic::Code::Unavailable | tonic::Code::ResourceExhausted | tonic::Code::Aborted
             ),
             _ => false,
         }

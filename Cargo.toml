@@ -59,3 +59,4 @@ thiserror = { version = "2" }
 tracing = { version = "0.1" }
 hex     = { version = "0.4" }
 rand    = { version = "0.8" }
+fastrand = { version = "2" }

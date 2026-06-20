@@ -2,6 +2,8 @@
 //!
 //! Mirrors alloy's `ProviderBuilder` + `JoinFill` pattern (see `DESIGN.md` §5.3).
 
+use std::time::Duration;
+
 use tronz_primitives::{Address, Trx};
 use tronz_signer::TronSigner;
 
@@ -9,15 +11,24 @@ use crate::{
     error::{Error, Result},
     fillers::{FeeLimitFiller, HasSigner, Identity, JoinFill, SignerFiller, TaposFiller, TxFiller},
     provider::{PendingTransaction, RootProvider, TronProvider},
-    transport::{TronTransport, grpc::GrpcTransport},
+    transport::{
+        TronTransport,
+        grpc::{GrpcTransport, GrpcTransportConfig, RetryConfig},
+    },
     types::{ContractType, RawTransaction, SignedTransaction, TransactionRequest},
 };
 
 /// Accumulates fillers and finally binds a transport to produce a
 /// [`FilledProvider`].
+///
+/// Transport tuning (`connect_timeout` / `request_timeout` / `retry`) is stored
+/// as `Option`s; `None` defers to [`GrpcTransportConfig`] defaults.
 pub struct ProviderBuilder<F> {
     filler: F,
     api_key: Option<String>,
+    connect_timeout: Option<Duration>,
+    request_timeout: Option<Duration>,
+    retry: Option<RetryConfig>,
 }
 
 impl ProviderBuilder<Identity> {
@@ -26,6 +37,9 @@ impl ProviderBuilder<Identity> {
         Self {
             filler: Identity,
             api_key: None,
+            connect_timeout: None,
+            request_timeout: None,
+            retry: None,
         }
     }
 }
@@ -57,6 +71,24 @@ impl<F: TxFiller> ProviderBuilder<F> {
         self
     }
 
+    /// Override the connect (handshake) timeout. Default: 10 s.
+    pub fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = Some(timeout);
+        self
+    }
+
+    /// Override the per-call request timeout (applied to every RPC). Default: 30 s.
+    pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = Some(timeout);
+        self
+    }
+
+    /// Override the retry policy. Default: [`RetryConfig::default`].
+    pub fn with_retry(mut self, retry: RetryConfig) -> Self {
+        self.retry = Some(retry);
+        self
+    }
+
     /// Add both the TAPOS filler and a 20 TRX default fee-limit filler in one
     /// call — the most common setup for a read/write provider.
     ///
@@ -70,17 +102,39 @@ impl<F: TxFiller> ProviderBuilder<F> {
 
     /// Add the TAPOS filler (required before broadcasting client-built txs).
     pub fn with_tapos(self) -> ProviderBuilder<JoinFill<F, TaposFiller>> {
+        // Destructure so adding a transport-config field later is a compile
+        // error here, not a silently dropped setting.
+        let Self {
+            filler,
+            api_key,
+            connect_timeout,
+            request_timeout,
+            retry,
+        } = self;
         ProviderBuilder {
-            filler: JoinFill::new(self.filler, TaposFiller::new()),
-            api_key: self.api_key,
+            filler: JoinFill::new(filler, TaposFiller::new()),
+            api_key,
+            connect_timeout,
+            request_timeout,
+            retry,
         }
     }
 
     /// Add a default `fee_limit` for contract operations.
     pub fn with_fee_limit(self, limit: Trx) -> ProviderBuilder<JoinFill<F, FeeLimitFiller>> {
+        let Self {
+            filler,
+            api_key,
+            connect_timeout,
+            request_timeout,
+            retry,
+        } = self;
         ProviderBuilder {
-            filler: JoinFill::new(self.filler, FeeLimitFiller::new(limit)),
-            api_key: self.api_key,
+            filler: JoinFill::new(filler, FeeLimitFiller::new(limit)),
+            api_key,
+            connect_timeout,
+            request_timeout,
+            retry,
         }
     }
 
@@ -89,9 +143,19 @@ impl<F: TxFiller> ProviderBuilder<F> {
         self,
         signer: S,
     ) -> ProviderBuilder<JoinFill<F, SignerFiller<S>>> {
+        let Self {
+            filler,
+            api_key,
+            connect_timeout,
+            request_timeout,
+            retry,
+        } = self;
         ProviderBuilder {
-            filler: JoinFill::new(self.filler, SignerFiller::new(signer)),
-            api_key: self.api_key,
+            filler: JoinFill::new(filler, SignerFiller::new(signer)),
+            api_key,
+            connect_timeout,
+            request_timeout,
+            retry,
         }
     }
 
@@ -102,12 +166,22 @@ impl<F: TxFiller> ProviderBuilder<F> {
     /// - `"https://grpc.trongrid.io:443"` (TronGrid mainnet, TLS)
     /// - `"http://127.0.0.1:50051"` (local node, plain HTTP/2)
     pub async fn on_grpc(self, uri: impl AsRef<str>) -> Result<FilledProvider<GrpcTransport, F>> {
-        let mut transport = GrpcTransport::connect(uri)
+        let mut cfg = GrpcTransportConfig {
+            api_key: self.api_key,
+            ..Default::default()
+        };
+        if let Some(t) = self.connect_timeout {
+            cfg.connect_timeout = t;
+        }
+        if let Some(t) = self.request_timeout {
+            cfg.request_timeout = t;
+        }
+        if let Some(r) = self.retry {
+            cfg.retry = r;
+        }
+        let transport = GrpcTransport::connect_with_config(uri, cfg)
             .await
             .map_err(Error::Transport)?;
-        if let Some(key) = self.api_key {
-            transport = transport.with_api_key(key);
-        }
         Ok(FilledProvider::new(
             RootProvider::new(transport),
             self.filler,

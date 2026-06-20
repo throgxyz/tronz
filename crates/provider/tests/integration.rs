@@ -66,6 +66,29 @@ fn test_signer() -> Option<tronz_signer::LocalSigner> {
     Some(tronz_signer::LocalSigner::from_hex(&hex).expect("TRON_TEST_KEY is not a valid hex key"))
 }
 
+/// Generate 32 random bytes suitable for a secp256k1 private key, without
+/// pulling in an RNG crate: `RandomState` is OS-seeded per construction.
+///
+/// The leading byte is forced to `0x01`, guaranteeing the value is non-zero and
+/// well below the curve order, so `LocalSigner::from_bytes` always accepts it.
+fn random_key_bytes() -> [u8; 32] {
+    use std::hash::{BuildHasher, Hasher};
+
+    let mut out = [0u8; 32];
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    for (i, chunk) in out.chunks_mut(8).enumerate() {
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_usize(i);
+        hasher.write_u128(nanos);
+        chunk.copy_from_slice(&hasher.finish().to_le_bytes());
+    }
+    out[0] = 0x01;
+    out
+}
+
 // ── Connectivity ──────────────────────────────────────────────────────────────
 
 #[tokio::test]
@@ -108,12 +131,11 @@ async fn test_get_now_block() {
 async fn test_get_account_never_activated_is_not_an_error() {
     let provider = read_provider().await;
 
-    // Use a deterministic fresh address derived from the lowest valid key.
-    // This address has no funds on Nile and should never have been activated.
-    let signer = tronz_signer::LocalSigner::from_hex(
-        "0000000000000000000000000000000000000000000000000000000000000002",
-    )
-    .unwrap();
+    // Use a freshly generated random address rather than a hardcoded one: any
+    // fixed address on a public testnet can eventually be activated by anyone,
+    // which would make this assertion flaky. A random key collides with an
+    // activated account only with astronomically small probability.
+    let signer = tronz_signer::LocalSigner::from_bytes(&random_key_bytes()).unwrap();
     let fresh_addr = signer.address();
 
     let account = provider

@@ -2818,6 +2818,7 @@ dependencies = [
 name = "tronz-provider"
 version = "0.1.2"
 dependencies = [
+ "fastrand",
  "futures",
  "prost",
  "prost-types",

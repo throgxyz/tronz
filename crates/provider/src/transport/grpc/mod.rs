@@ -5,7 +5,7 @@
 
 mod codec;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future, time::Duration};
 
 use futures::future::try_join_all;
 use prost::Message as _;
@@ -92,6 +92,115 @@ type WalletExtensionClientI =
 type DatabaseClientI =
     DatabaseClient<tonic::codegen::InterceptedService<Channel, ApiKeyInterceptor>>;
 
+/// Exponential back-off configuration for retryable gRPC errors.
+#[derive(Clone, Debug)]
+pub struct RetryConfig {
+    /// Maximum number of attempts (including the first).
+    ///
+    /// Clamped to 1 internally, so `0` never panics — it just means
+    /// "try once, no retries".
+    pub max_attempts: u32,
+    /// Back-off duration before the second attempt. Default: 500 ms.
+    pub initial_backoff: Duration,
+    /// Upper bound on the back-off after multiplier application. Default: 10 s.
+    pub max_backoff: Duration,
+    /// Multiplier applied to the base back-off after each failed attempt.
+    /// Default: 2.0.
+    pub backoff_multiplier: f64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            initial_backoff: Duration::from_millis(500),
+            max_backoff: Duration::from_secs(10),
+            backoff_multiplier: 2.0,
+        }
+    }
+}
+
+impl RetryConfig {
+    /// A policy that never retries — equivalent to `max_attempts = 1`.
+    pub fn disabled() -> Self {
+        Self {
+            max_attempts: 1,
+            ..Default::default()
+        }
+    }
+}
+
+/// Full configuration for a [`GrpcTransport`] connection.
+///
+/// With defaults, the worst-case wall time before an error surfaces is roughly
+/// `max_attempts × request_timeout + Σbackoff` ≈ `3 × 30 s + (0.5 s + 1.0 s)`.
+/// Tune `retry`/`request_timeout`, or set `retry: RetryConfig::disabled()`, to
+/// shorten it.
+#[derive(Clone, Debug)]
+pub struct GrpcTransportConfig {
+    /// Timeout for the initial TCP + TLS handshake. Default: 10 s.
+    pub connect_timeout: Duration,
+    /// Per-call deadline applied to every RPC on this channel via
+    /// [`Endpoint::timeout`]. Each retry attempt gets a fresh copy. Default: 30 s.
+    pub request_timeout: Duration,
+    /// Retry policy for retryable errors.
+    pub retry: RetryConfig,
+    /// Optional TronGrid API key (`TRON-PRO-API-KEY` header).
+    pub api_key: Option<String>,
+}
+
+impl Default for GrpcTransportConfig {
+    fn default() -> Self {
+        Self {
+            connect_timeout: Duration::from_secs(10),
+            request_timeout: Duration::from_secs(30),
+            retry: RetryConfig::default(),
+            api_key: None,
+        }
+    }
+}
+
+/// Pre-connect builder for [`GrpcTransport`].
+///
+/// Accumulates a [`GrpcTransportConfig`] via chainable `with_*` setters, then
+/// [`connect`](Self::connect)s. This is the advanced entry point;
+/// [`ProviderBuilder`](crate::ProviderBuilder) is the primary one.
+#[derive(Clone, Debug, Default)]
+pub struct GrpcTransportBuilder {
+    config: GrpcTransportConfig,
+}
+
+impl GrpcTransportBuilder {
+    /// Override the connect (handshake) timeout.
+    pub fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.config.connect_timeout = timeout;
+        self
+    }
+
+    /// Override the per-call request timeout.
+    pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        self.config.request_timeout = timeout;
+        self
+    }
+
+    /// Override the retry policy.
+    pub fn with_retry(mut self, retry: RetryConfig) -> Self {
+        self.config.retry = retry;
+        self
+    }
+
+    /// Optionally set the TronGrid API key.
+    pub fn maybe_api_key(mut self, key: Option<impl Into<String>>) -> Self {
+        self.config.api_key = key.map(Into::into);
+        self
+    }
+
+    /// Connect using the accumulated configuration.
+    pub async fn connect(self, uri: impl AsRef<str>) -> Result<GrpcTransport, TransportErrorKind> {
+        GrpcTransport::connect_with_config(uri, self.config).await
+    }
+}
+
 /// gRPC transport wrapping a tonic [`Channel`].
 ///
 /// Cheap to clone — the channel is already `Arc`-backed.
@@ -99,17 +208,39 @@ type DatabaseClientI =
 pub struct GrpcTransport {
     channel: Channel,
     api_key: Option<String>,
+    retry: RetryConfig,
 }
 
 impl GrpcTransport {
-    /// Connect to a TRON gRPC node.
+    /// Connect to a TRON gRPC node with default timeouts and retry policy.
     ///
     /// `uri` may be:
     /// - `"https://grpc.trongrid.io:443"` (TronGrid mainnet, TLS)
     /// - `"http://127.0.0.1:50051"` (local node, plain HTTP/2)
+    ///
+    /// For custom timeouts / retry / API key use [`builder`](Self::builder).
     pub async fn connect(uri: impl AsRef<str>) -> Result<Self, TransportErrorKind> {
+        Self::connect_with_config(uri, GrpcTransportConfig::default()).await
+    }
+
+    /// Start an advanced, pre-connect [`GrpcTransportBuilder`] (timeouts, retry,
+    /// API key).
+    pub fn builder() -> GrpcTransportBuilder {
+        GrpcTransportBuilder::default()
+    }
+
+    /// Connect with an explicit [`GrpcTransportConfig`].
+    ///
+    /// Timeouts are baked into the tonic [`Endpoint`] so they cover every RPC
+    /// on the resulting channel with no per-call code.
+    pub(crate) async fn connect_with_config(
+        uri: impl AsRef<str>,
+        cfg: GrpcTransportConfig,
+    ) -> Result<Self, TransportErrorKind> {
         let endpoint = Endpoint::from_shared(uri.as_ref().to_owned())
-            .map_err(|e| TransportErrorKind::Malformed(e.to_string()))?;
+            .map_err(|e| TransportErrorKind::Malformed(e.to_string()))?
+            .connect_timeout(cfg.connect_timeout)
+            .timeout(cfg.request_timeout);
 
         #[cfg(feature = "grpc-tls")]
         let endpoint = endpoint
@@ -119,7 +250,8 @@ impl GrpcTransport {
         let channel = endpoint.connect().await?;
         Ok(Self {
             channel,
-            api_key: None,
+            api_key: cfg.api_key,
+            retry: cfg.retry,
         })
     }
 
@@ -127,6 +259,50 @@ impl GrpcTransport {
     pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
         self.api_key = Some(key.into());
         self
+    }
+
+    /// Retry `f` up to `retry.max_attempts` times on retryable errors, with
+    /// exponential back-off and ±25 % jitter.
+    ///
+    /// `f` is `Fn` so it can be invoked once per attempt; each invocation should
+    /// clone a fresh client + request into an `async move` future (see the
+    /// `retry_unary!` macro) so nothing borrows `self` across `.await`.
+    ///
+    /// `broadcast_transaction` must **never** be wrapped in this helper
+    /// (double-spend risk).
+    async fn call_with_retry<F, Fut, T>(&self, f: F) -> Result<T, TransportErrorKind>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = Result<T, TransportErrorKind>>,
+    {
+        let max = self.retry.max_attempts.max(1);
+        let mut backoff = self.retry.initial_backoff;
+        let mut attempt = 0u32;
+
+        loop {
+            match f().await {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    attempt += 1;
+                    if attempt >= max || !e.is_retryable() {
+                        return Err(e);
+                    }
+                    // Jitter the sleep value only; advance the base backoff
+                    // separately so randomness never accumulates in the sequence.
+                    let jittered = backoff.mul_f64(0.75 + fastrand::f64() * 0.5);
+                    tracing::debug!(
+                        attempt,
+                        backoff_ms = jittered.as_millis(),
+                        error = %e,
+                        "retrying gRPC call"
+                    );
+                    tokio::time::sleep(jittered).await;
+                    backoff = backoff
+                        .mul_f64(self.retry.backoff_multiplier)
+                        .min(self.retry.max_backoff);
+                }
+            }
+        }
     }
 
     fn wallet_client(&self) -> WalletClientI {
@@ -219,26 +395,42 @@ fn hex_digit(b: u8) -> Result<u8, String> {
     }
 }
 
+/// Route a unary gRPC call through [`GrpcTransport::call_with_retry`].
+///
+/// - `$client`: client accessor — `wallet_client`, `wallet_extension_client`, or `database_client`.
+/// - `$method`: the generated tonic client method.
+/// - `$req`: a **`Clone`** request *identifier* (all prost messages are `Clone`).
+///
+/// Clones a fresh client + request per attempt into an `async move` future, so
+/// nothing borrows `self`/`$req` across `.await`. Never use for
+/// `broadcast_transaction`.
+macro_rules! retry_unary {
+    ($self:ident, $client:ident, $method:ident, $req:ident) => {
+        $self
+            .call_with_retry(|| {
+                let mut client = $self.$client();
+                let req = $req.clone();
+                // `?` converts tonic::Status -> TransportErrorKind via `#[from]`.
+                async move { Ok(client.$method(req).await?.into_inner()) }
+            })
+            .await
+    };
+}
+
 impl TronTransport for GrpcTransport {
     type Error = TransportErrorKind;
 
     // --- Block ---
 
     async fn get_now_block(&self) -> Result<BlockInfo, Self::Error> {
-        let ext = self
-            .wallet_client()
-            .get_now_block2(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let ext = retry_unary!(self, wallet_client, get_now_block2, req)?;
         codec::block_from_extention(ext)
     }
 
     async fn get_block_by_number(&self, num: i64) -> Result<BlockInfo, Self::Error> {
-        let ext = self
-            .wallet_client()
-            .get_block_by_num2(proto::NumberMessage { num })
-            .await?
-            .into_inner();
+        let req = proto::NumberMessage { num };
+        let ext = retry_unary!(self, wallet_client, get_block_by_num2, req)?;
         codec::block_from_extention(ext)
     }
 
@@ -249,7 +441,7 @@ impl TronTransport for GrpcTransport {
             address: address.as_bytes().to_vec(),
             ..Default::default()
         };
-        let account = self.wallet_client().get_account(req).await?.into_inner();
+        let account = retry_unary!(self, wallet_client, get_account, req)?;
         codec::account_from_proto(account, address)
     }
 
@@ -258,11 +450,7 @@ impl TronTransport for GrpcTransport {
             address: address.as_bytes().to_vec(),
             ..Default::default()
         };
-        let res = self
-            .wallet_client()
-            .get_account_resource(req)
-            .await?
-            .into_inner();
+        let res = retry_unary!(self, wallet_client, get_account_resource, req)?;
         Ok(codec::account_resource_from_proto(res))
     }
 
@@ -283,11 +471,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: tx_id.as_slice().to_vec(),
         };
-        let tx = self
-            .wallet_client()
-            .get_transaction_by_id(req)
-            .await?
-            .into_inner();
+        let tx = retry_unary!(self, wallet_client, get_transaction_by_id, req)?;
         codec::signed_tx_from_proto(tx)
     }
 
@@ -298,11 +482,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: tx_id.as_slice().to_vec(),
         };
-        let info = self
-            .wallet_client()
-            .get_transaction_info_by_id(req)
-            .await?
-            .into_inner();
+        let info = retry_unary!(self, wallet_client, get_transaction_info_by_id, req)?;
         codec::transaction_info_from_proto(info)
     }
 
@@ -310,11 +490,7 @@ impl TronTransport for GrpcTransport {
 
     async fn transfer_trx(&self, params: TransferContract) -> Result<RawTransaction, Self::Error> {
         let req = codec::transfer_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .create_transaction2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, create_transaction2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -323,11 +499,7 @@ impl TronTransport for GrpcTransport {
         params: AccountPermissionUpdateContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::account_permission_update_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .account_permission_update(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, account_permission_update, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -336,11 +508,7 @@ impl TronTransport for GrpcTransport {
         params: CreateSmartContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::create_smart_contract_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .deploy_contract(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, deploy_contract, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -351,11 +519,7 @@ impl TronTransport for GrpcTransport {
         params: TriggerSmartContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::trigger_smart_contract_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .trigger_contract(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, trigger_contract, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -364,21 +528,13 @@ impl TronTransport for GrpcTransport {
         params: TriggerSmartContract,
     ) -> Result<ConstantCallResult, Self::Error> {
         let req = codec::trigger_smart_contract_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .trigger_constant_contract(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, trigger_constant_contract, req)?;
         codec::constant_result_from_extention(ext)
     }
 
     async fn estimate_energy(&self, params: TriggerSmartContract) -> Result<i64, Self::Error> {
         let req = codec::trigger_smart_contract_to_proto(params);
-        let msg = self
-            .wallet_client()
-            .estimate_energy(req)
-            .await?
-            .into_inner();
+        let msg = retry_unary!(self, wallet_client, estimate_energy, req)?;
         Self::check_return(msg.result)?;
         Ok(msg.energy_required)
     }
@@ -399,11 +555,7 @@ impl TronTransport for GrpcTransport {
                 .map(|a| a.as_bytes().to_vec())
                 .unwrap_or_default(),
         };
-        let ext = self
-            .wallet_client()
-            .freeze_balance2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, freeze_balance2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -419,11 +571,7 @@ impl TronTransport for GrpcTransport {
                 .map(|a| a.as_bytes().to_vec())
                 .unwrap_or_default(),
         };
-        let ext = self
-            .wallet_client()
-            .unfreeze_balance2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, unfreeze_balance2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -436,11 +584,7 @@ impl TronTransport for GrpcTransport {
             frozen_balance: params.frozen_balance.as_sun(),
             resource: params.resource.as_i32(),
         };
-        let ext = self
-            .wallet_client()
-            .freeze_balance_v2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, freeze_balance_v2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -453,11 +597,7 @@ impl TronTransport for GrpcTransport {
             unfreeze_balance: params.unfreeze_balance.as_sun(),
             resource: params.resource.as_i32(),
         };
-        let ext = self
-            .wallet_client()
-            .unfreeze_balance_v2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, unfreeze_balance_v2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -473,11 +613,7 @@ impl TronTransport for GrpcTransport {
             lock: params.lock_period.is_some(),
             lock_period: params.lock_period.unwrap_or(0),
         };
-        let ext = self
-            .wallet_client()
-            .delegate_resource(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, delegate_resource, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -491,11 +627,7 @@ impl TronTransport for GrpcTransport {
             balance: params.balance.as_sun(),
             receiver_address: params.receiver_address.as_bytes().to_vec(),
         };
-        let ext = self
-            .wallet_client()
-            .un_delegate_resource(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, un_delegate_resource, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -506,11 +638,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::WithdrawExpireUnfreezeContract {
             owner_address: params.owner_address.as_bytes().to_vec(),
         };
-        let ext = self
-            .wallet_client()
-            .withdraw_expire_unfreeze(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, withdraw_expire_unfreeze, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -521,11 +649,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::CancelAllUnfreezeV2Contract {
             owner_address: params.owner_address.as_bytes().to_vec(),
         };
-        let ext = self
-            .wallet_client()
-            .cancel_all_unfreeze_v2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, cancel_all_unfreeze_v2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -536,11 +660,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::WithdrawBalanceContract {
             owner_address: params.owner_address.as_bytes().to_vec(),
         };
-        let ext = self
-            .wallet_client()
-            .withdraw_balance2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, withdraw_balance2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -555,11 +675,7 @@ impl TronTransport for GrpcTransport {
             from_address: from.as_bytes().to_vec(),
             to_address: to.as_bytes().to_vec(),
         };
-        let list = self
-            .wallet_client()
-            .get_delegated_resource(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_delegated_resource, req)?;
         list.delegated_resource
             .into_iter()
             .map(codec::delegated_resource_from_proto)
@@ -573,11 +689,12 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: address.as_bytes().to_vec(),
         };
-        let idx = self
-            .wallet_client()
-            .get_delegated_resource_account_index(req)
-            .await?
-            .into_inner();
+        let idx = retry_unary!(
+            self,
+            wallet_client,
+            get_delegated_resource_account_index,
+            req
+        )?;
         codec::delegated_resource_index_from_proto(idx)
     }
 
@@ -590,11 +707,7 @@ impl TronTransport for GrpcTransport {
             from_address: from.as_bytes().to_vec(),
             to_address: to.as_bytes().to_vec(),
         };
-        let list = self
-            .wallet_client()
-            .get_delegated_resource_v2(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_delegated_resource_v2, req)?;
         list.delegated_resource
             .into_iter()
             .map(codec::delegated_resource_from_proto)
@@ -608,11 +721,12 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: address.as_bytes().to_vec(),
         };
-        let idx = self
-            .wallet_client()
-            .get_delegated_resource_account_index_v2(req)
-            .await?
-            .into_inner();
+        let idx = retry_unary!(
+            self,
+            wallet_client,
+            get_delegated_resource_account_index_v2,
+            req
+        )?;
         codec::delegated_resource_index_from_proto(idx)
     }
 
@@ -625,11 +739,7 @@ impl TronTransport for GrpcTransport {
             owner_address: address.as_bytes().to_vec(),
             r#type: resource.as_i32(),
         };
-        let res = self
-            .wallet_client()
-            .get_can_delegated_max_size(req)
-            .await?
-            .into_inner();
+        let res = retry_unary!(self, wallet_client, get_can_delegated_max_size, req)?;
         Ok(Trx::from_sun_unchecked(res.max_size))
     }
 
@@ -637,22 +747,15 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: address.as_bytes().to_vec(),
         };
-        let res = self
-            .wallet_client()
-            .get_reward_info(req)
-            .await?
-            .into_inner();
+        let res = retry_unary!(self, wallet_client, get_reward_info, req)?;
         Ok(Trx::from_sun_unchecked(res.num))
     }
 
     // --- Network ---
 
     async fn get_chain_parameters(&self) -> Result<HashMap<String, i64>, Self::Error> {
-        let params = self
-            .wallet_client()
-            .get_chain_parameters(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let params = retry_unary!(self, wallet_client, get_chain_parameters, req)?;
         Ok(params
             .chain_parameter
             .into_iter()
@@ -664,7 +767,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: address.as_bytes().to_vec(),
         };
-        let contract = self.wallet_client().get_contract(req).await?.into_inner();
+        let contract = retry_unary!(self, wallet_client, get_contract, req)?;
         Ok(codec::smart_contract_from_proto(contract))
     }
 
@@ -672,20 +775,13 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: address.as_bytes().to_vec(),
         };
-        let wrapper = self
-            .wallet_client()
-            .get_contract_info(req)
-            .await?
-            .into_inner();
+        let wrapper = retry_unary!(self, wallet_client, get_contract_info, req)?;
         Ok(codec::smart_contract_info_from_wrapper(wrapper))
     }
 
     async fn list_witnesses(&self) -> Result<Vec<WitnessInfo>, Self::Error> {
-        let list = self
-            .wallet_client()
-            .list_witnesses(proto::EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = proto::EmptyMessage::default();
+        let list = retry_unary!(self, wallet_client, list_witnesses, req)?;
         Ok(list
             .witnesses
             .into_iter()
@@ -700,11 +796,7 @@ impl TronTransport for GrpcTransport {
         params: ProposalCreateContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::proposal_create_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .proposal_create(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, proposal_create, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -713,11 +805,7 @@ impl TronTransport for GrpcTransport {
         params: ProposalApproveContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::proposal_approve_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .proposal_approve(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, proposal_approve, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -726,20 +814,13 @@ impl TronTransport for GrpcTransport {
         params: ProposalDeleteContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::proposal_delete_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .proposal_delete(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, proposal_delete, req)?;
         Self::raw_from_extention(ext)
     }
 
     async fn list_proposals(&self) -> Result<Vec<ProposalInfo>, Self::Error> {
-        let list = self
-            .wallet_client()
-            .list_proposals(proto::EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = proto::EmptyMessage::default();
+        let list = retry_unary!(self, wallet_client, list_proposals, req)?;
         Ok(list
             .proposals
             .into_iter()
@@ -753,11 +834,7 @@ impl TronTransport for GrpcTransport {
         limit: i64,
     ) -> Result<Vec<ProposalInfo>, Self::Error> {
         let req = proto::PaginatedMessage { offset, limit };
-        let list = self
-            .wallet_client()
-            .get_paginated_proposal_list(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_paginated_proposal_list, req)?;
         Ok(list
             .proposals
             .into_iter()
@@ -769,11 +846,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: proposal_id.to_be_bytes().to_vec(),
         };
-        let proposal = self
-            .wallet_client()
-            .get_proposal_by_id(req)
-            .await?
-            .into_inner();
+        let proposal = retry_unary!(self, wallet_client, get_proposal_by_id, req)?;
         Ok(codec::proposal_from_proto(proposal))
     }
 
@@ -784,11 +857,7 @@ impl TronTransport for GrpcTransport {
         params: AssetIssueContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::asset_issue_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .create_asset_issue2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, create_asset_issue2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -797,11 +866,7 @@ impl TronTransport for GrpcTransport {
         params: TransferAssetContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::transfer_asset_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .transfer_asset2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, transfer_asset2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -812,11 +877,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: token_id.as_bytes().to_vec(),
         };
-        let asset = self
-            .wallet_client()
-            .get_asset_issue_by_id(req)
-            .await?
-            .into_inner();
+        let asset = retry_unary!(self, wallet_client, get_asset_issue_by_id, req)?;
         codec::asset_info_from_proto(asset)
     }
 
@@ -828,11 +889,7 @@ impl TronTransport for GrpcTransport {
             address: address.as_bytes().to_vec(),
             ..Default::default()
         };
-        let list = self
-            .wallet_client()
-            .get_asset_issue_by_account(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_asset_issue_by_account, req)?;
         list.asset_issue
             .into_iter()
             .filter_map(|a| codec::asset_info_from_proto(a).transpose())
@@ -845,11 +902,7 @@ impl TronTransport for GrpcTransport {
         limit: i64,
     ) -> Result<Vec<AssetInfo>, Self::Error> {
         let req = proto::PaginatedMessage { offset, limit };
-        let list = self
-            .wallet_client()
-            .get_paginated_asset_issue_list(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_paginated_asset_issue_list, req)?;
         list.asset_issue
             .into_iter()
             .filter_map(|a| codec::asset_info_from_proto(a).transpose())
@@ -860,11 +913,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: name.as_bytes().to_vec(),
         };
-        let asset = self
-            .wallet_client()
-            .get_asset_issue_by_name(req)
-            .await?
-            .into_inner();
+        let asset = retry_unary!(self, wallet_client, get_asset_issue_by_name, req)?;
         codec::asset_info_from_proto(asset)
     }
 
@@ -875,11 +924,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: name.as_bytes().to_vec(),
         };
-        let list = self
-            .wallet_client()
-            .get_asset_issue_list_by_name(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_asset_issue_list_by_name, req)?;
         list.asset_issue
             .into_iter()
             .filter_map(|a| codec::asset_info_from_proto(a).transpose())
@@ -891,11 +936,7 @@ impl TronTransport for GrpcTransport {
         params: ParticipateAssetIssueContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::participate_asset_issue_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .participate_asset_issue2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, participate_asset_issue2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -904,11 +945,7 @@ impl TronTransport for GrpcTransport {
         params: UnfreezeAssetContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::unfreeze_asset_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .unfreeze_asset2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, unfreeze_asset2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -917,7 +954,7 @@ impl TronTransport for GrpcTransport {
         params: UpdateAssetContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::update_asset_to_proto(params);
-        let ext = self.wallet_client().update_asset2(req).await?.into_inner();
+        let ext = retry_unary!(self, wallet_client, update_asset2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -926,11 +963,7 @@ impl TronTransport for GrpcTransport {
         params: CreateAccountContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::create_account_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .create_account2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, create_account2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -939,11 +972,7 @@ impl TronTransport for GrpcTransport {
         params: VoteWitnessContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::vote_witness_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .vote_witness_account2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, vote_witness_account2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -952,11 +981,7 @@ impl TronTransport for GrpcTransport {
         params: UpdateAccountContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::update_account_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .update_account2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, update_account2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -966,7 +991,7 @@ impl TronTransport for GrpcTransport {
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::set_account_id_to_proto(params);
         // SetAccountId only has a v1 endpoint (returns Transaction, not TransactionExtention).
-        let tx = self.wallet_client().set_account_id(req).await?.into_inner();
+        let tx = retry_unary!(self, wallet_client, set_account_id, req)?;
         codec::raw_from_plain(tx)
     }
 
@@ -975,11 +1000,7 @@ impl TronTransport for GrpcTransport {
         params: ClearContractAbiContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::clear_contract_abi_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .clear_contract_abi(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, clear_contract_abi, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -988,7 +1009,7 @@ impl TronTransport for GrpcTransport {
         params: UpdateSettingContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::update_setting_to_proto(params);
-        let ext = self.wallet_client().update_setting(req).await?.into_inner();
+        let ext = retry_unary!(self, wallet_client, update_setting, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -997,11 +1018,7 @@ impl TronTransport for GrpcTransport {
         params: UpdateEnergyLimitContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::update_energy_limit_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .update_energy_limit(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, update_energy_limit, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1014,11 +1031,7 @@ impl TronTransport for GrpcTransport {
             owner_address: address.as_bytes().to_vec(),
             timestamp: timestamp_ms,
         };
-        let res = self
-            .wallet_client()
-            .get_can_withdraw_unfreeze_amount(req)
-            .await?
-            .into_inner();
+        let res = retry_unary!(self, wallet_client, get_can_withdraw_unfreeze_amount, req)?;
         Ok(Trx::from_sun_unchecked(res.amount))
     }
 
@@ -1026,78 +1039,53 @@ impl TronTransport for GrpcTransport {
         let req = proto::GetAvailableUnfreezeCountRequestMessage {
             owner_address: address.as_bytes().to_vec(),
         };
-        let res = self
-            .wallet_client()
-            .get_available_unfreeze_count(req)
-            .await?
-            .into_inner();
+        let res = retry_unary!(self, wallet_client, get_available_unfreeze_count, req)?;
         Ok(res.count)
     }
 
     // --- Pricing / fees ---
 
     async fn get_bandwidth_prices(&self) -> Result<String, Self::Error> {
-        let res = self
-            .wallet_client()
-            .get_bandwidth_prices(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let res = retry_unary!(self, wallet_client, get_bandwidth_prices, req)?;
         Ok(res.prices)
     }
 
     async fn get_energy_prices(&self) -> Result<String, Self::Error> {
-        let res = self
-            .wallet_client()
-            .get_energy_prices(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let res = retry_unary!(self, wallet_client, get_energy_prices, req)?;
         Ok(res.prices)
     }
 
     async fn get_memo_fee(&self) -> Result<u64, Self::Error> {
-        let res = self
-            .wallet_client()
-            .get_memo_fee(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let res = retry_unary!(self, wallet_client, get_memo_fee, req)?;
         Ok(res.prices.parse::<u64>().unwrap_or(0))
     }
 
     // --- Network / chain ---
 
     async fn get_next_maintenance_time(&self) -> Result<i64, Self::Error> {
-        let res = self
-            .wallet_client()
-            .get_next_maintenance_time(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let res = retry_unary!(self, wallet_client, get_next_maintenance_time, req)?;
         Ok(res.num)
     }
 
     async fn get_burn_trx(&self) -> Result<u64, Self::Error> {
-        let res = self
-            .wallet_client()
-            .get_burn_trx(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let res = retry_unary!(self, wallet_client, get_burn_trx, req)?;
         Ok(res.num as u64)
     }
 
     async fn get_total_transactions(&self) -> Result<u64, Self::Error> {
-        let res = self
-            .wallet_client()
-            .total_transaction(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let res = retry_unary!(self, wallet_client, total_transaction, req)?;
         Ok(res.num as u64)
     }
 
     async fn get_node_info(&self) -> Result<NodeInfo, Self::Error> {
-        let info = self
-            .wallet_client()
-            .get_node_info(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let info = retry_unary!(self, wallet_client, get_node_info, req)?;
         Ok(NodeInfo {
             block: info.block,
             solidity_block: info.solidity_block,
@@ -1106,11 +1094,8 @@ impl TronTransport for GrpcTransport {
     }
 
     async fn list_nodes(&self) -> Result<Vec<NodeAddress>, Self::Error> {
-        let list = self
-            .wallet_client()
-            .list_nodes(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let list = retry_unary!(self, wallet_client, list_nodes, req)?;
         Ok(list
             .nodes
             .into_iter()
@@ -1124,11 +1109,8 @@ impl TronTransport for GrpcTransport {
     }
 
     async fn get_dynamic_properties(&self) -> Result<ChainProperties, Self::Error> {
-        let props = self
-            .database_client()
-            .get_dynamic_properties(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let props = retry_unary!(self, database_client, get_dynamic_properties, req)?;
         // DynamicProperties only has last_solidity_block_num; use block ref for head info.
         // Return what the proto gives us directly.
         Ok(ChainProperties {
@@ -1144,21 +1126,13 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: block_id.as_slice().to_vec(),
         };
-        let block = self
-            .wallet_client()
-            .get_block_by_id(req)
-            .await?
-            .into_inner();
+        let block = retry_unary!(self, wallet_client, get_block_by_id, req)?;
         codec::block_from_plain(block)
     }
 
     async fn get_blocks_by_latest_num(&self, count: i64) -> Result<Vec<BlockInfo>, Self::Error> {
         let req = proto::NumberMessage { num: count };
-        let list = self
-            .wallet_client()
-            .get_block_by_latest_num2(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_block_by_latest_num2, req)?;
         list.block
             .into_iter()
             .map(codec::block_from_extention)
@@ -1174,11 +1148,7 @@ impl TronTransport for GrpcTransport {
             start_num: start,
             end_num: end,
         };
-        let list = self
-            .wallet_client()
-            .get_block_by_limit_next2(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_block_by_limit_next2, req)?;
         list.block
             .into_iter()
             .map(codec::block_from_extention)
@@ -1187,11 +1157,7 @@ impl TronTransport for GrpcTransport {
 
     async fn get_transaction_count_by_block_num(&self, block_num: i64) -> Result<u64, Self::Error> {
         let req = proto::NumberMessage { num: block_num };
-        let res = self
-            .wallet_client()
-            .get_transaction_count_by_block_num(req)
-            .await?
-            .into_inner();
+        let res = retry_unary!(self, wallet_client, get_transaction_count_by_block_num, req)?;
         Ok(res.num as u64)
     }
 
@@ -1211,11 +1177,12 @@ impl TronTransport for GrpcTransport {
             offset,
             limit,
         };
-        let list = self
-            .wallet_extension_client()
-            .get_transactions_from_this2(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(
+            self,
+            wallet_extension_client,
+            get_transactions_from_this2,
+            req
+        )?;
         list.transaction
             .into_iter()
             .map(GrpcTransport::raw_from_extention)
@@ -1236,11 +1203,12 @@ impl TronTransport for GrpcTransport {
             offset,
             limit,
         };
-        let list = self
-            .wallet_extension_client()
-            .get_transactions_to_this2(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(
+            self,
+            wallet_extension_client,
+            get_transactions_to_this2,
+            req
+        )?;
         list.transaction
             .into_iter()
             .map(GrpcTransport::raw_from_extention)
@@ -1252,11 +1220,7 @@ impl TronTransport for GrpcTransport {
         block_num: i64,
     ) -> Result<Vec<TransactionInfo>, Self::Error> {
         let req = proto::NumberMessage { num: block_num };
-        let list = self
-            .wallet_client()
-            .get_transaction_info_by_block_num(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_transaction_info_by_block_num, req)?;
         list.transaction_info
             .into_iter()
             .filter_map(|info| codec::transaction_info_from_proto(info).transpose())
@@ -1266,11 +1230,8 @@ impl TronTransport for GrpcTransport {
     // --- Pending pool ---
 
     async fn get_pending_size(&self) -> Result<u64, Self::Error> {
-        let res = self
-            .wallet_client()
-            .get_pending_size(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let res = retry_unary!(self, wallet_client, get_pending_size, req)?;
         Ok(res.num as u64)
     }
 
@@ -1281,21 +1242,14 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: tx_id.as_slice().to_vec(),
         };
-        let tx = self
-            .wallet_client()
-            .get_transaction_from_pending(req)
-            .await?
-            .into_inner();
+        let tx = retry_unary!(self, wallet_client, get_transaction_from_pending, req)?;
         codec::raw_from_plain(tx)
     }
 
     async fn get_pending_transactions(&self) -> Result<Vec<RawTransaction>, Self::Error> {
         // GetTransactionListFromPending returns TransactionIdList (list of tx id hex strings).
-        let id_list = self
-            .wallet_client()
-            .get_transaction_list_from_pending(EmptyMessage::default())
-            .await?
-            .into_inner();
+        let req = EmptyMessage::default();
+        let id_list = retry_unary!(self, wallet_client, get_transaction_list_from_pending, req)?;
 
         // Fan out all per-ID fetches concurrently (mirrors alloy's try_join_all pattern)
         // rather than issuing N sequential RPC calls.
@@ -1305,11 +1259,7 @@ impl TronTransport for GrpcTransport {
                 let id_bytes = decode_hex(&tx_id_hex)
                     .map_err(|e| TransportErrorKind::Malformed(format!("bad tx id hex: {e}")))?;
                 let req = proto::BytesMessage { value: id_bytes };
-                let tx = transport
-                    .wallet_client()
-                    .get_transaction_from_pending(req)
-                    .await?
-                    .into_inner();
+                let tx = retry_unary!(transport, wallet_client, get_transaction_from_pending, req)?;
                 codec::raw_from_plain(tx)
             }
         });
@@ -1323,11 +1273,7 @@ impl TronTransport for GrpcTransport {
         tx: &SignedTransaction,
     ) -> Result<SignWeight, Self::Error> {
         let proto_tx = signed_to_proto(tx)?;
-        let weight = self
-            .wallet_client()
-            .get_transaction_sign_weight(proto_tx)
-            .await?
-            .into_inner();
+        let weight = retry_unary!(self, wallet_client, get_transaction_sign_weight, proto_tx)?;
         codec::sign_weight_from_proto(weight)
     }
 
@@ -1336,11 +1282,7 @@ impl TronTransport for GrpcTransport {
         tx: &SignedTransaction,
     ) -> Result<Vec<Address>, Self::Error> {
         let proto_tx = signed_to_proto(tx)?;
-        let approved = self
-            .wallet_client()
-            .get_transaction_approved_list(proto_tx)
-            .await?
-            .into_inner();
+        let approved = retry_unary!(self, wallet_client, get_transaction_approved_list, proto_tx)?;
         approved
             .approved_list
             .into_iter()
@@ -1358,11 +1300,7 @@ impl TronTransport for GrpcTransport {
             address: address.as_bytes().to_vec(),
             ..Default::default()
         };
-        let msg = self
-            .wallet_client()
-            .get_account_net(req)
-            .await?
-            .into_inner();
+        let msg = retry_unary!(self, wallet_client, get_account_net, req)?;
         Ok(AccountNet {
             free_net_used: msg.free_net_used,
             free_net_limit: msg.free_net_limit,
@@ -1382,11 +1320,7 @@ impl TronTransport for GrpcTransport {
         params: CreateWitnessContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::create_witness_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .create_witness2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, create_witness2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1395,11 +1329,7 @@ impl TronTransport for GrpcTransport {
         params: UpdateWitnessContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::update_witness_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .update_witness2(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, update_witness2, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1408,11 +1338,7 @@ impl TronTransport for GrpcTransport {
         params: UpdateBrokerageContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::update_brokerage_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .update_brokerage(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, update_brokerage, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1420,11 +1346,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: address.as_bytes().to_vec(),
         };
-        let res = self
-            .wallet_client()
-            .get_brokerage_info(req)
-            .await?
-            .into_inner();
+        let res = retry_unary!(self, wallet_client, get_brokerage_info, req)?;
         Ok(res.num as u64)
     }
 
@@ -1432,11 +1354,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: address.as_bytes().to_vec(),
         };
-        let res = self
-            .wallet_client()
-            .get_reward_info(req)
-            .await?
-            .into_inner();
+        let res = retry_unary!(self, wallet_client, get_reward_info, req)?;
         Ok(res.num as u64)
     }
 
@@ -1447,11 +1365,7 @@ impl TronTransport for GrpcTransport {
         params: ExchangeCreateContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::exchange_create_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .exchange_create(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, exchange_create, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1460,11 +1374,7 @@ impl TronTransport for GrpcTransport {
         params: ExchangeInjectContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::exchange_inject_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .exchange_inject(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, exchange_inject, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1473,11 +1383,7 @@ impl TronTransport for GrpcTransport {
         params: ExchangeWithdrawContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::exchange_withdraw_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .exchange_withdraw(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, exchange_withdraw, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1486,20 +1392,13 @@ impl TronTransport for GrpcTransport {
         params: ExchangeTransactionContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::exchange_transaction_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .exchange_transaction(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, exchange_transaction, req)?;
         Self::raw_from_extention(ext)
     }
 
     async fn list_exchanges(&self) -> Result<Vec<ExchangeInfo>, Self::Error> {
-        let list = self
-            .wallet_client()
-            .list_exchanges(EmptyMessage {})
-            .await?
-            .into_inner();
+        let req = EmptyMessage {};
+        let list = retry_unary!(self, wallet_client, list_exchanges, req)?;
         list.exchanges
             .into_iter()
             .map(codec::exchange_info_from_proto)
@@ -1512,11 +1411,7 @@ impl TronTransport for GrpcTransport {
         limit: i64,
     ) -> Result<Vec<ExchangeInfo>, Self::Error> {
         let req = proto::PaginatedMessage { offset, limit };
-        let list = self
-            .wallet_client()
-            .get_paginated_exchange_list(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_paginated_exchange_list, req)?;
         list.exchanges
             .into_iter()
             .map(codec::exchange_info_from_proto)
@@ -1532,11 +1427,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: id_bytes.to_vec(),
         };
-        let exchange = self
-            .wallet_client()
-            .get_exchange_by_id(req)
-            .await?
-            .into_inner();
+        let exchange = retry_unary!(self, wallet_client, get_exchange_by_id, req)?;
         if exchange.exchange_id == 0 && exchange.creator_address.is_empty() {
             return Ok(None);
         }
@@ -1550,11 +1441,7 @@ impl TronTransport for GrpcTransport {
         params: MarketSellAssetContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::market_sell_asset_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .market_sell_asset(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, market_sell_asset, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1563,11 +1450,7 @@ impl TronTransport for GrpcTransport {
         params: MarketCancelOrderContract,
     ) -> Result<RawTransaction, Self::Error> {
         let req = codec::market_cancel_order_to_proto(params);
-        let ext = self
-            .wallet_client()
-            .market_cancel_order(req)
-            .await?
-            .into_inner();
+        let ext = retry_unary!(self, wallet_client, market_cancel_order, req)?;
         Self::raw_from_extention(ext)
     }
 
@@ -1578,11 +1461,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: order_id.to_vec(),
         };
-        let order = self
-            .wallet_client()
-            .get_market_order_by_id(req)
-            .await?
-            .into_inner();
+        let order = retry_unary!(self, wallet_client, get_market_order_by_id, req)?;
         if order.order_id.is_empty() {
             return Ok(None);
         }
@@ -1596,11 +1475,7 @@ impl TronTransport for GrpcTransport {
         let req = proto::BytesMessage {
             value: address.as_bytes().to_vec(),
         };
-        let list = self
-            .wallet_client()
-            .get_market_order_by_account(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_market_order_by_account, req)?;
         list.orders
             .into_iter()
             .map(codec::market_order_from_proto)
@@ -1616,11 +1491,7 @@ impl TronTransport for GrpcTransport {
             sell_token_id: sell_token_id.as_bytes().to_vec(),
             buy_token_id: buy_token_id.as_bytes().to_vec(),
         };
-        let list = self
-            .wallet_client()
-            .get_market_price_by_pair(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_market_price_by_pair, req)?;
         Ok(list
             .prices
             .into_iter()
@@ -1637,11 +1508,7 @@ impl TronTransport for GrpcTransport {
             sell_token_id: sell_token_id.as_bytes().to_vec(),
             buy_token_id: buy_token_id.as_bytes().to_vec(),
         };
-        let list = self
-            .wallet_client()
-            .get_market_order_list_by_pair(req)
-            .await?
-            .into_inner();
+        let list = retry_unary!(self, wallet_client, get_market_order_list_by_pair, req)?;
         list.orders
             .into_iter()
             .map(codec::market_order_from_proto)
@@ -1649,11 +1516,8 @@ impl TronTransport for GrpcTransport {
     }
 
     async fn get_market_pair_list(&self) -> Result<Vec<MarketOrderPair>, Self::Error> {
-        let list = self
-            .wallet_client()
-            .get_market_pair_list(EmptyMessage {})
-            .await?
-            .into_inner();
+        let req = EmptyMessage {};
+        let list = retry_unary!(self, wallet_client, get_market_pair_list, req)?;
         Ok(list
             .order_pair
             .into_iter()

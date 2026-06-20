@@ -24,6 +24,7 @@ futures     = { workspace = true }
 tokio       = { workspace = true }
 tracing     = { workspace = true }
 thiserror   = { workspace = true }
+fastrand    = { workspace = true }
 
 [build-dependencies]
 tonic-prost-build = { version = "0.14" }
