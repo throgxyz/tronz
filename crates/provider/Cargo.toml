@@ -35,6 +35,8 @@ default = ["grpc-tls"]
 grpc-tls = ["tonic/tls-native-roots"]
 # gRPC without TLS (plain HTTP/2, local nodes)
 grpc = []
+# In-memory `MockTransport` for testing without a live node.
+mock = []
 
 [dev-dependencies]
 tronz-primitives = { workspace = true }

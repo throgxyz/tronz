@@ -29,6 +29,7 @@ pub struct ProviderBuilder<F> {
     connect_timeout: Option<Duration>,
     request_timeout: Option<Duration>,
     retry: Option<RetryConfig>,
+    endpoints: Vec<String>,
 }
 
 impl ProviderBuilder<Identity> {
@@ -40,6 +41,7 @@ impl ProviderBuilder<Identity> {
             connect_timeout: None,
             request_timeout: None,
             retry: None,
+            endpoints: Vec::new(),
         }
     }
 }
@@ -89,6 +91,16 @@ impl<F: TxFiller> ProviderBuilder<F> {
         self
     }
 
+    /// Add equivalent node endpoints for client-side failover / load balancing.
+    ///
+    /// These join the `uri` passed to [`on_grpc`](Self::on_grpc); with two or
+    /// more total endpoints the channel load-balances and fails over across
+    /// them (see [`GrpcTransportConfig::endpoints`]).
+    pub fn with_endpoints(mut self, endpoints: Vec<String>) -> Self {
+        self.endpoints = endpoints;
+        self
+    }
+
     /// Add both the TAPOS filler and a 20 TRX default fee-limit filler in one
     /// call — the most common setup for a read/write provider.
     ///
@@ -110,6 +122,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
             connect_timeout,
             request_timeout,
             retry,
+            endpoints,
         } = self;
         ProviderBuilder {
             filler: JoinFill::new(filler, TaposFiller::new()),
@@ -117,6 +130,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
             connect_timeout,
             request_timeout,
             retry,
+            endpoints,
         }
     }
 
@@ -128,6 +142,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
             connect_timeout,
             request_timeout,
             retry,
+            endpoints,
         } = self;
         ProviderBuilder {
             filler: JoinFill::new(filler, FeeLimitFiller::new(limit)),
@@ -135,6 +150,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
             connect_timeout,
             request_timeout,
             retry,
+            endpoints,
         }
     }
 
@@ -149,6 +165,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
             connect_timeout,
             request_timeout,
             retry,
+            endpoints,
         } = self;
         ProviderBuilder {
             filler: JoinFill::new(filler, SignerFiller::new(signer)),
@@ -156,6 +173,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
             connect_timeout,
             request_timeout,
             retry,
+            endpoints,
         }
     }
 
@@ -168,6 +186,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
     pub async fn on_grpc(self, uri: impl AsRef<str>) -> Result<FilledProvider<GrpcTransport, F>> {
         let mut cfg = GrpcTransportConfig {
             api_key: self.api_key,
+            endpoints: self.endpoints,
             ..Default::default()
         };
         if let Some(t) = self.connect_timeout {
@@ -236,6 +255,11 @@ impl<T: TronTransport, F: TxFiller> FilledProvider<T, F> {
     pub fn filler(&self) -> &F {
         &self.filler
     }
+}
+
+impl<T: TronTransport, F: TxFiller + HasSigner + 'static> crate::provider::private::Sealed
+    for FilledProvider<T, F>
+{
 }
 
 impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for FilledProvider<T, F> {

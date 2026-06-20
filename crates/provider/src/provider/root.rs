@@ -50,6 +50,8 @@ impl<T: TronTransport> RootProvider<T> {
     }
 }
 
+impl<T: TronTransport> crate::provider::private::Sealed for RootProvider<T> {}
+
 impl<T: TronTransport> TronProvider for RootProvider<T> {
     type Transport = T;
 

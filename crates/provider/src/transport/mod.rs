@@ -27,12 +27,28 @@ use crate::types::{
 
 pub mod grpc;
 
+#[cfg(any(test, feature = "mock"))]
+pub mod mock;
+
+pub(crate) mod private {
+    /// Sealed marker: only this crate may implement [`TronTransport`](super::TronTransport).
+    ///
+    /// New transport methods map directly to node RPCs and cannot have default
+    /// implementations, so sealing keeps the SDK free to add them in minor
+    /// releases without breaking downstream code. Tests use the in-crate
+    /// `MockTransport` (feature `mock`).
+    pub trait Sealed {}
+}
+
 /// A low-level transport that maps each TRON node API endpoint to an async
 /// method returning domain types.
 ///
 /// Implementations are cheap to clone (typically an `Arc`-backed HTTP client)
 /// and must be `Send + Sync + 'static` for use across spawned tasks.
-pub trait TronTransport: Clone + Send + Sync + 'static {
+///
+/// This trait is **sealed** — only `tronz` may implement it. For tests, use the
+/// `MockTransport` provided under the `mock` feature.
+pub trait TronTransport: Clone + Send + Sync + 'static + private::Sealed {
     /// The transport's error type.  Must be convertible to
     /// [`crate::error::TransportErrorKind`] so that the provider layer can wrap it
     /// uniformly.

@@ -93,7 +93,13 @@ type DatabaseClientI =
     DatabaseClient<tonic::codegen::InterceptedService<Channel, ApiKeyInterceptor>>;
 
 /// Exponential back-off configuration for retryable gRPC errors.
+///
+/// `#[non_exhaustive]`: construct via [`RetryConfig::default`] (or
+/// [`disabled`](Self::disabled)) and the `with_*` setters so future fields
+/// (e.g. `retry-after` handling, jitter tuning) can be added without breaking
+/// callers.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct RetryConfig {
     /// Maximum number of attempts (including the first).
     ///
@@ -128,6 +134,30 @@ impl RetryConfig {
             ..Default::default()
         }
     }
+
+    /// Set the maximum number of attempts (including the first).
+    pub fn with_max_attempts(mut self, max_attempts: u32) -> Self {
+        self.max_attempts = max_attempts;
+        self
+    }
+
+    /// Set the back-off duration before the second attempt.
+    pub fn with_initial_backoff(mut self, initial_backoff: Duration) -> Self {
+        self.initial_backoff = initial_backoff;
+        self
+    }
+
+    /// Set the upper bound on the back-off after multiplier application.
+    pub fn with_max_backoff(mut self, max_backoff: Duration) -> Self {
+        self.max_backoff = max_backoff;
+        self
+    }
+
+    /// Set the multiplier applied to the base back-off after each failed attempt.
+    pub fn with_backoff_multiplier(mut self, backoff_multiplier: f64) -> Self {
+        self.backoff_multiplier = backoff_multiplier;
+        self
+    }
 }
 
 /// Full configuration for a [`GrpcTransport`] connection.
@@ -136,7 +166,12 @@ impl RetryConfig {
 /// `max_attempts × request_timeout + Σbackoff` ≈ `3 × 30 s + (0.5 s + 1.0 s)`.
 /// Tune `retry`/`request_timeout`, or set `retry: RetryConfig::disabled()`, to
 /// shorten it.
+///
+/// `#[non_exhaustive]`: construct via [`GrpcTransport::builder`] or
+/// [`ProviderBuilder`](crate::ProviderBuilder) so future fields (e.g. an overall
+/// deadline or failover endpoints) can be added without breaking callers.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct GrpcTransportConfig {
     /// Timeout for the initial TCP + TLS handshake. Default: 10 s.
     pub connect_timeout: Duration,
@@ -147,6 +182,15 @@ pub struct GrpcTransportConfig {
     pub retry: RetryConfig,
     /// Optional TronGrid API key (`TRON-PRO-API-KEY` header).
     pub api_key: Option<String>,
+    /// Additional, *equivalent* node endpoints for client-side failover.
+    ///
+    /// Combined with the primary `uri` passed to `connect`, these form a
+    /// load-balanced pool. With two or more total endpoints the channel is
+    /// built via [`Channel::balance_list`], which connects lazily and routes
+    /// around failed peers; a single endpoint keeps the eager, fail-fast
+    /// connect. All endpoints must serve the same API (and share the same TLS
+    /// expectation). Default: empty.
+    pub endpoints: Vec<String>,
 }
 
 impl Default for GrpcTransportConfig {
@@ -156,6 +200,7 @@ impl Default for GrpcTransportConfig {
             request_timeout: Duration::from_secs(30),
             retry: RetryConfig::default(),
             api_key: None,
+            endpoints: Vec::new(),
         }
     }
 }
@@ -186,6 +231,15 @@ impl GrpcTransportBuilder {
     /// Override the retry policy.
     pub fn with_retry(mut self, retry: RetryConfig) -> Self {
         self.config.retry = retry;
+        self
+    }
+
+    /// Add equivalent node endpoints for client-side failover / load balancing.
+    ///
+    /// These join the primary `uri` passed to [`connect`](Self::connect); two or
+    /// more total endpoints switch the channel to [`Channel::balance_list`].
+    pub fn with_endpoints(mut self, endpoints: Vec<String>) -> Self {
+        self.config.endpoints = endpoints;
         self
     }
 
@@ -233,11 +287,45 @@ impl GrpcTransport {
     ///
     /// Timeouts are baked into the tonic [`Endpoint`] so they cover every RPC
     /// on the resulting channel with no per-call code.
+    ///
+    /// With a single endpoint the connect is **eager** (`Endpoint::connect`),
+    /// so an unreachable node fails fast here. With two or more endpoints
+    /// (primary `uri` plus `cfg.endpoints`) the channel is built via
+    /// [`Channel::balance_list`], which connects **lazily** and load-balances /
+    /// fails over across peers — construction cannot fail-fast, so an
+    /// unreachable pool surfaces on the first RPC instead.
     pub(crate) async fn connect_with_config(
         uri: impl AsRef<str>,
         cfg: GrpcTransportConfig,
     ) -> Result<Self, TransportErrorKind> {
-        let endpoint = Endpoint::from_shared(uri.as_ref().to_owned())
+        let mut uris = Vec::with_capacity(1 + cfg.endpoints.len());
+        uris.push(uri.as_ref().to_owned());
+        uris.extend(cfg.endpoints.iter().cloned());
+
+        let channel = if uris.len() == 1 {
+            Self::build_endpoint(&uris[0], &cfg)?.connect().await?
+        } else {
+            let endpoints = uris
+                .iter()
+                .map(|u| Self::build_endpoint(u, &cfg))
+                .collect::<Result<Vec<_>, _>>()?;
+            Channel::balance_list(endpoints.into_iter())
+        };
+
+        Ok(Self {
+            channel,
+            api_key: cfg.api_key,
+            retry: cfg.retry,
+        })
+    }
+
+    /// Build a tonic [`Endpoint`] from a URI, applying the connection timeouts
+    /// and (when the `grpc-tls` feature is on) native-root TLS.
+    fn build_endpoint(
+        uri: &str,
+        cfg: &GrpcTransportConfig,
+    ) -> Result<Endpoint, TransportErrorKind> {
+        let endpoint = Endpoint::from_shared(uri.to_owned())
             .map_err(|e| TransportErrorKind::Malformed(e.to_string()))?
             .connect_timeout(cfg.connect_timeout)
             .timeout(cfg.request_timeout);
@@ -247,12 +335,7 @@ impl GrpcTransport {
             .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
             .map_err(TransportErrorKind::Connect)?;
 
-        let channel = endpoint.connect().await?;
-        Ok(Self {
-            channel,
-            api_key: cfg.api_key,
-            retry: cfg.retry,
-        })
+        Ok(endpoint)
     }
 
     /// Attach a TronGrid API key (sent as `TRON-PRO-API-KEY` header on each call).
@@ -416,6 +499,8 @@ macro_rules! retry_unary {
             .await
     };
 }
+
+impl crate::transport::private::Sealed for GrpcTransport {}
 
 impl TronTransport for GrpcTransport {
     type Error = TransportErrorKind;

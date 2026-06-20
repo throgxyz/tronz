@@ -2779,7 +2779,7 @@ dependencies = [
 
 [[package]]
 name = "tronz"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "tronz-contract",
  "tronz-primitives",
@@ -2789,7 +2789,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-contract"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-json-abi",
@@ -2804,7 +2804,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-primitives"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "alloy-primitives",
  "bs58",
@@ -2816,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-provider"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "fastrand",
  "futures",
@@ -2836,7 +2836,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-signer"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "aes",
  "coins-bip32",

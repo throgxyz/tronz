@@ -30,9 +30,23 @@ use crate::{
     },
 };
 
+pub(crate) mod private {
+    /// Sealed marker: only this crate may implement [`TronProvider`](super::TronProvider).
+    ///
+    /// Sealing lets the SDK grow the provider surface (new reads, builders) in
+    /// minor releases without breaking downstream code, and keeps the
+    /// transport-delegation contract an internal detail. Tests compose the
+    /// in-crate providers over `MockTransport` (feature `mock`).
+    pub trait Sealed {}
+}
+
 /// The primary user-facing interface: reads, lazy operation builders, and
 /// low-level send/broadcast.
-pub trait TronProvider: Clone + Send + Sync + 'static {
+///
+/// This trait is **sealed** — only `tronz` may implement it. To test against a
+/// provider, build one of the concrete providers over the `MockTransport`
+/// available under the `mock` feature.
+pub trait TronProvider: Clone + Send + Sync + 'static + private::Sealed {
     /// The underlying transport type.
     type Transport: TronTransport;
 

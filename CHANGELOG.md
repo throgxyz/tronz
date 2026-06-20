@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Request timeouts and automatic retries for the gRPC transport
+  - `GrpcTransport::builder()` → `GrpcTransportBuilder` with `with_connect_timeout()`, `with_request_timeout()`, `with_retry()`, `with_endpoints()`, `maybe_api_key()`
+  - `ProviderBuilder` gains `with_connect_timeout()`, `with_request_timeout()`, `with_retry()`, `with_endpoints()`
+  - `GrpcTransportConfig` (`connect_timeout` 10 s, `request_timeout` 30 s, `retry`, `endpoints`) and `RetryConfig` (3 attempts, 500 ms initial back-off, ×2 multiplier capped at 10 s, ±25 % jitter)
+  - Retries are limited to idempotent reads on `Unavailable` / `ResourceExhausted` / `Aborted`; `broadcast_transaction` is never retried
+- Client-side failover / load balancing across equivalent nodes
+  - `GrpcTransportConfig::endpoints` (and the `with_endpoints()` setters) join the primary URI; with two or more endpoints the channel is built via tonic's `Channel::balance_list` (lazy connect, automatic fail-over), while a single endpoint keeps the eager, fail-fast connect
+- `MockTransport` for testing without a live node (`mock` feature)
+  - Per-method FIFO response queues via `push_ok()` / `push_err()`; compose with `RootProvider` / `FilledProvider` to exercise real provider→transport delegation
+
+### Changed (Breaking)
+
+- `TronTransport` and `TronProvider` are now **sealed** — only `tronz` may implement them. Use the `mock`-feature `MockTransport` for tests instead of hand-rolled implementations.
+- `GrpcTransportConfig` and `RetryConfig` are `#[non_exhaustive]`; construct them via `GrpcTransport::builder()` / `ProviderBuilder` and the `with_*` setters (future fields can then be added without further breaking changes).
+
 ## [0.1.2] - 2026-06-17
 
 ### Added

@@ -292,8 +292,6 @@ async fn test_trx_transfer_and_receipt() {
             return;
         }
     };
-    let from = signer.address();
-
     let provider = ProviderBuilder::new()
         .with_recommended_fillers()
         .with_signer(signer)
@@ -301,10 +299,13 @@ async fn test_trx_transfer_and_receipt() {
         .await
         .expect("connect failed");
 
-    // Send 1 sun to ourselves — minimal cost, verifiable on-chain.
+    // Send 1 sun to a known *activated* account: the node rejects self-transfers,
+    // and sending to a fresh address would incur the account-creation fee. An
+    // already-active recipient keeps the cost to 1 sun + bandwidth.
+    let to: Address = NILE_ACTIVE_ADDR.parse().expect("valid Nile address");
     let pending = provider
         .send_trx()
-        .to(from)
+        .to(to)
         .amount(Trx::from_sun_unchecked(1))
         .send()
         .await
