@@ -2,8 +2,8 @@
 //!
 //! Available under the `mock` feature (and in this crate's own tests). Because
 //! [`TronTransport`] is sealed, downstream crates cannot hand-roll their own
-//! mock — this is the supported way to exercise [`RootProvider`] /
-//! [`FilledProvider`](crate::provider::FilledProvider) against canned responses.
+//! mock — this is the supported way to exercise [`crate::provider::RootProvider`] /
+//! [`crate::provider::FilledProvider`] against canned responses.
 //!
 //! Each method has its own FIFO queue of typed responses, keyed by method name.
 //! Push a response with [`push_ok`](MockTransport::push_ok) /
