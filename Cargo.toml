@@ -33,11 +33,11 @@ proc-macro2  = { version = "1" }
 
 # crypto
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
-sha2 = { version = "0.10", default-features = false }
-sha3 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
+sha3 = { version = "0.11", default-features = false }
 bs58        = { version = "0.5",  features = ["check"] }
-coins-bip32 = { version = "0.12", default-features = false }
-coins-bip39 = { version = "0.12", default-features = false, features = ["english"] }
+coins-bip32 = { version = "0.13", default-features = false }
+coins-bip39 = { version = "0.13", default-features = false, features = ["english"] }
 
 # keystore
 scrypt = { version = "0.12", default-features = false }
@@ -65,5 +65,5 @@ thiserror = { version = "2" }
 # misc
 tracing = { version = "0.1" }
 hex     = { version = "0.4" }
-rand    = { version = "0.8" }
+rand    = { version = "0.9" }
 fastrand = { version = "2" }
