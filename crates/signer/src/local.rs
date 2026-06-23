@@ -57,7 +57,7 @@ impl LocalSigner {
             &self.address.to_string(),
             password,
             dir,
-            &mut rand::thread_rng(),
+            &mut rand::rng(),
         )
     }
 

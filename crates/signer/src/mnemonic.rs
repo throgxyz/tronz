@@ -165,25 +165,25 @@ impl<W: Wordlist> MnemonicBuilder<W> {
         )
     }
 
-    /// Generate a random mnemonic using `rand::thread_rng` and derive a [`LocalSigner`].
+    /// Generate a random mnemonic using the thread-local RNG and derive a [`LocalSigner`].
     ///
     /// Returns `(signer, phrase_string)`. If [`write_to`](Self::write_to) was
     /// set the phrase is also written to `<dir>/<tron-address>`.
     ///
     /// Returns an error if a phrase has already been set.
     pub fn build_random(&self) -> Result<(LocalSigner, String), SignerError> {
-        self.build_random_with(&mut rand::thread_rng())
+        self.build_random_with(rand::rng())
     }
 
     /// Same as [`build_random`](Self::build_random) but with an explicit RNG.
-    pub fn build_random_with<R: rand::Rng>(
+    pub fn build_random_with<R: rand::Rng + rand::CryptoRng>(
         &self,
-        rng: &mut R,
+        mut rng: R,
     ) -> Result<(LocalSigner, String), SignerError> {
         if self.phrase.is_some() {
             return Err(MnemonicBuilderError::PhraseAlreadySet.into());
         }
-        let mnemonic = Mnemonic::<W>::new_with_count(rng, self.word_count)?;
+        let mnemonic = Mnemonic::<W>::from_rng_with_count(&mut rng, self.word_count)?;
         let signer = xpriv_to_local_signer(
             &mnemonic.derive_key(&self.derivation_path, self.password.as_deref())?,
         )?;
