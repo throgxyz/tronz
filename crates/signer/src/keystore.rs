@@ -288,8 +288,6 @@ fn encrypt_inner(
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::OsRng;
-
     use super::*;
     use crate::{LocalSigner, TronSigner};
 
@@ -307,7 +305,16 @@ mod tests {
     }
 
     fn encrypt_light(key: &[u8; 32], addr: &str, password: &str) -> KeystoreFile {
-        encrypt_inner(key, addr, password, &mut OsRng, TEST_LOG_N, TEST_R, TEST_P).unwrap()
+        encrypt_inner(
+            key,
+            addr,
+            password,
+            &mut rand::rng(),
+            TEST_LOG_N,
+            TEST_R,
+            TEST_P,
+        )
+        .unwrap()
     }
 
     // ── Round-trip ─────────────────────────────────────────────────────────────
