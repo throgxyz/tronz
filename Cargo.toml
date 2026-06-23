@@ -16,6 +16,7 @@ tronz-primitives = { path = "crates/primitives", version = "0.2.0", default-feat
 tronz-signer     = { path = "crates/signer",     version = "0.2.0", default-features = false }
 tronz-provider   = { path = "crates/provider",   version = "0.2.0", default-features = false }
 tronz-contract   = { path = "crates/contract",   version = "0.2.0", default-features = false }
+tronz-sol-macro  = { path = "crates/sol-macro",  version = "0.2.0" }
 
 # alloy (reused directly)
 alloy-primitives = { version = "1", default-features = false, features = ["std", "serde"] }
@@ -23,6 +24,12 @@ alloy-sol-types  = { version = "1", default-features = false, features = ["std"]
 alloy-sol-macro  = { version = "1", default-features = false }
 alloy-dyn-abi    = { version = "1", default-features = false, features = ["std"] }
 alloy-json-abi   = { version = "1", default-features = false, features = ["std"] }
+
+# proc-macro (for tron_sol!)
+syn          = { version = "2", features = ["full", "extra-traits"] }
+syn-solidity = { version = "1" }
+quote        = { version = "1" }
+proc-macro2  = { version = "1" }
 
 # crypto
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }

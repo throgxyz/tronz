@@ -15,11 +15,17 @@ pub mod trc721;
 
 /// Event log decoding helpers for TRON smart contracts.
 pub mod event;
+/// The `sol!` macro (re-exported from alloy) for generating Solidity type bindings.
+pub use alloy_sol_types::sol;
 /// Re-exported alloy ABI types for use with generated calls.
 pub use alloy_sol_types::{SolCall, SolError, SolEvent, SolInterface, SolValue};
 #[cfg(feature = "provider")]
 pub use event::{decode_log, decode_logs, log_matches, topic0_set};
 pub use tronz_primitives::{Address, Bytes, U256};
+/// The `tron_sol!` macro — generates provider-bound, type-safe contract bindings.
+///
+/// Requires the `provider` feature (enabled by default via the `tronz` meta-crate).
+pub use tronz_sol_macro::tron_sol;
 
 #[cfg(feature = "provider")]
 mod error;
@@ -42,6 +48,31 @@ pub use instance::{ContractExt, ContractInstance};
 mod call;
 #[cfg(feature = "provider")]
 pub use call::CallBuilder;
+
+#[cfg(feature = "provider")]
+mod sol_call;
+#[cfg(feature = "provider")]
+pub use sol_call::TronCallBuilder;
+
+#[cfg(feature = "provider")]
+mod event_filter;
+#[cfg(feature = "provider")]
+pub use event_filter::TronEventFilter;
+
+/// Internal re-exports referenced by [`tron_sol!`]-generated code. Not a stable API.
+#[cfg(feature = "provider")]
+#[doc(hidden)]
+pub mod __private {
+    pub use alloy_primitives;
+    pub use alloy_sol_types;
+    pub use tronz_primitives;
+    pub use tronz_provider;
+
+    pub use crate::{
+        deploy::DeployBuilder, error::Result, event_filter::TronEventFilter,
+        instance::ContractInstance, sol_call::TronCallBuilder,
+    };
+}
 
 #[cfg(feature = "provider")]
 mod deploy;
