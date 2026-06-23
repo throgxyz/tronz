@@ -1,0 +1,19 @@
+[package]
+name         = "tronz-sol-macro"
+description  = "The `tron_sol!` procedural macro for the tronz TRON SDK — generates provider-bound, type-safe contract bindings from Solidity."
+keywords     = ["tron", "blockchain", "smart-contracts", "abi", "macro"]
+categories   = ["cryptography::cryptocurrencies", "api-bindings"]
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+repository   = { workspace = true }
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn          = { workspace = true }
+syn-solidity = { workspace = true }
+quote        = { workspace = true }
+proc-macro2  = { workspace = true }

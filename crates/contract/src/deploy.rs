@@ -62,7 +62,8 @@ pub struct DeployBuilder<P> {
 }
 
 impl<P: TronProvider> DeployBuilder<P> {
-    pub(crate) fn new(provider: P, bytecode: impl Into<Bytes>) -> Self {
+    /// Create a new deployment builder with the given bytecode.
+    pub fn new(provider: P, bytecode: impl Into<Bytes>) -> Self {
         Self {
             provider,
             bytecode: bytecode.into(),
