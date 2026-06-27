@@ -76,12 +76,14 @@ For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/
 | [`tronz-signer`] | `TronSigner` trait and `LocalSigner` implementation |
 | [`tronz-provider`] | Transport, provider, fillers, and domain types |
 | [`tronz-contract`] | TRC20 / TRC721 ABI bindings |
+| [`tronz-signer-aws`] | AWS KMS signer (`signer-aws` feature) |
 
 [`tronz`]: https://github.com/throgxyz/tronz/tree/main/crates/tronz
 [`tronz-primitives`]: https://github.com/throgxyz/tronz/tree/main/crates/primitives
 [`tronz-signer`]: https://github.com/throgxyz/tronz/tree/main/crates/signer
 [`tronz-provider`]: https://github.com/throgxyz/tronz/tree/main/crates/provider
 [`tronz-contract`]: https://github.com/throgxyz/tronz/tree/main/crates/contract
+[`tronz-signer-aws`]: https://github.com/throgxyz/tronz/tree/main/crates/signer-aws
 
 ## Supported Rust Versions (MSRV)
 

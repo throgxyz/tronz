@@ -33,6 +33,15 @@ pub use tronz_signer::MnemonicBuilder;
 pub use tronz_signer::coins_bip39;
 #[doc(no_inline)]
 pub use tronz_signer::{LocalSigner, TronSigner};
+/// AWS KMS signer — keeps the private key inside the AWS HSM.
+///
+/// See [`tronz_signer_aws`] for more details.
+#[cfg(feature = "signer-aws")]
+#[doc(inline)]
+pub use tronz_signer_aws as signer_aws;
+#[cfg(feature = "signer-aws")]
+#[doc(no_inline)]
+pub use tronz_signer_aws::AwsSigner;
 
 /* --------------------------------- Providers ---------------------------------- */
 
