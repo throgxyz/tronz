@@ -15,6 +15,7 @@ tronz-primitives = { workspace = true }
 tronz-signer     = { workspace = true }
 tronz-provider   = { workspace = true }
 tronz-contract   = { workspace = true, optional = true, features = ["provider"] }
+tronz-signer-aws = { workspace = true, optional = true }
 
 [features]
 default = ["provider-grpc-tls", "contract", "signer-local"]
@@ -31,4 +32,6 @@ signer-local = []
 signer-mnemonic = ["tronz-signer/mnemonic"]
 # Web3 Secret Storage V3 keystore.
 signer-keystore = ["tronz-signer/keystore"]
+# AWS KMS signer (private key stays in the HSM).
+signer-aws = ["dep:tronz-signer-aws"]
 

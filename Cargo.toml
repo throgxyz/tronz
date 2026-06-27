@@ -12,11 +12,12 @@ readme       = "README.md"
 
 [workspace.dependencies]
 # internal
-tronz-primitives = { path = "crates/primitives", version = "0.2.0", default-features = false }
-tronz-signer     = { path = "crates/signer",     version = "0.2.0", default-features = false }
-tronz-provider   = { path = "crates/provider",   version = "0.2.0", default-features = false }
-tronz-contract   = { path = "crates/contract",   version = "0.2.0", default-features = false }
-tronz-sol-macro  = { path = "crates/sol-macro",  version = "0.2.0" }
+tronz-primitives  = { path = "crates/primitives",  version = "0.2.0", default-features = false }
+tronz-signer      = { path = "crates/signer",      version = "0.2.0", default-features = false }
+tronz-signer-aws  = { path = "crates/signer-aws",  version = "0.2.0", default-features = false }
+tronz-provider    = { path = "crates/provider",    version = "0.2.0", default-features = false }
+tronz-contract    = { path = "crates/contract",    version = "0.2.0", default-features = false }
+tronz-sol-macro   = { path = "crates/sol-macro",   version = "0.2.0" }
 
 # alloy (reused directly)
 alloy-primitives = { version = "1", default-features = false, features = ["std", "serde"] }
@@ -30,6 +31,11 @@ syn          = { version = "2", features = ["full", "extra-traits"] }
 syn-solidity = { version = "1" }
 quote        = { version = "1" }
 proc-macro2  = { version = "1" }
+
+# aws kms signer
+aws-sdk-kms = { version = "1", default-features = false }
+aws-config  = { version = "1", default-features = false }
+spki        = { version = "0.7", default-features = false, features = ["std"] }
 
 # crypto
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }

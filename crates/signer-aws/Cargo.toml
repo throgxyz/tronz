@@ -1,0 +1,26 @@
+[package]
+name         = "tronz-signer-aws"
+description  = "AWS KMS signer for the tronz TRON SDK."
+keywords     = ["tron", "blockchain", "kms", "aws", "signer"]
+categories   = ["cryptography::cryptocurrencies", "api-bindings", "asynchronous"]
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+repository   = { workspace = true }
+readme       = "README.md"
+
+[dependencies]
+tronz-primitives = { workspace = true }
+tronz-signer     = { workspace = true }
+
+aws-sdk-kms = { workspace = true }
+k256        = { workspace = true }
+spki        = { workspace = true }
+thiserror   = { workspace = true }
+tracing     = { workspace = true }
+hex         = { workspace = true }
+
+[dev-dependencies]
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros"] }
+aws-config = { workspace = true }

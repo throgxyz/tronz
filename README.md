@@ -19,6 +19,7 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 - **Staking** — Stake 2.0 (freeze, unfreeze, delegate, undelegate, claim rewards) and Stake 1.0 legacy (`freeze_balance_v1`, `unfreeze_balance_v1`)
 - **HD wallets** — BIP-39 mnemonic generation and BIP-44 key derivation (`signer-mnemonic` feature, TRON coin type 195)
 - **Keystore** — Web3 Secret Storage V3 encrypt/decrypt (`signer-keystore` feature, compatible with TronLink and gotron-sdk)
+- **AWS KMS** — sign with a key that never leaves the HSM (`signer-aws` feature, `AwsSigner`)
 - **Contract deploy & call** — `DeployBuilder`, `CallBuilder`, dynamic ABI, energy estimation
 - **Event decoding** — decode and filter logs with `SolEvent`
 - **Votes & account management** — SR voting, account activation, name and permission updates
@@ -45,6 +46,7 @@ Optional features:
 |---|---|
 | `signer-mnemonic` | BIP-39 mnemonic generation + BIP-44 HD derivation (`MnemonicBuilder`) |
 | `signer-keystore` | Web3 Secret Storage V3 encrypt/decrypt (`LocalSigner::encrypt_keystore`, `decrypt_keystore`) |
+| `signer-aws` | AWS KMS signer (`AwsSigner`) — the private key never leaves the HSM |
 | `provider-grpc` | gRPC transport without TLS — use for local or private nodes |
 
 ## Quick start
@@ -263,6 +265,7 @@ async fn main() -> anyhow::Result<()> {
 | [`tronz-signer`](https://crates.io/crates/tronz-signer) | `TronSigner` trait and `LocalSigner` (in-memory secp256k1) |
 | [`tronz-provider`](https://crates.io/crates/tronz-provider) | gRPC transport, provider, fillers, domain types, extension traits |
 | [`tronz-contract`](https://crates.io/crates/tronz-contract) | `ContractInstance`, `DeployBuilder`, TRC20 bindings, event decoding |
+| [`tronz-signer-aws`](https://crates.io/crates/tronz-signer-aws) | AWS KMS signer (`signer-aws` feature) |
 
 ## Extension traits
 
