@@ -12,7 +12,10 @@ use alloy_sol_types::SolCall;
 use tronz_primitives::Trx;
 use tronz_provider::{PendingTransaction, TronProvider};
 
-use crate::{call::CallBuilder, error::Result};
+use crate::{
+    call::CallBuilder,
+    error::{ContractError, Result},
+};
 
 /// A type-safe, provider-bound contract call.
 ///
@@ -64,7 +67,9 @@ impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
     /// into the function's return type.
     pub async fn call(self) -> Result<C::Return> {
         let output = self.inner.call().await?;
-        Ok(C::abi_decode_returns_validate(&output)?)
+        let fn_name = C::SIGNATURE.split('(').next().unwrap_or(C::SIGNATURE);
+        C::abi_decode_returns_validate(&output)
+            .map_err(|e| ContractError::decode_err(fn_name, &output, e.into()))
     }
 
     /// Broadcast the call as a state-changing transaction (`trigger_smart_contract`).
