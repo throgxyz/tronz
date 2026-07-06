@@ -408,8 +408,10 @@ mod tests {
         let provider = mock_provider();
 
         let filler = TaposFiller::new();
-        let mut tx = TransactionRequest::default();
-        tx.ref_block_bytes = Some([0xaa, 0xbb]);
+        let tx = TransactionRequest {
+            ref_block_bytes: Some([0xaa, 0xbb]),
+            ..Default::default()
+        };
         assert_eq!(filler.status(&tx), FillerStatus::Ready);
 
         let filled = filler.fill(tx, &provider).await.unwrap();
