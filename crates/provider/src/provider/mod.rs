@@ -68,6 +68,16 @@ pub trait TronProvider: Clone + Send + Sync + 'static + private::Sealed {
         }
     }
 
+    /// Fetch a block by height.
+    fn get_block_by_number(&self, num: i64) -> impl Future<Output = Result<BlockInfo>> + Send {
+        let t = self.transport().clone();
+        async move {
+            t.get_block_by_number(num)
+                .await
+                .map_err(|e| ProviderError::from(e.into()))
+        }
+    }
+
     /// Fetch on-chain account state.
     fn get_account(&self, address: Address) -> impl Future<Output = Result<AccountInfo>> + Send {
         let t = self.transport().clone();
