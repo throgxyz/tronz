@@ -79,3 +79,74 @@ impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
         self.inner.send().await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_primitives::U256;
+    use alloy_sol_types::sol;
+    use tronz_primitives::{Address, Bytes};
+    use tronz_provider::{RootProvider, transport::mock::MockTransport, types::ConstantCallResult};
+
+    use super::*;
+    use crate::{call::CallBuilder, error::ContractError};
+
+    sol! {
+        function balanceOf(address) external view returns (uint256);
+    }
+
+    fn addr() -> Address {
+        Address::from_evm_bytes([1u8; 20])
+    }
+
+    fn make_builder(
+        provider: RootProvider<MockTransport>,
+    ) -> TronCallBuilder<RootProvider<MockTransport>, balanceOfCall> {
+        TronCallBuilder::new(CallBuilder::new(provider, addr(), Bytes::new()))
+    }
+
+    fn canned(output: Vec<u8>) -> ConstantCallResult {
+        ConstantCallResult {
+            output,
+            energy_used: 0,
+            revert_reason: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_output_yields_zero_data_error() {
+        let provider = RootProvider::new(MockTransport::new());
+        provider
+            .transport()
+            .push_ok("trigger_constant_contract", canned(vec![]));
+        let err = make_builder(provider).call().await.unwrap_err();
+        assert!(
+            matches!(&err, ContractError::ZeroData(name, _) if name == "balanceOf"),
+            "expected ZeroData(\"balanceOf\", _), got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn valid_output_decodes_correctly() {
+        let provider = RootProvider::new(MockTransport::new());
+        let mut out = [0u8; 32];
+        out[31] = 99;
+        provider
+            .transport()
+            .push_ok("trigger_constant_contract", canned(out.to_vec()));
+        let value = make_builder(provider).call().await.unwrap();
+        assert_eq!(value, U256::from(99u64));
+    }
+
+    #[tokio::test]
+    async fn truncated_output_yields_abi_error() {
+        let provider = RootProvider::new(MockTransport::new());
+        provider
+            .transport()
+            .push_ok("trigger_constant_contract", canned(vec![0xde, 0xad]));
+        let err = make_builder(provider).call().await.unwrap_err();
+        assert!(
+            matches!(err, ContractError::Abi(_)),
+            "expected Abi(_), got {err:?}"
+        );
+    }
+}
