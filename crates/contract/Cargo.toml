@@ -31,4 +31,7 @@ provider = [
 ]
 
 [dev-dependencies]
-hex = { workspace = true }
+hex            = { workspace = true }
+alloy-primitives = { workspace = true }
+tokio          = { workspace = true }
+tronz-provider = { workspace = true, features = ["mock"] }

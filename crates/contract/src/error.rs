@@ -146,3 +146,39 @@ impl ContractError {
         Self::Abi(error)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_err() -> alloy_dyn_abi::Error {
+        alloy_dyn_abi::Error::TypeMismatch {
+            expected: "uint256".into(),
+            actual: "bytes".into(),
+        }
+    }
+
+    #[test]
+    fn empty_data_yields_zero_data() {
+        let err = ContractError::decode_err("balanceOf", &[], dummy_err());
+        assert!(
+            matches!(&err, ContractError::ZeroData(name, _) if name == "balanceOf"),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn full_signature_is_stripped_to_name() {
+        let err = ContractError::decode_err("transfer(address,uint256)", &[], dummy_err());
+        assert!(
+            matches!(&err, ContractError::ZeroData(name, _) if name == "transfer"),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn non_empty_data_yields_abi_error() {
+        let err = ContractError::decode_err("balanceOf", &[0xde, 0xad], dummy_err());
+        assert!(matches!(err, ContractError::Abi(_)), "got {err:?}");
+    }
+}

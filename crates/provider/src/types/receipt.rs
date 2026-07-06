@@ -80,6 +80,17 @@ pub struct Log {
     pub data: Bytes,
 }
 
+impl Log {
+    /// Construct a log from its three fields.
+    pub fn new(address: Address, topics: Vec<B256>, data: impl Into<Bytes>) -> Self {
+        Self {
+            address,
+            topics,
+            data: data.into(),
+        }
+    }
+}
+
 /// Resource usage receipt for a transaction.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]

@@ -90,3 +90,91 @@ impl<P: TronProvider, E: SolEvent> TronEventFilter<P, E> {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloy_sol_types::sol;
+    use tronz_provider::{RootProvider, transport::mock::MockTransport};
+
+    use super::*;
+
+    sol! {
+        // Transfer(address indexed from, address indexed to, uint256 value)
+        event Transfer(address indexed from, address indexed to, uint256 value);
+    }
+
+    fn addr(b: u8) -> Address {
+        Address::from_evm_bytes({
+            let mut a = [0u8; 20];
+            a[19] = b;
+            a
+        })
+    }
+
+    fn make_filter(
+        address: Option<Address>,
+    ) -> TronEventFilter<RootProvider<MockTransport>, Transfer> {
+        TronEventFilter::new(RootProvider::new(MockTransport::new()), address)
+    }
+
+    // Constructs a valid Transfer log: from/to are indexed (topics), value is data.
+    fn transfer_log(contract: Address, from: Address, to: Address, value: u64) -> Log {
+        let mut t1 = [0u8; 32];
+        t1[12..].copy_from_slice(from.as_evm_bytes());
+        let mut t2 = [0u8; 32];
+        t2[12..].copy_from_slice(to.as_evm_bytes());
+        let mut data = [0u8; 32];
+        data[24..].copy_from_slice(&value.to_be_bytes());
+        Log::new(
+            contract,
+            vec![Transfer::SIGNATURE_HASH, B256::from(t1), B256::from(t2)],
+            data.to_vec(),
+        )
+    }
+
+    #[test]
+    fn no_address_filter_accepts_any_emitter() {
+        let filter = make_filter(None);
+        let logs = vec![
+            transfer_log(addr(1), addr(10), addr(11), 1),
+            transfer_log(addr(2), addr(10), addr(11), 2),
+        ];
+        assert_eq!(filter.decode_logs(&logs).len(), 2);
+    }
+
+    #[test]
+    fn address_filter_rejects_wrong_emitter() {
+        let contract = addr(1);
+        let filter = make_filter(Some(contract));
+        let logs = vec![
+            transfer_log(contract, addr(10), addr(11), 100),
+            transfer_log(addr(2), addr(10), addr(11), 200),
+        ];
+        let events = filter.decode_logs(&logs);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].value, alloy_primitives::U256::from(100u64));
+    }
+
+    #[test]
+    fn wrong_topic0_is_skipped() {
+        let filter = make_filter(None);
+        let mut log = transfer_log(addr(1), addr(2), addr(3), 42);
+        log.topics[0] = B256::ZERO;
+        assert!(filter.decode_logs(&[log]).is_empty());
+    }
+
+    #[test]
+    fn no_topics_is_skipped() {
+        let filter = make_filter(None);
+        let log = Log::new(addr(1), vec![], vec![]);
+        assert!(filter.decode_logs(&[log]).is_empty());
+    }
+
+    #[test]
+    fn missing_indexed_topic_silently_skipped() {
+        // topic0 matches but from/to topics are absent — decode_raw_log fails.
+        let filter = make_filter(None);
+        let log = Log::new(addr(1), vec![Transfer::SIGNATURE_HASH], [0u8; 32].to_vec());
+        assert!(filter.decode_logs(&[log]).is_empty());
+    }
+}

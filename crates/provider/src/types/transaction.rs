@@ -1,8 +1,10 @@
 //! Transaction request / raw / signed types.
 
+use std::time::Duration;
+
 use tronz_primitives::{RecoverableSignature, Trx, TxId};
 
-use crate::types::contract::ContractType;
+use crate::types::{BlockInfo, contract::ContractType};
 
 /// Builder-stage transaction: all fields optional, filled progressively by
 /// fillers before being finalized into a [`RawTransaction`].
@@ -55,6 +57,22 @@ impl TransactionRequest {
     /// Set the permission id for multisig transactions.
     pub fn with_permission_id(mut self, id: i32) -> Self {
         self.permission_id = Some(id);
+        self
+    }
+
+    /// Fill TAPOS fields directly from a known block, bypassing [`TaposFiller`].
+    ///
+    /// Use this when the caller already has a [`BlockInfo`] in hand — for
+    /// example, an indexer that fetched the block to process it — so that no
+    /// additional `get_now_block` network call is needed.  [`TaposFiller`] will
+    /// detect that the fields are already set and skip its own fetch.
+    ///
+    /// [`TaposFiller`]: crate::fillers::TaposFiller
+    pub fn with_tapos(mut self, block: &BlockInfo, expiry: Duration) -> Self {
+        self.ref_block_bytes = Some(block.ref_block_bytes());
+        self.ref_block_hash = Some(block.ref_block_hash());
+        self.timestamp = Some(block.timestamp);
+        self.expiration = Some(block.timestamp + expiry.as_millis() as i64);
         self
     }
 }

@@ -3453,6 +3453,7 @@ dependencies = [
  "alloy-sol-types",
  "hex",
  "thiserror 2.0.18",
+ "tokio",
  "tronz-primitives",
  "tronz-provider",
  "tronz-sol-macro",
