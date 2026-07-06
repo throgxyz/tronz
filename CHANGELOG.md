@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-06
+
+### Added
+
+- `TaposFiller` 3-second TTL block cache — concurrent transactions share a single `get_now_block` round-trip; cache is shared across clones via `Arc`; configurable via `with_block_ttl()`
+- `TransactionRequest::with_tapos(&block, expiry)` — fill TAPOS fields directly from a known `BlockInfo`, bypassing the filler with zero network overhead (intended for indexers)
+- `TronProvider::get_block_by_number(num)` — fetch a block by height (was missing from the trait despite being available at the transport layer)
+- `Log::new(address, topics, data)` constructor (non-exhaustive struct)
+
+### Fixed
+
+- `TronCallBuilder::call` now promotes empty contract output to `ContractError::ZeroData` instead of `ContractError::Abi`, consistent with the dynamic `Interface` API
+
+### Internal
+
+- Unit tests for `ContractError::decode_err`, `TronCallBuilder::call`, `TronEventFilter::decode_logs`, `TaposFiller`, and `FeeLimitFiller`
+
 ## [0.2.0] - 2026-06-20
 
 ### Added
