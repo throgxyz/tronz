@@ -20,6 +20,8 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 - **HD wallets** — BIP-39 mnemonic generation and BIP-44 key derivation (`signer-mnemonic` feature, TRON coin type 195)
 - **Keystore** — Web3 Secret Storage V3 encrypt/decrypt (`signer-keystore` feature, compatible with TronLink and gotron-sdk)
 - **AWS KMS** — sign with a key that never leaves the HSM (`signer-aws` feature, `AwsSigner`)
+- **`tron_sol!` macro** — type-safe contract bindings with typed call/event builders (superset of alloy's `sol!`)
+- **TRC721** — `Trc721Instance`: `transfer_from`, `approve`, `owner_of`, `token_uri`, and standard ERC-721 queries
 - **Contract deploy & call** — `DeployBuilder`, `CallBuilder`, dynamic ABI, energy estimation
 - **Event decoding** — decode and filter logs with `SolEvent`
 - **Votes & account management** — SR voting, account activation, name and permission updates
@@ -265,6 +267,7 @@ async fn main() -> anyhow::Result<()> {
 | [`tronz-signer`](https://crates.io/crates/tronz-signer) | `TronSigner` trait and `LocalSigner` (in-memory secp256k1) |
 | [`tronz-provider`](https://crates.io/crates/tronz-provider) | gRPC transport, provider, fillers, domain types, extension traits |
 | [`tronz-contract`](https://crates.io/crates/tronz-contract) | `ContractInstance`, `DeployBuilder`, TRC20 bindings, event decoding |
+| [`tronz-sol-macro`](https://crates.io/crates/tronz-sol-macro) | `tron_sol!` procedural macro |
 | [`tronz-signer-aws`](https://crates.io/crates/tronz-signer-aws) | AWS KMS signer (`signer-aws` feature) |
 
 ## Extension traits
@@ -276,6 +279,8 @@ Import these to unlock additional methods on any provider:
 | `Trc10Api` | `use tronz::providers::ext::Trc10Api as _` | issue, transfer, balance, participate, update, look up by name |
 | `WitnessApi` | `use tronz::providers::ext::WitnessApi as _` | list SRs, brokerage, become SR, update URL/brokerage |
 | `GovernanceApi` | `use tronz::providers::ext::GovernanceApi as _` | list/fetch proposals, submit, approve, cancel |
+| `ExchangeApi` | `use tronz::providers::ext::ExchangeApi as _` | create exchange, inject/withdraw liquidity, trade |
+| `MarketApi` | `use tronz::providers::ext::MarketApi as _` | market orders, sell/cancel, query prices |
 
 ## Examples
 
