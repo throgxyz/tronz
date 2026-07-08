@@ -458,3 +458,59 @@ impl<'a, P: TronProvider> ExchangeTradeBuilder<'a, P> {
         self.provider.send_transaction(req).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tronz_primitives::Address;
+
+    use super::*;
+    use crate::{provider::RootProvider, transport::mock::MockTransport, types::ExchangeInfo};
+
+    fn mock_provider() -> RootProvider<MockTransport> {
+        RootProvider::new(MockTransport::new())
+    }
+
+    fn exchange(id: i64) -> ExchangeInfo {
+        ExchangeInfo {
+            exchange_id: id,
+            creator_address: Address::from_evm_bytes([0u8; 20]),
+            create_time: 0,
+            first_token_id: "_".into(),
+            first_token_balance: 1_000_000,
+            second_token_id: "1000001".into(),
+            second_token_balance: 500_000,
+        }
+    }
+
+    #[tokio::test]
+    async fn list_exchanges_returns_pushed_list() {
+        let provider = mock_provider();
+        provider
+            .transport()
+            .push_ok::<Vec<ExchangeInfo>>("list_exchanges", vec![exchange(1), exchange(2)]);
+        let result = provider.list_exchanges().await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].exchange_id, 1);
+        assert_eq!(result[1].exchange_id, 2);
+    }
+
+    #[tokio::test]
+    async fn get_exchange_by_id_found() {
+        let provider = mock_provider();
+        provider
+            .transport()
+            .push_ok::<Option<ExchangeInfo>>("get_exchange_by_id", Some(exchange(7)));
+        let result = provider.get_exchange_by_id(7).await.unwrap();
+        assert_eq!(result.unwrap().exchange_id, 7);
+    }
+
+    #[tokio::test]
+    async fn get_exchange_by_id_not_found() {
+        let provider = mock_provider();
+        provider
+            .transport()
+            .push_ok::<Option<ExchangeInfo>>("get_exchange_by_id", None);
+        let result = provider.get_exchange_by_id(99).await.unwrap();
+        assert!(result.is_none());
+    }
+}

@@ -290,3 +290,90 @@ pub type Result<T, E = ProviderError> = core::result::Result<T, E>;
 
 /// Result alias for the raw transport layer.
 pub type TransportResult<T> = core::result::Result<T, TransportErrorKind>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── TransportErrorKind helpers ────────────────────────────────────────────
+
+    #[test]
+    fn retryable_grpc_codes() {
+        use tonic::Code;
+        for code in [Code::Unavailable, Code::ResourceExhausted, Code::Aborted] {
+            let err = TransportErrorKind::Grpc(tonic::Status::new(code, ""));
+            assert!(err.is_retryable(), "{code:?} should be retryable");
+            assert!(err.is_grpc());
+        }
+    }
+
+    #[test]
+    fn non_retryable_grpc_codes() {
+        use tonic::Code;
+        for code in [
+            Code::DeadlineExceeded,
+            Code::NotFound,
+            Code::InvalidArgument,
+        ] {
+            let err = TransportErrorKind::Grpc(tonic::Status::new(code, ""));
+            assert!(!err.is_retryable(), "{code:?} should not be retryable");
+        }
+    }
+
+    #[test]
+    fn malformed_helpers() {
+        let err = TransportErrorKind::malformed("bad payload");
+        assert!(!err.is_retryable());
+        assert!(err.is_malformed());
+        assert_eq!(err.as_malformed(), Some("bad payload"));
+    }
+
+    #[test]
+    fn node_error_helpers() {
+        let err = TransportErrorKind::NodeError("contract failed".into());
+        assert!(!err.is_retryable());
+        assert!(err.is_node_error());
+        assert_eq!(err.as_node_error(), Some("contract failed"));
+    }
+
+    #[test]
+    fn non_retryable_helpers() {
+        let err = TransportErrorKind::non_retryable_str("fatal");
+        assert!(!err.is_retryable());
+        assert!(err.is_non_retryable());
+    }
+
+    // ── RpcError / ProviderError helpers ─────────────────────────────────────
+
+    #[test]
+    fn node_error_promoted_from_transport_kind() {
+        let transport_err = TransportErrorKind::NodeError("contract failed".into());
+        let rpc_err: ProviderError = transport_err.into();
+        assert!(rpc_err.is_node_error());
+        assert!(!rpc_err.is_transport_error());
+        assert_eq!(rpc_err.as_node_error(), Some("contract failed"));
+    }
+
+    #[test]
+    fn transport_error_wraps_non_node_kinds() {
+        let transport_err = TransportErrorKind::malformed("bad");
+        let rpc_err: ProviderError = transport_err.into();
+        assert!(rpc_err.is_transport_error());
+        assert!(!rpc_err.is_node_error());
+    }
+
+    #[test]
+    fn rpc_is_retryable_delegates_to_transport() {
+        let err =
+            ProviderError::Transport(TransportErrorKind::Grpc(tonic::Status::unavailable("down")));
+        assert!(err.is_retryable());
+    }
+
+    #[test]
+    fn local_usage_error_is_not_retryable() {
+        let err = ProviderError::missing_field("to");
+        assert!(err.is_local_usage_error());
+        assert!(!err.is_transport_error());
+        assert!(!err.is_retryable());
+    }
+}

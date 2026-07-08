@@ -281,3 +281,74 @@ impl<'a, P: TronProvider> MarketCancelBuilder<'a, P> {
         self.provider.send_transaction(req).await
     }
 }
+#[cfg(test)]
+mod tests {
+    use tronz_primitives::Address;
+
+    use super::*;
+    use crate::{
+        provider::RootProvider,
+        transport::mock::MockTransport,
+        types::{MarketOrderInfo, MarketOrderPair, MarketOrderState},
+    };
+
+    fn mock_provider() -> RootProvider<MockTransport> {
+        RootProvider::new(MockTransport::new())
+    }
+
+    fn addr(b: u8) -> Address {
+        Address::from_evm_bytes({
+            let mut a = [0u8; 20];
+            a[19] = b;
+            a
+        })
+    }
+
+    fn order(owner: Address) -> MarketOrderInfo {
+        MarketOrderInfo {
+            order_id: vec![0u8; 32],
+            owner_address: owner,
+            create_time: 0,
+            sell_token_id: "_".into(),
+            sell_token_quantity: 1_000_000,
+            buy_token_id: "1000001".into(),
+            buy_token_quantity: 500_000,
+            sell_token_quantity_remain: 1_000_000,
+            sell_token_quantity_return: 0,
+            state: MarketOrderState::Active,
+        }
+    }
+
+    #[tokio::test]
+    async fn get_market_pair_list_returns_pushed_pairs() {
+        let provider = mock_provider();
+        let pairs = vec![
+            MarketOrderPair {
+                sell_token_id: "_".into(),
+                buy_token_id: "1000001".into(),
+            },
+            MarketOrderPair {
+                sell_token_id: "1000001".into(),
+                buy_token_id: "_".into(),
+            },
+        ];
+        provider
+            .transport()
+            .push_ok::<Vec<MarketOrderPair>>("get_market_pair_list", pairs);
+        let result = provider.get_market_pair_list().await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].sell_token_id, "_");
+    }
+
+    #[tokio::test]
+    async fn get_market_order_by_account_returns_orders() {
+        let owner = addr(1);
+        let provider = mock_provider();
+        provider
+            .transport()
+            .push_ok::<Vec<MarketOrderInfo>>("get_market_order_by_account", vec![order(owner)]);
+        let result = provider.get_market_order_by_account(owner).await.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].owner_address, owner);
+    }
+}

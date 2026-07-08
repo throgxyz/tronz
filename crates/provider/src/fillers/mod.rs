@@ -513,4 +513,64 @@ mod tests {
         filler.fill_sync(&mut tx);
         assert!(tx.fee_limit.is_none());
     }
+
+    // ── SignerFiller ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn signer_filler_exposes_address() {
+        use tronz_signer::LocalSigner;
+        let signer = LocalSigner::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap();
+        let expected = signer.address();
+        let filler = SignerFiller::new(signer);
+        assert_eq!(filler.signer_address(), Some(expected));
+        assert_eq!(filler.signer().address(), expected);
+    }
+
+    // ── JoinFill ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn join_fill_prefers_right_signer() {
+        use tronz_signer::LocalSigner;
+        let signer = LocalSigner::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap();
+        let expected = signer.address();
+        // left = TaposFiller (no signer), right = SignerFiller
+        let join = JoinFill::new(TaposFiller::new(), SignerFiller::new(signer));
+        assert_eq!(join.signer_address(), Some(expected));
+    }
+
+    #[test]
+    fn join_fill_no_signer_when_both_none() {
+        let join = JoinFill::new(TaposFiller::new(), FeeLimitFiller::new(Trx::ZERO));
+        assert_eq!(join.signer_address(), None);
+    }
+
+    #[tokio::test]
+    async fn join_fill_runs_tapos_and_fee_limit() {
+        let provider = mock_provider();
+        provider
+            .transport()
+            .push_ok("get_now_block", block(0x0011_2233_4455_6677, 1_000_000));
+
+        let limit = Trx::from_sun_unchecked(10_000_000);
+        let join = JoinFill::new(TaposFiller::new(), FeeLimitFiller::new(limit));
+        let tx = TransactionRequest::default().with_contract(ContractType::TriggerSmartContract(
+            TriggerSmartContract {
+                owner_address: addr(1),
+                contract_address: addr(2),
+                call_value: Trx::ZERO,
+                data: Default::default(),
+                call_token_value: Trx::ZERO,
+                token_id: 0,
+            },
+        ));
+        let filled = join.fill(tx, &provider).await.unwrap();
+        assert_eq!(filled.ref_block_bytes, Some([0x66, 0x77]));
+        assert_eq!(filled.fee_limit, Some(limit));
+    }
 }

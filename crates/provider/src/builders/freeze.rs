@@ -256,3 +256,62 @@ impl<'a, P: TronProvider> UnfreezeBuilder<'a, P> {
         self.provider.send_transaction(req).await
     }
 }
+
+#[cfg(test)]
+mod freeze_builder_tests {
+    use tronz_primitives::Address;
+
+    use super::*;
+    use crate::{provider::RootProvider, transport::mock::MockTransport};
+
+    fn addr(b: u8) -> Address {
+        Address::from_evm_bytes({
+            let mut a = [0u8; 20];
+            a[19] = b;
+            a
+        })
+    }
+
+    fn mock_provider() -> RootProvider<MockTransport> {
+        RootProvider::new(MockTransport::new())
+    }
+
+    #[tokio::test]
+    async fn freeze_missing_amount_returns_error() {
+        let provider = mock_provider();
+        let err = provider
+            .freeze_balance()
+            .from(addr(1))
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert!(err.is_local_usage_error());
+    }
+
+    #[tokio::test]
+    async fn freeze_v1_missing_amount_returns_error() {
+        let provider = mock_provider();
+        let err = provider
+            .freeze_balance_v1()
+            .from(addr(1))
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert!(err.is_local_usage_error());
+    }
+
+    #[tokio::test]
+    async fn unfreeze_missing_amount_returns_error() {
+        let provider = mock_provider();
+        let err = provider
+            .unfreeze_balance()
+            .from(addr(1))
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert!(err.is_local_usage_error());
+    }
+}
