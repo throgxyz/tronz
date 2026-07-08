@@ -72,3 +72,51 @@ impl<'a, P: TronProvider> TransferBuilder<'a, P> {
         self.provider.send_transaction(req).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tronz_primitives::Address;
+
+    use super::*;
+    use crate::{provider::RootProvider, transport::mock::MockTransport};
+
+    fn addr(b: u8) -> Address {
+        Address::from_evm_bytes({
+            let mut a = [0u8; 20];
+            a[19] = b;
+            a
+        })
+    }
+
+    fn mock_provider() -> RootProvider<MockTransport> {
+        RootProvider::new(MockTransport::new())
+    }
+
+    #[tokio::test]
+    async fn missing_to_returns_error() {
+        let provider = mock_provider();
+        let err = provider
+            .send_trx()
+            .from(addr(1))
+            .amount(Trx::from_sun(1_000_000).unwrap())
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert!(err.is_local_usage_error());
+    }
+
+    #[tokio::test]
+    async fn missing_amount_returns_error() {
+        let provider = mock_provider();
+        let err = provider
+            .send_trx()
+            .from(addr(1))
+            .to(addr(2))
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert!(err.is_local_usage_error());
+    }
+}
