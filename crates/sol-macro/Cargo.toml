@@ -17,3 +17,4 @@ syn          = { workspace = true }
 syn-solidity = { workspace = true }
 quote        = { workspace = true }
 proc-macro2  = { workspace = true }
+alloy-json-abi = { workspace = true, features = ["serde_json"] }
