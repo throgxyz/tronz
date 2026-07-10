@@ -280,6 +280,32 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> FilledProvider<T, F> {
     /// [`TronProvider::broadcast`]. For the common single-signer case prefer
     /// [`TronProvider::send_transaction`], which fills, signs, and broadcasts in
     /// one step.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use tronz_provider::{ProviderBuilder, TronProvider, transport::grpc::TRONGRID_MAINNET};
+    /// # use tronz_provider::types::{SignedTransaction, TransactionRequest};
+    /// # use tronz_signer::{LocalSigner, TronSigner};
+    /// # async fn run() -> tronz_provider::Result<()> {
+    /// # let provider = ProviderBuilder::new().with_recommended_fillers().on_grpc(TRONGRID_MAINNET).await?;
+    /// # let req = TransactionRequest::default();
+    /// # let signer_a = LocalSigner::from_hex(
+    /// #     "0000000000000000000000000000000000000000000000000000000000000001",
+    /// # ).unwrap();
+    /// # let signer_b = LocalSigner::from_hex(
+    /// #     "0000000000000000000000000000000000000000000000000000000000000002",
+    /// # ).unwrap();
+    /// let raw = provider.build_transaction(req).await?;
+    ///
+    /// let sig1 = signer_a.sign_hash(raw.tx_id()).await.unwrap();
+    /// let sig2 = signer_b.sign_hash(raw.tx_id()).await.unwrap();
+    ///
+    /// let signed = SignedTransaction { raw, signatures: vec![sig1, sig2] };
+    /// provider.broadcast(signed).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn build_transaction(&self, req: TransactionRequest) -> Result<RawTransaction> {
         // ── 1. Fill (sync then async) ────────────────────────────────────────
         let filler = self.filler.clone();
