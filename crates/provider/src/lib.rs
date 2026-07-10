@@ -4,6 +4,9 @@
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[macro_use]
+extern crate tracing;
+
 pub mod builders;
 pub mod ext;
 pub mod fillers;

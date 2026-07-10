@@ -612,11 +612,7 @@ fn rewrite_attr(inner: TokenStream2) -> Option<TokenStream2> {
                     }
                     let mut grp = Group::new(Delimiter::Parenthesis, kept);
                     grp.set_span(g.span());
-                    return Some(
-                        [toks[0].clone(), TokenTree::Group(grp)]
-                            .into_iter()
-                            .collect(),
-                    );
+                    return Some([toks[0].clone(), TokenTree::Group(grp)].into_iter().collect());
                 }
             }
             Some(inner)
@@ -781,11 +777,8 @@ fn rust_ty(ty: &SolType, alloy: &TokenStream2, aprim: &TokenStream2) -> Result<T
             }
         }
         SolType::Tuple(tuple) => {
-            let inners = tuple
-                .types
-                .iter()
-                .map(|t| rust_ty(t, alloy, aprim))
-                .collect::<Result<Vec<_>>>()?;
+            let inners =
+                tuple.types.iter().map(|t| rust_ty(t, alloy, aprim)).collect::<Result<Vec<_>>>()?;
             quote!((#(#inners,)*))
         }
         SolType::Custom(path) => {
@@ -822,10 +815,7 @@ fn int_ty(bits: u16, signed: bool, aprim: &TokenStream2) -> TokenStream2 {
 fn parse_hex(lit: &LitStr) -> Result<Vec<u8>> {
     let span = lit.span();
     let s = lit.value();
-    let s = s
-        .strip_prefix("0x")
-        .or_else(|| s.strip_prefix("0X"))
-        .unwrap_or(&s);
+    let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(&s);
     if s.len() % 2 != 0 {
         return Err(syn::Error::new(span, "bytecode hex string has odd length"));
     }
@@ -844,9 +834,6 @@ fn hex_nibble(b: u8, span: Span) -> Result<u8> {
         b'0'..=b'9' => Ok(b - b'0'),
         b'a'..=b'f' => Ok(b - b'a' + 10),
         b'A'..=b'F' => Ok(b - b'A' + 10),
-        _ => Err(syn::Error::new(
-            span,
-            format!("invalid hex byte '{}'", b as char),
-        )),
+        _ => Err(syn::Error::new(span, format!("invalid hex byte '{}'", b as char))),
     }
 }

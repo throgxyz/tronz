@@ -21,19 +21,10 @@
 //! #     abi: &[u8],
 //! # ) -> tronz_contract::Result<()> {
 //! // One-shot: broadcast + wait + return address
-//! let address = provider
-//!     .deploy(bytecode.clone())
-//!     .abi(abi)
-//!     .name("MyToken")
-//!     .deploy()
-//!     .await?;
+//! let address = provider.deploy(bytecode.clone()).abi(abi).name("MyToken").deploy().await?;
 //!
 //! // Or split into broadcast + poll separately:
-//! let pending = provider
-//!     .deploy(bytecode)
-//!     .abi(abi)
-//!     .send()
-//!     .await?;
+//! let pending = provider.deploy(bytecode).abi(abi).send().await?;
 //! let info = pending.get_receipt().await?;
 //! let contract_address = info.contract_address;
 //! # Ok(()) }
@@ -142,8 +133,7 @@ impl<P: TronProvider> DeployBuilder<P> {
         // Transport errors → ContractError::Provider,
         // timeout → ContractError::ConfirmationTimeout.
         let info = pending.get_receipt().await?;
-        info.contract_address
-            .ok_or(ContractError::ContractNotDeployed)
+        info.contract_address.ok_or(ContractError::ContractNotDeployed)
     }
 
     /// Build, sign, and broadcast the deployment transaction.
@@ -176,9 +166,6 @@ impl<P: TronProvider> DeployBuilder<P> {
             req = req.with_fee_limit(limit);
         }
 
-        self.provider
-            .send_transaction(req)
-            .await
-            .map_err(ContractError::Provider)
+        self.provider.send_transaction(req).await.map_err(ContractError::Provider)
     }
 }

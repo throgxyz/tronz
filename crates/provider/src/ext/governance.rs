@@ -69,10 +69,7 @@ pub trait GovernanceApi: TronProvider + Sized {
 
 impl<P: TronProvider> GovernanceApi for P {
     async fn list_proposals(&self) -> Result<Vec<ProposalInfo>> {
-        self.transport()
-            .list_proposals()
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().list_proposals().await.map_err(|e| Error::from(e.into()))
     }
 
     async fn get_paginated_proposal_list(
@@ -87,10 +84,7 @@ impl<P: TronProvider> GovernanceApi for P {
     }
 
     async fn get_proposal_by_id(&self, proposal_id: i64) -> Result<ProposalInfo> {
-        self.transport()
-            .get_proposal_by_id(proposal_id)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_proposal_by_id(proposal_id).await.map_err(|e| Error::from(e.into()))
     }
 
     fn submit_proposal(&self) -> SubmitProposalBuilder<'_, Self> {
@@ -120,12 +114,7 @@ pub struct SubmitProposalBuilder<'a, P> {
 
 impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            parameters: HashMap::new(),
-            memo: None,
-        }
+        Self { provider, owner: None, parameters: HashMap::new(), memo: None }
     }
 
     /// Override the proposer address (defaults to the provider's signer).
@@ -188,13 +177,7 @@ pub struct ApproveProposalBuilder<'a, P> {
 
 impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            proposal_id: None,
-            is_add_approval: true,
-            memo: None,
-        }
+        Self { provider, owner: None, proposal_id: None, is_add_approval: true, memo: None }
     }
 
     /// Override the voter address (defaults to the provider's signer).
@@ -226,9 +209,7 @@ impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let proposal_id = self
-            .proposal_id
-            .ok_or(Error::missing_field("proposal_id"))?;
+        let proposal_id = self.proposal_id.ok_or(Error::missing_field("proposal_id"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::ProposalApprove(ProposalApproveContract {
@@ -257,12 +238,7 @@ pub struct CancelProposalBuilder<'a, P> {
 
 impl<'a, P: TronProvider> CancelProposalBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            proposal_id: None,
-            memo: None,
-        }
+        Self { provider, owner: None, proposal_id: None, memo: None }
     }
 
     /// Override the proposer address (defaults to the provider's signer).
@@ -286,9 +262,7 @@ impl<'a, P: TronProvider> CancelProposalBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let proposal_id = self
-            .proposal_id
-            .ok_or(Error::missing_field("proposal_id"))?;
+        let proposal_id = self.proposal_id.ok_or(Error::missing_field("proposal_id"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::ProposalDelete(ProposalDeleteContract {

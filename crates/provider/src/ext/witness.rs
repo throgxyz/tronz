@@ -72,17 +72,11 @@ impl<P: TronProvider> WitnessApi for P {
     }
 
     async fn get_brokerage(&self, address: Address) -> Result<u64> {
-        self.transport()
-            .get_brokerage(address)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_brokerage(address).await.map_err(|e| Error::from(e.into()))
     }
 
     async fn get_reward_info(&self, address: Address) -> Result<u64> {
-        self.transport()
-            .get_reward_info(address)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_reward_info(address).await.map_err(|e| Error::from(e.into()))
     }
 
     fn become_witness(&self) -> BecomeWitnessBuilder<'_, Self> {
@@ -114,12 +108,7 @@ pub struct BecomeWitnessBuilder<'a, P> {
 
 impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            url: None,
-            memo: None,
-        }
+        Self { provider, owner: None, url: None, memo: None }
     }
 
     /// Override the applicant address (defaults to the provider's signer).
@@ -171,12 +160,7 @@ pub struct UpdateWitnessBuilder<'a, P> {
 
 impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            update_url: None,
-            memo: None,
-        }
+        Self { provider, owner: None, update_url: None, memo: None }
     }
 
     /// Override the SR address (defaults to the provider's signer).
@@ -228,12 +212,7 @@ pub struct UpdateBrokerageBuilder<'a, P> {
 
 impl<'a, P: TronProvider> UpdateBrokerageBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            brokerage: None,
-            memo: None,
-        }
+        Self { provider, owner: None, brokerage: None, memo: None }
     }
 
     /// Override the SR address (defaults to the provider's signer).

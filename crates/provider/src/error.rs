@@ -129,41 +129,25 @@ impl TransportErrorKind {
     /// Returns the message if this is [`NodeError`](Self::NodeError).
     #[inline]
     pub fn as_node_error(&self) -> Option<&str> {
-        if let Self::NodeError(msg) = self {
-            Some(msg)
-        } else {
-            None
-        }
+        if let Self::NodeError(msg) = self { Some(msg) } else { None }
     }
 
     /// Returns the message if this is [`Malformed`](Self::Malformed).
     #[inline]
     pub fn as_malformed(&self) -> Option<&str> {
-        if let Self::Malformed(msg) = self {
-            Some(msg)
-        } else {
-            None
-        }
+        if let Self::Malformed(msg) = self { Some(msg) } else { None }
     }
 
     /// Returns the inner error if this is [`Custom`](Self::Custom).
     #[inline]
     pub const fn as_custom(&self) -> Option<&(dyn StdError + Send + Sync + 'static)> {
-        if let Self::Custom(err) = self {
-            Some(&**err)
-        } else {
-            None
-        }
+        if let Self::Custom(err) = self { Some(&**err) } else { None }
     }
 
     /// Returns the inner error if this is [`NonRetryable`](Self::NonRetryable).
     #[inline]
     pub const fn as_non_retryable(&self) -> Option<&(dyn StdError + Send + Sync + 'static)> {
-        if let Self::NonRetryable(err) = self {
-            Some(&**err)
-        } else {
-            None
-        }
+        if let Self::NonRetryable(err) = self { Some(&**err) } else { None }
     }
 }
 
@@ -252,21 +236,13 @@ impl<E: StdError + 'static> RpcError<E> {
     /// Returns the node-rejection message if this is [`NodeError`](Self::NodeError).
     #[inline]
     pub fn as_node_error(&self) -> Option<&str> {
-        if let Self::NodeError(msg) = self {
-            Some(msg)
-        } else {
-            None
-        }
+        if let Self::NodeError(msg) = self { Some(msg) } else { None }
     }
 
     /// Returns the inner transport error if this is [`Transport`](Self::Transport).
     #[inline]
     pub const fn as_transport_err(&self) -> Option<&E> {
-        if let Self::Transport(e) = self {
-            Some(e)
-        } else {
-            None
-        }
+        if let Self::Transport(e) = self { Some(e) } else { None }
     }
 }
 
@@ -274,8 +250,7 @@ impl RpcError<TransportErrorKind> {
     /// Returns `true` if the underlying transport error is retryable.
     #[inline]
     pub fn is_retryable(&self) -> bool {
-        self.as_transport_err()
-            .is_some_and(TransportErrorKind::is_retryable)
+        self.as_transport_err().is_some_and(TransportErrorKind::is_retryable)
     }
 }
 
@@ -310,11 +285,7 @@ mod tests {
     #[test]
     fn non_retryable_grpc_codes() {
         use tonic::Code;
-        for code in [
-            Code::DeadlineExceeded,
-            Code::NotFound,
-            Code::InvalidArgument,
-        ] {
+        for code in [Code::DeadlineExceeded, Code::NotFound, Code::InvalidArgument] {
             let err = TransportErrorKind::Grpc(tonic::Status::new(code, ""));
             assert!(!err.is_retryable(), "{code:?} should not be retryable");
         }

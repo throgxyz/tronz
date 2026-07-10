@@ -21,13 +21,7 @@ pub struct AccountPermissionUpdateBuilder<'a, P> {
 impl<'a, P: TronProvider> AccountPermissionUpdateBuilder<'a, P> {
     /// Start a new builder.
     pub fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            owner_permission: None,
-            witness: None,
-            actives: Vec::new(),
-        }
+        Self { provider, owner: None, owner_permission: None, witness: None, actives: Vec::new() }
     }
 
     /// Override the account being updated.

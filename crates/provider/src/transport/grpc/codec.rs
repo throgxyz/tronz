@@ -46,15 +46,11 @@ fn addr(bytes: Vec<u8>) -> Result<Address, TransportErrorKind> {
 }
 
 fn opt_addr(bytes: Vec<u8>) -> Option<Address> {
-    if bytes.is_empty() {
-        None
-    } else {
-        Address::from_slice(&bytes).ok()
-    }
+    if bytes.is_empty() { None } else { Address::from_slice(&bytes).ok() }
 }
 
 /// Convert a byte vec to a B256. Returns `B256::ZERO` when the slice is not
-/// exactly 32 bytes, and emits a `tracing::warn!`.
+/// exactly 32 bytes, and emits a `warn!`.
 ///
 /// This is acceptable for log topics (a wrong-length topic simply won't match
 /// any filter) but **not** for block hashes — see [`block_from_extention`]
@@ -65,10 +61,7 @@ fn b256(bytes: Vec<u8>) -> B256 {
         arr.copy_from_slice(&bytes);
         B256::from(arr)
     } else {
-        tracing::warn!(
-            len = bytes.len(),
-            "unexpected b256 byte length from node, substituting B256::ZERO"
-        );
+        warn!(len = bytes.len(), "unexpected b256 byte length from node, substituting B256::ZERO");
         B256::ZERO
     }
 }
@@ -95,11 +88,7 @@ pub(super) fn block_from_extention(
         )));
     }
 
-    Ok(BlockInfo {
-        number: raw.number,
-        hash: b256(blockid),
-        timestamp: raw.timestamp,
-    })
+    Ok(BlockInfo { number: raw.number, hash: b256(blockid), timestamp: raw.timestamp })
 }
 
 // ── Account ───────────────────────────────────────────────────────────────────
@@ -114,20 +103,14 @@ pub(super) fn account_from_proto(
     queried: Address,
 ) -> Result<AccountInfo, TransportErrorKind> {
     let is_activated = !a.address.is_empty();
-    let address = if a.address.is_empty() {
-        queried
-    } else {
-        addr(a.address.clone())?
-    };
+    let address = if a.address.is_empty() { queried } else { addr(a.address.clone())? };
 
     let frozen_v2 = a
         .frozen_v2
         .into_iter()
         .filter_map(|f| {
-            tronz_primitives::ResourceCode::from_i32(f.r#type).map(|r| FreezeV2 {
-                resource: r,
-                amount: Trx::from_sun_unchecked(f.amount),
-            })
+            tronz_primitives::ResourceCode::from_i32(f.r#type)
+                .map(|r| FreezeV2 { resource: r, amount: Trx::from_sun_unchecked(f.amount) })
         })
         .collect();
 
@@ -148,24 +131,21 @@ pub(super) fn account_from_proto(
         .into_iter()
         .filter_map(|v| {
             addr(v.vote_address)
-                .inspect_err(|e| tracing::warn!("skipping vote entry with bad address: {e}"))
+                .inspect_err(|e| warn!("skipping vote entry with bad address: {e}"))
                 .ok()
-                .map(|va| Vote {
-                    vote_address: va,
-                    vote_count: v.vote_count,
-                })
+                .map(|va| Vote { vote_address: va, vote_count: v.vote_count })
         })
         .collect();
 
     let permissions = AccountPermissions {
         owner: a.owner_permission.and_then(|p| {
             permission_from_proto(p)
-                .inspect_err(|e| tracing::warn!("skipping malformed owner permission: {e}"))
+                .inspect_err(|e| warn!("skipping malformed owner permission: {e}"))
                 .ok()
         }),
         witness: a.witness_permission.and_then(|p| {
             permission_from_proto(p)
-                .inspect_err(|e| tracing::warn!("skipping malformed witness permission: {e}"))
+                .inspect_err(|e| warn!("skipping malformed witness permission: {e}"))
                 .ok()
         }),
         actives: a
@@ -173,7 +153,7 @@ pub(super) fn account_from_proto(
             .into_iter()
             .filter_map(|p| {
                 permission_from_proto(p)
-                    .inspect_err(|e| tracing::warn!("skipping malformed active permission: {e}"))
+                    .inspect_err(|e| warn!("skipping malformed active permission: {e}"))
                     .ok()
             })
             .collect(),
@@ -198,20 +178,12 @@ fn permission_from_proto(p: proto::Permission) -> Result<Permission, TransportEr
         .into_iter()
         .filter_map(|k| {
             addr(k.address)
-                .inspect_err(|e| tracing::warn!("skipping permission key with bad address: {e}"))
+                .inspect_err(|e| warn!("skipping permission key with bad address: {e}"))
                 .ok()
-                .map(|a| PermissionKey {
-                    address: a,
-                    weight: k.weight,
-                })
+                .map(|a| PermissionKey { address: a, weight: k.weight })
         })
         .collect();
-    Ok(Permission {
-        id: p.id,
-        permission_name: p.permission_name,
-        threshold: p.threshold,
-        keys,
-    })
+    Ok(Permission { id: p.id, permission_name: p.permission_name, threshold: p.threshold, keys })
 }
 
 pub(super) fn account_resource_from_proto(r: proto::AccountResourceMessage) -> AccountResource {
@@ -253,7 +225,7 @@ pub(super) fn signed_tx_from_proto(
         .iter()
         .filter_map(|s| {
             RecoverableSignature::from_bytes(s)
-                .inspect_err(|e| tracing::warn!("skipping malformed signature: {e}"))
+                .inspect_err(|e| warn!("skipping malformed signature: {e}"))
                 .ok()
         })
         .collect();
@@ -290,11 +262,7 @@ pub(super) fn transaction_info_from_proto(
         TxId::from(bytes)
     };
 
-    let status = if info.result == 0 {
-        TxStatus::Success
-    } else {
-        TxStatus::Failed
-    };
+    let status = if info.result == 0 { TxStatus::Success } else { TxStatus::Failed };
 
     let receipt = info.receipt.unwrap_or_default();
     let contract_result = match receipt.result {
@@ -373,11 +341,7 @@ pub(super) fn constant_result_from_extention(
         None
     };
 
-    Ok(ConstantCallResult {
-        output,
-        energy_used: ext.energy_used,
-        revert_reason,
-    })
+    Ok(ConstantCallResult { output, energy_used: ext.energy_used, revert_reason })
 }
 
 /// Convert a proto `SmartContract.ABI` to a JSON ABI byte array compatible
@@ -463,10 +427,7 @@ pub(super) fn smart_contract_from_proto(c: proto::SmartContract) -> SmartContrac
 pub(super) fn smart_contract_info_from_wrapper(
     w: proto::SmartContractDataWrapper,
 ) -> SmartContractInfo {
-    let mut info = w
-        .smart_contract
-        .map(smart_contract_from_proto)
-        .unwrap_or_default();
+    let mut info = w.smart_contract.map(smart_contract_from_proto).unwrap_or_default();
     if !w.runtimecode.is_empty() {
         info.runtime_bytecode = Some(Bytes::from(w.runtimecode));
     }
@@ -522,10 +483,7 @@ fn permission_to_proto(p: Permission) -> proto::Permission {
         keys: p
             .keys
             .into_iter()
-            .map(|k| proto::Key {
-                address: addr_bytes(k.address),
-                weight: k.weight,
-            })
+            .map(|k| proto::Key { address: addr_bytes(k.address), weight: k.weight })
             .collect(),
     }
 }
@@ -667,9 +625,7 @@ pub(super) fn participate_asset_issue_to_proto(
 }
 
 pub(super) fn unfreeze_asset_to_proto(p: UnfreezeAssetContract) -> proto::UnfreezeAssetContract {
-    proto::UnfreezeAssetContract {
-        owner_address: addr_bytes(p.owner_address),
-    }
+    proto::UnfreezeAssetContract { owner_address: addr_bytes(p.owner_address) }
 }
 
 pub(super) fn update_asset_to_proto(p: UpdateAssetContract) -> proto::UpdateAssetContract {
@@ -737,16 +693,8 @@ pub(super) fn delegated_resource_index_from_proto(
 ) -> Result<DelegatedResourceIndex, TransportErrorKind> {
     Ok(DelegatedResourceIndex {
         account: addr(idx.account)?,
-        from_accounts: idx
-            .from_accounts
-            .into_iter()
-            .filter_map(|b| addr(b).ok())
-            .collect(),
-        to_accounts: idx
-            .to_accounts
-            .into_iter()
-            .filter_map(|b| addr(b).ok())
-            .collect(),
+        from_accounts: idx.from_accounts.into_iter().filter_map(|b| addr(b).ok()).collect(),
+        to_accounts: idx.to_accounts.into_iter().filter_map(|b| addr(b).ok()).collect(),
     })
 }
 
@@ -782,11 +730,7 @@ pub(super) fn proposal_from_proto(p: proto::Proposal) -> ProposalInfo {
     } else {
         Address::from_slice(&p.proposer_address).ok()
     };
-    let approvals = p
-        .approvals
-        .into_iter()
-        .filter_map(|b| Address::from_slice(&b).ok())
-        .collect();
+    let approvals = p.approvals.into_iter().filter_map(|b| Address::from_slice(&b).ok()).collect();
     ProposalInfo {
         proposal_id: p.proposal_id,
         proposer_address,
@@ -878,11 +822,7 @@ pub(super) fn block_from_plain(block: proto::Block) -> Result<BlockInfo, Transpo
     let num_be = raw.number.to_be_bytes();
     block_id[0..8].copy_from_slice(&num_be);
 
-    Ok(BlockInfo {
-        number: raw.number,
-        hash: B256::from(block_id),
-        timestamp: raw.timestamp,
-    })
+    Ok(BlockInfo { number: raw.number, hash: B256::from(block_id), timestamp: raw.timestamp })
 }
 
 // ── Raw transaction from plain Transaction proto ───────────────────────────────
@@ -892,11 +832,8 @@ pub(super) fn raw_from_plain(tx: proto::Transaction) -> Result<RawTransaction, T
     use prost::Message as _;
     use sha2::{Digest, Sha256};
 
-    let (expiration, timestamp) = tx
-        .raw_data
-        .as_ref()
-        .map(|r| (r.expiration, r.timestamp))
-        .unwrap_or((0, 0));
+    let (expiration, timestamp) =
+        tx.raw_data.as_ref().map(|r| (r.expiration, r.timestamp)).unwrap_or((0, 0));
 
     let tx_id_bytes: [u8; 32] = if let Some(ref raw) = tx.raw_data {
         Sha256::digest(raw.encode_to_vec()).into()
@@ -1041,16 +978,7 @@ pub(super) fn sign_weight_from_proto(
 
     let required_weight = w.permission.as_ref().map(|p| p.threshold).unwrap_or(0);
 
-    let result = w
-        .result
-        .as_ref()
-        .map(|r| r.message.clone())
-        .unwrap_or_default();
+    let result = w.result.as_ref().map(|r| r.message.clone()).unwrap_or_default();
 
-    Ok(SignWeight {
-        approved_list,
-        current_weight: w.current_weight,
-        required_weight,
-        result,
-    })
+    Ok(SignWeight { approved_list, current_weight: w.current_weight, required_weight, result })
 }

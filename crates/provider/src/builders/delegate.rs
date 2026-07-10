@@ -96,13 +96,7 @@ pub struct UndelegateBuilder<'a, P> {
 impl<'a, P: TronProvider> UndelegateBuilder<'a, P> {
     /// Start a new undelegate builder (defaults to reclaiming energy).
     pub fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            receiver: None,
-            amount: None,
-            resource: ResourceCode::Energy,
-        }
+        Self { provider, owner: None, receiver: None, amount: None, resource: ResourceCode::Energy }
     }
 
     /// Override the delegator account.
@@ -136,14 +130,12 @@ impl<'a, P: TronProvider> UndelegateBuilder<'a, P> {
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
-            contract: Some(ContractType::UnDelegateResource(
-                UnDelegateResourceContract {
-                    owner_address: owner,
-                    resource: self.resource,
-                    balance: amount,
-                    receiver_address: receiver,
-                },
-            )),
+            contract: Some(ContractType::UnDelegateResource(UnDelegateResourceContract {
+                owner_address: owner,
+                resource: self.resource,
+                balance: amount,
+                receiver_address: receiver,
+            })),
             ..Default::default()
         };
         self.provider.send_transaction(req).await

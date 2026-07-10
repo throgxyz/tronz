@@ -52,10 +52,7 @@ const NILE_BOGUS_TOKEN_ID: &str = "9999999999";
 
 /// Build a plain read-only provider connected to Nile.
 async fn read_provider() -> impl TronProvider {
-    ProviderBuilder::new()
-        .on_grpc(TRONGRID_NILE)
-        .await
-        .expect("failed to connect to Nile testnet")
+    ProviderBuilder::new().on_grpc(TRONGRID_NILE).await.expect("failed to connect to Nile testnet")
 }
 
 /// Read `TRON_TEST_KEY` from the environment.
@@ -75,10 +72,8 @@ fn random_key_bytes() -> [u8; 32] {
     use std::hash::{BuildHasher, Hasher};
 
     let mut out = [0u8; 32];
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     for (i, chunk) in out.chunks_mut(8).enumerate() {
         let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
         hasher.write_usize(i);
@@ -95,27 +90,13 @@ fn random_key_bytes() -> [u8; 32] {
 #[ignore = "requires network"]
 async fn test_get_now_block() {
     let provider = read_provider().await;
-    let block = provider
-        .get_now_block()
-        .await
-        .expect("get_now_block failed");
+    let block = provider.get_now_block().await.expect("get_now_block failed");
 
-    assert!(
-        block.number > 0,
-        "block number should be positive, got {}",
-        block.number
-    );
-    assert_ne!(
-        block.hash,
-        tronz_primitives::B256::ZERO,
-        "block hash should be non-zero"
-    );
+    assert!(block.number > 0, "block number should be positive, got {}", block.number);
+    assert_ne!(block.hash, tronz_primitives::B256::ZERO, "block hash should be non-zero");
     assert!(block.timestamp > 0, "block timestamp should be positive");
 
-    eprintln!(
-        "Nile head: block #{} (ts={})",
-        block.number, block.timestamp
-    );
+    eprintln!("Nile head: block #{} (ts={})", block.number, block.timestamp);
 }
 
 // ── Account ───────────────────────────────────────────────────────────────────
@@ -143,14 +124,8 @@ async fn test_get_account_never_activated_is_not_an_error() {
         .await
         .expect("get_account should succeed even for a never-activated address");
 
-    assert_eq!(
-        account.address, fresh_addr,
-        "returned address should match the queried address"
-    );
-    assert!(
-        !account.is_activated,
-        "fresh address must not be marked as activated"
-    );
+    assert_eq!(account.address, fresh_addr, "returned address should match the queried address");
+    assert!(!account.is_activated, "fresh address must not be marked as activated");
     assert_eq!(
         account.balance,
         tronz_primitives::Trx::ZERO,
@@ -162,25 +137,13 @@ async fn test_get_account_never_activated_is_not_an_error() {
 #[ignore = "requires network"]
 async fn test_get_account_activated() {
     let provider = read_provider().await;
-    let addr = NILE_ACTIVE_ADDR
-        .parse::<Address>()
-        .expect("invalid NILE_ACTIVE_ADDR constant");
+    let addr = NILE_ACTIVE_ADDR.parse::<Address>().expect("invalid NILE_ACTIVE_ADDR constant");
 
-    let account = provider
-        .get_account(addr)
-        .await
-        .expect("get_account failed");
+    let account = provider.get_account(addr).await.expect("get_account failed");
     assert_eq!(account.address, addr);
-    assert!(
-        account.is_activated,
-        "known active account should be activated"
-    );
+    assert!(account.is_activated, "known active account should be activated");
 
-    eprintln!(
-        "Account {} balance: {} TRX",
-        addr,
-        account.balance.as_sun() as f64 / 1_000_000.0
-    );
+    eprintln!("Account {} balance: {} TRX", addr, account.balance.as_sun() as f64 / 1_000_000.0);
 }
 
 // ── Transaction not found ─────────────────────────────────────────────────────
@@ -224,10 +187,7 @@ async fn test_get_asset_info_existing_token() {
         .expect("get_asset_info failed for a known token")
         .expect("known token should be found");
 
-    assert_eq!(
-        info.id, NILE_TRC10_TOKEN_ID,
-        "returned token id should match query"
-    );
+    assert_eq!(info.id, NILE_TRC10_TOKEN_ID, "returned token id should match query");
     assert!(!info.name.is_empty(), "token name should not be empty");
 
     eprintln!(
@@ -247,10 +207,7 @@ async fn test_get_asset_info_nonexistent_token_returns_not_found() {
         .await
         .expect("transport should not error for bogus token");
 
-    assert!(
-        result.is_none(),
-        "expected None for bogus token, got: {result:?}"
-    );
+    assert!(result.is_none(), "expected None for bogus token, got: {result:?}");
 }
 
 /// `trc10_balance` for an account that holds none of the token must return `0`,
@@ -314,10 +271,7 @@ async fn test_trx_transfer_and_receipt() {
     eprintln!("Broadcast tx: {}", pending.tx_id());
 
     let info = pending.get_receipt().await.expect("get_receipt failed");
-    eprintln!(
-        "Confirmed: block #{}, energy_used={}",
-        info.block_number, info.energy_usage
-    );
+    eprintln!("Confirmed: block #{}, energy_used={}", info.block_number, info.energy_usage);
 
     assert_eq!(
         info.status,
@@ -337,14 +291,10 @@ async fn test_usdt_balance_of_constant_call() {
 
     let provider = read_provider().await;
 
-    let contract = NILE_USDT_CONTRACT
-        .parse::<Address>()
-        .expect("bad USDT address");
+    let contract = NILE_USDT_CONTRACT.parse::<Address>().expect("bad USDT address");
 
     // `balanceOf(address)` selector = 0x70a08231; arg = NILE_ACTIVE_ADDR (padded to 32 bytes).
-    let owner = NILE_ACTIVE_ADDR
-        .parse::<Address>()
-        .expect("bad active addr");
+    let owner = NILE_ACTIVE_ADDR.parse::<Address>().expect("bad active addr");
     let mut data = vec![0x70u8, 0xa0, 0x82, 0x31];
     // ABI-encode the address: 12 zero bytes + 20 address bytes.
     data.extend_from_slice(&[0u8; 12]);
@@ -366,11 +316,7 @@ async fn test_usdt_balance_of_constant_call() {
         .expect("trigger_constant_contract failed");
 
     // We just check that the output is 32 bytes (a uint256) — not the actual value.
-    assert_eq!(
-        result.output.len(),
-        32,
-        "balanceOf should return a 32-byte uint256"
-    );
+    assert_eq!(result.output.len(), 32, "balanceOf should return a 32-byte uint256");
 
     let balance_u256 = tronz_primitives::U256::from_be_slice(&result.output);
     eprintln!("USDT balanceOf({owner}): {balance_u256} (6 decimals)");
@@ -387,12 +333,8 @@ async fn test_estimate_energy_usdt_transfer() {
 
     let provider = read_provider().await;
 
-    let contract = NILE_USDT_CONTRACT
-        .parse::<Address>()
-        .expect("bad USDT address");
-    let caller = NILE_ACTIVE_ADDR
-        .parse::<Address>()
-        .expect("bad active addr");
+    let contract = NILE_USDT_CONTRACT.parse::<Address>().expect("bad USDT address");
+    let caller = NILE_ACTIVE_ADDR.parse::<Address>().expect("bad active addr");
 
     // `transfer(address,uint256)` selector = 0xa9059cbb
     // recipient = NILE_ACTIVE_ADDR, amount = 1
@@ -411,14 +353,8 @@ async fn test_estimate_energy_usdt_transfer() {
         token_id: 0,
     };
 
-    let energy = provider
-        .estimate_energy(params)
-        .await
-        .expect("estimate_energy failed");
+    let energy = provider.estimate_energy(params).await.expect("estimate_energy failed");
 
-    assert!(
-        energy > 0,
-        "energy estimate should be positive, got {energy}"
-    );
+    assert!(energy > 0, "energy estimate should be positive, got {energy}");
     eprintln!("Estimated energy for USDT transfer: {energy}");
 }

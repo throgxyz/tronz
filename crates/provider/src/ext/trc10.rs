@@ -129,10 +129,7 @@ pub trait Trc10Api: TronProvider + Sized {
 
 impl<P: TronProvider> Trc10Api for P {
     async fn get_asset_info(&self, token_id: &str) -> Result<Option<AssetInfo>> {
-        self.transport()
-            .get_asset_issue_by_id(token_id)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_asset_issue_by_id(token_id).await.map_err(|e| Error::from(e.into()))
     }
 
     async fn get_asset_issue_by_account(&self, address: Address) -> Result<Vec<AssetInfo>> {
@@ -155,17 +152,11 @@ impl<P: TronProvider> Trc10Api for P {
     }
 
     async fn get_asset_issue_by_name(&self, name: &str) -> Result<Option<AssetInfo>> {
-        self.transport()
-            .get_asset_issue_by_name(name)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_asset_issue_by_name(name).await.map_err(|e| Error::from(e.into()))
     }
 
     async fn get_asset_issue_list_by_name(&self, name: &str) -> Result<Vec<AssetInfo>> {
-        self.transport()
-            .get_asset_issue_list_by_name(name)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_asset_issue_list_by_name(name).await.map_err(|e| Error::from(e.into()))
     }
 
     fn transfer_trc10(&self) -> TransferTrc10Builder<'_, Self> {
@@ -205,14 +196,7 @@ pub struct TransferTrc10Builder<'a, P> {
 
 impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            to: None,
-            token_id: None,
-            amount: None,
-            memo: None,
-        }
+        Self { provider, owner: None, to: None, token_id: None, amount: None, memo: None }
     }
 
     /// Override the sender (defaults to the provider's signer address).
@@ -390,10 +374,7 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
 
     /// Lock a portion of the supply for `days` days.
     pub fn freeze(mut self, amount: i64, days: i64) -> Self {
-        self.frozen_supply.push(FrozenSupply {
-            frozen_amount: amount,
-            frozen_days: days,
-        });
+        self.frozen_supply.push(FrozenSupply { frozen_amount: amount, frozen_days: days });
         self
     }
 
@@ -403,9 +384,7 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
         let name = self.name.ok_or(Error::missing_field("name"))?;
         let abbr = self.abbr.ok_or(Error::missing_field("abbr"))?;
         let url = self.url.ok_or(Error::missing_field("url"))?;
-        let total_supply = self
-            .total_supply
-            .ok_or(Error::missing_field("total_supply"))?;
+        let total_supply = self.total_supply.ok_or(Error::missing_field("total_supply"))?;
 
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -453,14 +432,7 @@ pub struct ParticipateTrc10Builder<'a, P> {
 
 impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            to: None,
-            token_id: None,
-            amount: None,
-            memo: None,
-        }
+        Self { provider, owner: None, to: None, token_id: None, amount: None, memo: None }
     }
 
     /// Override the buyer address (defaults to the provider's signer address).
@@ -501,14 +473,12 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
         let req = TransactionRequest {
-            contract: Some(ContractType::ParticipateAssetIssue(
-                ParticipateAssetIssueContract {
-                    owner_address: owner,
-                    to_address: to,
-                    token_id,
-                    amount,
-                },
-            )),
+            contract: Some(ContractType::ParticipateAssetIssue(ParticipateAssetIssueContract {
+                owner_address: owner,
+                to_address: to,
+                token_id,
+                amount,
+            })),
             memo: self.memo,
             ..Default::default()
         };
@@ -529,11 +499,7 @@ pub struct UnfreezeTrc10Builder<'a, P> {
 
 impl<'a, P: TronProvider> UnfreezeTrc10Builder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            memo: None,
-        }
+        Self { provider, owner: None, memo: None }
     }
 
     /// Override the issuer address (defaults to the provider's signer address).

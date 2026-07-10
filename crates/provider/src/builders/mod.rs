@@ -31,9 +31,7 @@ pub(crate) fn resolve_owner<P: TronProvider>(
     owner: Option<Address>,
     provider: &P,
 ) -> Result<Address> {
-    owner
-        .or_else(|| provider.signer_address())
-        .ok_or(Error::no_signer())
+    owner.or_else(|| provider.signer_address()).ok_or(Error::no_signer())
 }
 
 pub use account::{CreateAccountBuilder, UpdateAccountBuilder};

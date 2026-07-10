@@ -83,11 +83,7 @@ pub struct Log {
 impl Log {
     /// Construct a log from its three fields.
     pub fn new(address: Address, topics: Vec<B256>, data: impl Into<Bytes>) -> Self {
-        Self {
-            address,
-            topics,
-            data: data.into(),
-        }
+        Self { address, topics, data: data.into() }
     }
 }
 

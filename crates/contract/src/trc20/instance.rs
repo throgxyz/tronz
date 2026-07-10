@@ -40,9 +40,7 @@ pub struct Trc20Instance<P: TronProvider> {
 impl<P: TronProvider> Trc20Instance<P> {
     /// Bind to the TRC20 contract at `address`.
     pub fn new(provider: P, address: Address) -> Self {
-        Self {
-            inner: ContractInstance::new_raw(provider, address),
-        }
+        Self { inner: ContractInstance::new_raw(provider, address) }
     }
 
     /// The contract address.
@@ -57,70 +55,45 @@ impl<P: TronProvider> Trc20Instance<P> {
 
     /// Return a new instance pointing at a different address.
     pub fn at(self, address: Address) -> Self {
-        Self {
-            inner: self.inner.at(address),
-        }
+        Self { inner: self.inner.at(address) }
     }
 
     // ── reads ─────────────────────────────────────────────────────────────────
 
     /// Fetch the token name (e.g. `"Tether USD"`).
     pub async fn name(&self) -> Result<String, Trc20Error> {
-        let out = self
-            .inner
-            .call_raw(ITRC20::nameCall {}.abi_encode().into())
-            .call()
-            .await?;
+        let out = self.inner.call_raw(ITRC20::nameCall {}.abi_encode().into()).call().await?;
         Ok(decode_string_return(&out)?)
     }
 
     /// Fetch the token symbol (e.g. `"USDT"`).
     pub async fn symbol(&self) -> Result<String, Trc20Error> {
-        let out = self
-            .inner
-            .call_raw(ITRC20::symbolCall {}.abi_encode().into())
-            .call()
-            .await?;
+        let out = self.inner.call_raw(ITRC20::symbolCall {}.abi_encode().into()).call().await?;
         Ok(decode_string_return(&out)?)
     }
 
     /// Fetch the number of decimal places.
     pub async fn decimals(&self) -> Result<u8, Trc20Error> {
-        let out = self
-            .inner
-            .call_raw(ITRC20::decimalsCall {}.abi_encode().into())
-            .call()
-            .await?;
+        let out = self.inner.call_raw(ITRC20::decimalsCall {}.abi_encode().into()).call().await?;
         Ok(decode_decimals_return(&out)?)
     }
 
     /// Fetch the total token supply.
     pub async fn total_supply(&self) -> Result<U256, Trc20Error> {
-        let out = self
-            .inner
-            .call_raw(ITRC20::totalSupplyCall {}.abi_encode().into())
-            .call()
-            .await?;
+        let out =
+            self.inner.call_raw(ITRC20::totalSupplyCall {}.abi_encode().into()).call().await?;
         Ok(decode_uint256_return(&out)?)
     }
 
     /// Fetch the token balance of `account`.
     pub async fn balance_of(&self, account: Address) -> Result<U256, Trc20Error> {
-        let out = self
-            .inner
-            .call_raw(encode_balance_of(account))
-            .call()
-            .await?;
+        let out = self.inner.call_raw(encode_balance_of(account)).call().await?;
         Ok(decode_uint256_return(&out)?)
     }
 
     /// Fetch the remaining allowance that `spender` may transfer on behalf of `owner`.
     pub async fn allowance(&self, owner: Address, spender: Address) -> Result<U256, Trc20Error> {
-        let out = self
-            .inner
-            .call_raw(encode_allowance(owner, spender))
-            .call()
-            .await?;
+        let out = self.inner.call_raw(encode_allowance(owner, spender)).call().await?;
         Ok(decode_uint256_return(&out)?)
     }
 
@@ -132,10 +105,7 @@ impl<P: TronProvider> Trc20Instance<P> {
         to: Address,
         amount: U256,
     ) -> Result<PendingTransaction<P>, Trc20Error> {
-        self.inner
-            .call_raw(encode_transfer(to, amount))
-            .send()
-            .await
+        self.inner.call_raw(encode_transfer(to, amount)).send().await
     }
 
     /// Approve `spender` to transfer up to `amount` on the signer's behalf.
@@ -144,10 +114,7 @@ impl<P: TronProvider> Trc20Instance<P> {
         spender: Address,
         amount: U256,
     ) -> Result<PendingTransaction<P>, Trc20Error> {
-        self.inner
-            .call_raw(encode_approve(spender, amount))
-            .send()
-            .await
+        self.inner.call_raw(encode_approve(spender, amount)).send().await
     }
 
     /// Transfer `amount` tokens from `from` to `to`, using the signer's allowance.
@@ -157,10 +124,7 @@ impl<P: TronProvider> Trc20Instance<P> {
         to: Address,
         amount: U256,
     ) -> Result<PendingTransaction<P>, Trc20Error> {
-        self.inner
-            .call_raw(encode_transfer_from(from, to, amount))
-            .send()
-            .await
+        self.inner.call_raw(encode_transfer_from(from, to, amount)).send().await
     }
 }
 

@@ -95,10 +95,7 @@ impl ContractType {
     /// Whether this contract type requires a `fee_limit` to be set
     /// (smart-contract operations) versus native contracts that ignore it.
     pub fn needs_fee_limit(&self) -> bool {
-        matches!(
-            self,
-            ContractType::TriggerSmartContract(_) | ContractType::CreateSmartContract(_)
-        )
+        matches!(self, ContractType::TriggerSmartContract(_) | ContractType::CreateSmartContract(_))
     }
 
     /// The owner (sender) address of this contract operation.

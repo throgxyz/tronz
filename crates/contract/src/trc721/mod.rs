@@ -41,54 +41,35 @@ sol! {
 /// ABI-encode the `transferFrom(from, to, tokenId)` call.
 pub fn encode_transfer_from(from: Address, to: Address, token_id: U256) -> Bytes {
     use alloy_sol_types::SolCall as _;
-    ITRC721::transferFromCall {
-        from: from.into(),
-        to: to.into(),
-        tokenId: token_id,
-    }
-    .abi_encode()
-    .into()
+    ITRC721::transferFromCall { from: from.into(), to: to.into(), tokenId: token_id }
+        .abi_encode()
+        .into()
 }
 
 /// ABI-encode the `safeTransferFrom(from, to, tokenId)` call (no data).
 pub fn encode_safe_transfer_from(from: Address, to: Address, token_id: U256) -> Bytes {
     use alloy_sol_types::SolCall as _;
-    ITRC721::safeTransferFrom_0Call {
-        from: from.into(),
-        to: to.into(),
-        tokenId: token_id,
-    }
-    .abi_encode()
-    .into()
+    ITRC721::safeTransferFrom_0Call { from: from.into(), to: to.into(), tokenId: token_id }
+        .abi_encode()
+        .into()
 }
 
 /// ABI-encode the `approve(to, tokenId)` call.
 pub fn encode_approve(to: Address, token_id: U256) -> Bytes {
     use alloy_sol_types::SolCall as _;
-    ITRC721::approveCall {
-        to: to.into(),
-        tokenId: token_id,
-    }
-    .abi_encode()
-    .into()
+    ITRC721::approveCall { to: to.into(), tokenId: token_id }.abi_encode().into()
 }
 
 /// ABI-encode the `balanceOf(owner)` constant call.
 pub fn encode_balance_of(owner: Address) -> Bytes {
     use alloy_sol_types::SolCall as _;
-    ITRC721::balanceOfCall {
-        owner: owner.into(),
-    }
-    .abi_encode()
-    .into()
+    ITRC721::balanceOfCall { owner: owner.into() }.abi_encode().into()
 }
 
 /// ABI-encode the `ownerOf(tokenId)` constant call.
 pub fn encode_owner_of(token_id: U256) -> Bytes {
     use alloy_sol_types::SolCall as _;
-    ITRC721::ownerOfCall { tokenId: token_id }
-        .abi_encode()
-        .into()
+    ITRC721::ownerOfCall { tokenId: token_id }.abi_encode().into()
 }
 
 /// Decode the `uint256` returned by `balanceOf`.
@@ -128,19 +109,13 @@ mod tests {
     #[test]
     fn transfer_from_selector() {
         // keccak256("transferFrom(address,address,uint256)")[..4] == 0x23b872dd
-        assert_eq!(
-            ITRC721::transferFromCall::SELECTOR,
-            [0x23, 0xb8, 0x72, 0xdd]
-        );
+        assert_eq!(ITRC721::transferFromCall::SELECTOR, [0x23, 0xb8, 0x72, 0xdd]);
     }
 
     #[test]
     fn safe_transfer_from_selector() {
         // keccak256("safeTransferFrom(address,address,uint256)")[..4] == 0x42842e0e
-        assert_eq!(
-            ITRC721::safeTransferFrom_0Call::SELECTOR,
-            [0x42, 0x84, 0x2e, 0x0e]
-        );
+        assert_eq!(ITRC721::safeTransferFrom_0Call::SELECTOR, [0x42, 0x84, 0x2e, 0x0e]);
     }
 
     #[test]

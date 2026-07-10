@@ -74,10 +74,7 @@ pub trait ExchangeApi: TronProvider + Sized {
 
 impl<P: TronProvider> ExchangeApi for P {
     async fn list_exchanges(&self) -> Result<Vec<ExchangeInfo>> {
-        self.transport()
-            .list_exchanges()
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().list_exchanges().await.map_err(|e| Error::from(e.into()))
     }
 
     async fn get_paginated_exchange_list(
@@ -92,10 +89,7 @@ impl<P: TronProvider> ExchangeApi for P {
     }
 
     async fn get_exchange_by_id(&self, exchange_id: i64) -> Result<Option<ExchangeInfo>> {
-        self.transport()
-            .get_exchange_by_id(exchange_id)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_exchange_by_id(exchange_id).await.map_err(|e| Error::from(e.into()))
     }
 
     fn exchange_create(&self) -> ExchangeCreateBuilder<'_, Self> {
@@ -182,18 +176,13 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
     /// Build, sign, and broadcast the exchange-create transaction.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let first_token_id = self
-            .first_token_id
-            .ok_or(Error::missing_field("first_token_id"))?;
-        let first_token_balance = self
-            .first_token_balance
-            .ok_or(Error::missing_field("first_token_balance"))?;
-        let second_token_id = self
-            .second_token_id
-            .ok_or(Error::missing_field("second_token_id"))?;
-        let second_token_balance = self
-            .second_token_balance
-            .ok_or(Error::missing_field("second_token_balance"))?;
+        let first_token_id = self.first_token_id.ok_or(Error::missing_field("first_token_id"))?;
+        let first_token_balance =
+            self.first_token_balance.ok_or(Error::missing_field("first_token_balance"))?;
+        let second_token_id =
+            self.second_token_id.ok_or(Error::missing_field("second_token_id"))?;
+        let second_token_balance =
+            self.second_token_balance.ok_or(Error::missing_field("second_token_balance"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::ExchangeCreate(ExchangeCreateContract {
@@ -226,14 +215,7 @@ pub struct ExchangeInjectBuilder<'a, P> {
 
 impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            exchange_id: None,
-            token_id: None,
-            quant: None,
-            memo: None,
-        }
+        Self { provider, owner: None, exchange_id: None, token_id: None, quant: None, memo: None }
     }
 
     /// Override the sender address (defaults to the provider's signer address).
@@ -269,9 +251,7 @@ impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
     /// Build, sign, and broadcast the inject transaction.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let exchange_id = self
-            .exchange_id
-            .ok_or(Error::missing_field("exchange_id"))?;
+        let exchange_id = self.exchange_id.ok_or(Error::missing_field("exchange_id"))?;
         let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
         let quant = self.quant.ok_or(Error::missing_field("quant"))?;
 
@@ -305,14 +285,7 @@ pub struct ExchangeWithdrawBuilder<'a, P> {
 
 impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            exchange_id: None,
-            token_id: None,
-            quant: None,
-            memo: None,
-        }
+        Self { provider, owner: None, exchange_id: None, token_id: None, quant: None, memo: None }
     }
 
     /// Override the sender address (defaults to the provider's signer address).
@@ -348,9 +321,7 @@ impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
     /// Build, sign, and broadcast the withdraw transaction.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let exchange_id = self
-            .exchange_id
-            .ok_or(Error::missing_field("exchange_id"))?;
+        let exchange_id = self.exchange_id.ok_or(Error::missing_field("exchange_id"))?;
         let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
         let quant = self.quant.ok_or(Error::missing_field("quant"))?;
 
@@ -435,23 +406,19 @@ impl<'a, P: TronProvider> ExchangeTradeBuilder<'a, P> {
     /// Build, sign, and broadcast the trade transaction.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let exchange_id = self
-            .exchange_id
-            .ok_or(Error::missing_field("exchange_id"))?;
+        let exchange_id = self.exchange_id.ok_or(Error::missing_field("exchange_id"))?;
         let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
         let quant = self.quant.ok_or(Error::missing_field("quant"))?;
         let expected = self.expected.ok_or(Error::missing_field("expected"))?;
 
         let req = TransactionRequest {
-            contract: Some(ContractType::ExchangeTransaction(
-                ExchangeTransactionContract {
-                    owner_address: owner,
-                    exchange_id,
-                    token_id,
-                    quant,
-                    expected,
-                },
-            )),
+            contract: Some(ContractType::ExchangeTransaction(ExchangeTransactionContract {
+                owner_address: owner,
+                exchange_id,
+                token_id,
+                quant,
+                expected,
+            })),
             memo: self.memo,
             ..Default::default()
         };
@@ -507,9 +474,7 @@ mod tests {
     #[tokio::test]
     async fn get_exchange_by_id_not_found() {
         let provider = mock_provider();
-        provider
-            .transport()
-            .push_ok::<Option<ExchangeInfo>>("get_exchange_by_id", None);
+        provider.transport().push_ok::<Option<ExchangeInfo>>("get_exchange_by_id", None);
         let result = provider.get_exchange_by_id(99).await.unwrap();
         assert!(result.is_none());
     }

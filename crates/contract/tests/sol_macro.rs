@@ -24,9 +24,7 @@ tron_sol! {
 #[test]
 fn type_layer_encoding() {
     let owner: Address = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".parse().unwrap();
-    let call = IERC20::balanceOfCall {
-        owner: owner.into(),
-    };
+    let call = IERC20::balanceOfCall { owner: owner.into() };
     let encoded = call.abi_encode();
     assert_eq!(&encoded[..4], &IERC20::balanceOfCall::SELECTOR);
     assert_eq!(encoded.len(), 36);
@@ -36,10 +34,7 @@ fn type_layer_encoding() {
 fn return_type_decode() {
     let mut out = [0u8; 32];
     out[31] = 42;
-    assert_eq!(
-        IERC20::balanceOfCall::abi_decode_returns(&out).unwrap(),
-        U256::from(42u64),
-    );
+    assert_eq!(IERC20::balanceOfCall::abi_decode_returns(&out).unwrap(), U256::from(42u64),);
 }
 
 #[allow(dead_code, clippy::unused_async)]
@@ -57,10 +52,7 @@ async fn _erc20_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let _ = token.address();
     let _ = token.clone().at(addr);
     // generic entry point
-    let _ = token
-        .call_builder(&IERC20::balanceOfCall { owner: addr.into() })
-        .call()
-        .await;
+    let _ = token.call_builder(&IERC20::balanceOfCall { owner: addr.into() }).call().await;
 }
 
 #[allow(dead_code)]
@@ -94,10 +86,7 @@ async fn _erc721_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let nft = IERC721::new(addr, provider);
     let _ = nft.ownerOf(U256::ZERO).call().await;
     let _ = nft.safeTransferFrom_0(addr, addr, U256::ZERO).send().await;
-    let _ = nft
-        .safeTransferFrom_1(addr, addr, U256::ZERO, Bytes::new())
-        .send()
-        .await;
+    let _ = nft.safeTransferFrom_1(addr, addr, U256::ZERO, Bytes::new()).send().await;
 }
 
 // user-defined value types (UDVT)
@@ -153,10 +142,7 @@ fn bytecode_is_embedded() {
 
 #[test]
 fn deployed_bytecode_is_embedded() {
-    assert_eq!(
-        &SimpleToken::DEPLOYED_BYTECODE[..],
-        &[0x60, 0x80, 0x60, 0x40, 0x51]
-    );
+    assert_eq!(&SimpleToken::DEPLOYED_BYTECODE[..], &[0x60, 0x80, 0x60, 0x40, 0x51]);
 }
 
 #[allow(dead_code, clippy::unused_async)]
@@ -227,10 +213,7 @@ tron_sol! {
 fn multiple_items_one_invocation() {
     // bare struct/enum from the same block are usable as types
     let owner: Address = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".parse().unwrap();
-    let _order = Order {
-        maker: owner.into(),
-        amount: U256::from(7u64),
-    };
+    let _order = Order { maker: owner.into(), amount: U256::from(7u64) };
     let _side = Side::Buy;
     // both interfaces produced their own selectors + instances
     let _ = IExchange::placeCall::SELECTOR;
@@ -240,16 +223,8 @@ fn multiple_items_one_invocation() {
 #[allow(dead_code, clippy::unused_async)]
 async fn _multi_instance_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let exchange = IExchange::new(addr, provider.clone());
-    let _ = exchange
-        .place(
-            Order {
-                maker: addr.into(),
-                amount: U256::ZERO,
-            },
-            Side::Sell,
-        )
-        .call()
-        .await;
+    let _ =
+        exchange.place(Order { maker: addr.into(), amount: U256::ZERO }, Side::Sell).call().await;
     let registry = IRegistry::new(addr, provider);
     let _ = registry.lookup(U256::ZERO).call().await;
 }
@@ -277,20 +252,12 @@ tron_sol! {
 fn attributes_pass_through() {
     // `#[derive(Debug, Default, PartialEq)]` was forwarded to the type layer
     let a = Point::default();
-    let b = Point {
-        x: Default::default(),
-        y: Default::default(),
-    };
+    let b = Point { x: Default::default(), y: Default::default() };
     assert_eq!(a, b);
     // `Debug` is available because the derive was forwarded
     let _ = format!("{a:?}");
     // the call struct also derives Debug (from the `#[derive(Debug)]` on the interface)
-    let _ = format!(
-        "{:?}",
-        IPoints::setCall {
-            p: Point::default()
-        }
-    );
+    let _ = format!("{:?}", IPoints::setCall { p: Point::default() });
 }
 
 // public state variables → getter methods
