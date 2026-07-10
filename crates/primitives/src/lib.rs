@@ -13,7 +13,7 @@ mod signature;
 pub use address::{ADDRESS_LEN, ADDRESS_PREFIX, Address, EVM_ADDRESS_LEN};
 /// Types re-used directly from `alloy-primitives`.
 pub use alloy_primitives::{B256, Bytes, U256, keccak256};
-pub use amount::{SUN_PER_TRX, Trx};
+pub use amount::{SUN_PER_TRX, Trx, format_trx, parse_trx};
 pub use error::{AddressError, AmountError, SignatureError};
 pub use resource::ResourceCode;
 pub use signature::{RecoverableSignature, SIGNATURE_LEN};

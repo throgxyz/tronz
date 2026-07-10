@@ -101,7 +101,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
     /// Add both the TAPOS filler and a 20 TRX default fee-limit filler in one
     /// call — the most common setup for a read/write provider.
     ///
-    /// Equivalent to `.with_tapos().with_fee_limit(Trx::from_sun_unchecked(20_000_000))`.
+    /// Equivalent to `.with_tapos().with_fee_limit(Trx::from_sun(20_000_000).unwrap())`.
     pub fn with_recommended_fillers(
         self,
     ) -> ProviderBuilder<JoinFill<JoinFill<F, TaposFiller>, FeeLimitFiller>> {

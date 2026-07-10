@@ -34,9 +34,9 @@ pub enum AmountError {
     #[error("negative amount is invalid: {0} sun")]
     Negative(i64),
 
-    /// Converting a floating-point TRX value overflowed the `i64` sun range.
-    #[error("amount out of range: {0} TRX cannot be represented in sun")]
-    OutOfRange(f64),
+    /// The string did not contain a valid decimal TRX amount.
+    #[error("invalid TRX amount: {0:?}")]
+    ParseError(String),
 }
 
 /// Errors produced when constructing a [`RecoverableSignature`](crate::RecoverableSignature).

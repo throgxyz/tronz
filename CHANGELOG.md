@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-10
+
+### Added
+
+- Exact decimal parsing via `FromStr` / `parse_trx` and fixed-precision
+  formatting via `format_trx`. Their syntax and 6-decimal behavior mirror
+  alloy's unit helpers while rejecting negative values and amounts above
+  `i64::MAX` sun.
+
+### Changed (Breaking)
+
+- Removed the floating-point `Trx::from_trx(f64)` and `Trx::as_trx()` methods,
+  along with `AmountError::OutOfRange`; use exact string parsing,
+  `format_trx`, or raw sun access instead.
+- `Trx` display output is now exact and fixed to 6 fractional digits without a
+  `TRX` suffix (`1.500000` instead of the lossy `1.5 TRX`).
+- `Trx` addition and subtraction now panic on overflow, negative operands, or a
+  negative result instead of using signed saturating arithmetic. The checked
+  variants return `None` for the same invalid cases.
+
 ## [0.2.2] - 2026-07-10
 
 ### Added
