@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-10
+
+### Added
+
+- `tron_sol!` now accepts `abigen`-style JSON ABI input: `Name, "path/to/abi.json"`
+  - Both raw `[...]` arrays and Forge artifacts `{"abi":[...]}` are supported
+  - Path is resolved relative to `CARGO_MANIFEST_DIR` and canonicalized
+  - `include_bytes!` is emitted so rustc re-expands the macro when the file changes
+  - `#![sol(...)]` inner attributes are forwarded to alloy's `sol!` correctly
+
 ## [0.2.1] - 2026-07-06
 
 ### Added

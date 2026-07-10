@@ -20,7 +20,7 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 - **HD wallets** — BIP-39 mnemonic generation and BIP-44 key derivation (`signer-mnemonic` feature, TRON coin type 195)
 - **Keystore** — Web3 Secret Storage V3 encrypt/decrypt (`signer-keystore` feature, compatible with TronLink and gotron-sdk)
 - **AWS KMS** — sign with a key that never leaves the HSM (`signer-aws` feature, `AwsSigner`)
-- **`tron_sol!` macro** — type-safe contract bindings with typed call/event builders (superset of alloy's `sol!`)
+- **`tron_sol!` macro** — type-safe contract bindings with typed call/event builders and JSON ABI file path support (superset of alloy's `sol!`)
 - **TRC721** — `Trc721Instance`: `transfer_from`, `approve`, `owner_of`, `token_uri`, and standard ERC-721 queries
 - **Contract deploy & call** — `DeployBuilder`, `CallBuilder`, dynamic ABI, energy estimation
 - **Event decoding** — decode and filter logs with `SolEvent`
