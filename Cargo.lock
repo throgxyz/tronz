@@ -3533,6 +3533,7 @@ dependencies = [
 name = "tronz-sol-macro"
 version = "0.2.1"
 dependencies = [
+ "alloy-json-abi",
  "proc-macro2",
  "quote",
  "syn 2.0.118",

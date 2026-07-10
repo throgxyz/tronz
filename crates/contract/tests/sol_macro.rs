@@ -316,3 +316,62 @@ async fn _event_filter_api<P: TronProvider + Clone>(provider: P, addr: Address) 
     // query by block
     let _: Vec<IToken::Transfer> = token.Transfer_filter().query_block(0).await.unwrap();
 }
+
+// ── JSON ABI file path ────────────────────────────────────────────────────────
+
+tron_sol! {
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    IERC20Json, "tests/abi/erc20.json"
+}
+
+#[test]
+fn json_abi_type_layer_encoding() {
+    let owner: Address = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".parse().unwrap();
+    let call = IERC20Json::balanceOfCall { owner: owner.into() };
+    let encoded = call.abi_encode();
+    assert_eq!(&encoded[..4], &IERC20Json::balanceOfCall::SELECTOR);
+    assert_eq!(encoded.len(), 36);
+}
+
+#[allow(dead_code, clippy::unused_async)]
+async fn _json_abi_rpc_api<P: TronProvider + Clone>(provider: P, addr: Address) {
+    let token = IERC20Json::new(addr, provider);
+    let _: String = token.name().call().await.unwrap();
+    let _: u8 = token.decimals().call().await.unwrap();
+    let _: U256 = token.totalSupply().call().await.unwrap();
+    let _: U256 = token.balanceOf(addr).call().await.unwrap();
+    let _ = token.transfer(addr, U256::ZERO).send().await;
+}
+
+// Forge artifact format
+
+tron_sol! {
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    IForgeArtifact, "tests/abi/erc20_forge.json"
+}
+
+#[test]
+fn forge_artifact_matches_raw_array() {
+    // Forge `{"abi":[...]}` and raw `[...]` must produce identical signatures.
+    assert_eq!(IForgeArtifact::totalSupplyCall::SIGNATURE, IERC20Json::totalSupplyCall::SIGNATURE);
+    assert_eq!(IForgeArtifact::balanceOfCall::SIGNATURE, IERC20Json::balanceOfCall::SIGNATURE);
+}
+
+// inner attributes
+
+tron_sol! {
+    #![sol(all_derives)]
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    IInnerAttr, "tests/abi/erc20.json"
+}
+
+#[test]
+fn inner_attr_all_derives() {
+    let owner: Address = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".parse().unwrap();
+    let call = IInnerAttr::balanceOfCall { owner: owner.into() };
+    let _ = format!("{call:?}");
+    let _ = call.clone();
+}

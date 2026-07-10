@@ -6,6 +6,19 @@
 //! generates a provider-bound `Instance` for every `contract`/`interface`
 //! carrying `#[sol(rpc)]`, wired to `tronz`'s `TronProvider`.
 //!
+//! It also accepts a JSON ABI file path (or inline JSON) in the same
+//! `abigen`-style form that alloy's `sol!` supports:
+//!
+//! ```ignore
+//! // Load ABI from a file path (relative to the crate root).
+//! tron_sol! {
+//!     #[sol(rpc)]
+//!     MyContract, "abi/MyContract.json"
+//! }
+//!
+//! // Both raw ABI arrays `[...]` and Forge artifacts `{"abi":[...]}` are accepted.
+//! ```
+//!
 //! It accepts everything `sol!` does for the inline-Solidity form, including:
 //!
 //! - **multiple items in one invocation** (several contracts, or contracts mixed with bare
@@ -51,18 +64,20 @@ use std::{
     iter::once,
 };
 
+use alloy_json_abi::ContractObject;
 use proc_macro::TokenStream;
 use proc_macro2::{
     Delimiter, Group, Ident as Ident2, Punct, Spacing, Span, TokenStream as TokenStream2, TokenTree,
 };
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, Ident, LitStr, Result,
+    Attribute, Ident, LitStr, Result, Token,
     parse::{Parse, ParseStream},
     parse_macro_input,
 };
 use syn_solidity::{
-    FunctionKind, Item as SolItem, ItemContract, ItemEvent, ItemFunction, Spanned, Type as SolType,
+    File as SolFile, FunctionKind, Item as SolItem, ItemContract, ItemEvent, ItemFunction, Spanned,
+    Type as SolType,
 };
 
 /// A TRON-aware superset of alloy's `sol!`. See the [crate-level docs](crate).
@@ -79,10 +94,37 @@ pub fn tron_sol(input: TokenStream) -> TokenStream {
 struct TronSol {
     items: Vec<SolItem>,
     krate: TokenStream2,
+    /// Pre-built tokens to forward to `alloy::sol!`; set when input is JSON ABI
+    /// so that `expand` emits the generated Solidity interface rather than the
+    /// raw `Name, "path.json"` abigen tokens.
+    pre_forwarded: Option<TokenStream2>,
+    /// Canonical absolute path to the ABI file, when the input was a file path
+    /// (not inline JSON). `expand` emits `include_bytes!(path)` so that rustc
+    /// tracks the file and triggers re-expansion when its content changes.
+    include_path: Option<String>,
 }
 
 impl Parse for TronSol {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
+        // ── Detect abigen-style: [inner_attrs] [outer_attrs] Ident "," LitStr ─
+        //
+        // Fork to peek without consuming. Skip any leading inner (`#![...]`) and
+        // outer (`#[...]`) attributes, then check for `Ident ","` — a pattern
+        // that never appears at the start of a Solidity file (all top-level
+        // Solidity items begin with a keyword, e.g. `contract`, `interface`).
+        {
+            let fork = input.fork();
+            let _ = Attribute::parse_inner(&fork);
+            let _ = Attribute::parse_outer(&fork);
+            if fork.peek(Ident) {
+                let inner = fork.fork();
+                if inner.parse::<Ident>().is_ok() && inner.peek(Token![,]) {
+                    return Self::parse_json_abi(input);
+                }
+            }
+        }
+
+        // ── Standard Solidity form ────────────────────────────────────────────
         let mut items = Vec::new();
         while !input.is_empty() {
             items.push(input.parse::<SolItem>()?);
@@ -108,11 +150,109 @@ impl Parse for TronSol {
             }
         }
 
-        Ok(Self { items, krate })
+        Ok(Self { items, krate, pre_forwarded: None, include_path: None })
     }
 }
 
 impl TronSol {
+    /// Parse `abigen`-style input: `[attrs] Name, "path/to/abi.json"`.
+    fn parse_json_abi(input: ParseStream<'_>) -> Result<Self> {
+        let inner_attrs = Attribute::parse_inner(input)?;
+        let attrs = Attribute::parse_outer(input)?;
+        let name: Ident = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let path_lit: LitStr = input.parse()?;
+        let _ = input.parse::<Option<Token![,]>>()?;
+
+        let path_str = path_lit.value();
+        let (json, include_path) = {
+            let trimmed = path_str.trim();
+            if trimmed.starts_with('{') || trimmed.starts_with('[') {
+                (path_str.clone(), None)
+            } else {
+                let p = std::path::PathBuf::from(&path_str);
+                let abs = if p.is_relative() {
+                    let dir =
+                        std::env::var("CARGO_MANIFEST_DIR").map(std::path::PathBuf::from).map_err(
+                            |_| syn::Error::new(path_lit.span(), "CARGO_MANIFEST_DIR is not set"),
+                        )?;
+                    dir.join(p)
+                } else {
+                    p
+                };
+                // Canonicalize so `include_bytes!` gets an absolute path that
+                // works regardless of the working directory at compile time.
+                let canonical = std::fs::canonicalize(&abs).map_err(|e| {
+                    syn::Error::new(
+                        path_lit.span(),
+                        format!("failed to canonicalize `{path_str}`: {e}"),
+                    )
+                })?;
+                let json = std::fs::read_to_string(&canonical).map_err(|e| {
+                    syn::Error::new(path_lit.span(), format!("failed to read `{path_str}`: {e}"))
+                })?;
+                let abs_str = canonical.to_str().ok_or_else(|| {
+                    syn::Error::new(path_lit.span(), "ABI file path is not valid UTF-8")
+                })?;
+                (json, Some(abs_str.to_owned()))
+            }
+        };
+
+        // Parse JSON — handles both raw `[...]` arrays and Forge `{"abi":[...]}` artifacts.
+        let obj = ContractObject::from_json(&json).map_err(|e| {
+            syn::Error::new(path_lit.span(), format!("invalid JSON ABI in `{path_str}`: {e}"))
+        })?;
+        let abi = obj.abi.ok_or_else(|| {
+            syn::Error::new(path_lit.span(), format!("`{path_str}` contains no `abi` field"))
+        })?;
+
+        // JSON ABI → Solidity interface string.
+        let sol_ts: TokenStream2 = abi.to_sol(&name.to_string(), None).parse().map_err(|e| {
+            syn::Error::new(
+                path_lit.span(),
+                format!("ABI-generated Solidity failed to tokenize: {e}"),
+            )
+        })?;
+
+        // `forwarded` goes to alloy's `sol!`: inner attrs first (e.g. a global
+        // `#![sol(alloy_sol_types = ...)]` override), then the generated interface.
+        // Outer attrs (`#[sol(rpc)]`, `#[tron_sol(...)]`) are intentionally omitted
+        // here — they are tronz concerns handled by `expand`, not alloy's.
+        let forwarded = quote! { #(#inner_attrs)* #sol_ts };
+
+        // `full_ts` is re-parsed by tronz to build `SolItem`s — it needs both the
+        // inner and outer attrs so `expand_contract` sees `#[sol(rpc)]` on the item.
+        let full_ts = quote! { #(#inner_attrs)* #(#attrs)* #sol_ts };
+        let file: SolFile = syn::parse2(full_ts).map_err(|e| {
+            syn::Error::new(
+                path_lit.span(),
+                format!("failed to parse generated Solidity interface: {e}"),
+            )
+        })?;
+        let items = file.items;
+
+        // Extract tronz_crate override if present (same logic as the standard path).
+        let mut krate: TokenStream2 = quote!(::tronz::contract);
+        for item in &items {
+            let Some(item_attrs) = item.attrs() else { continue };
+            for attr in item_attrs {
+                if attr.path().is_ident("tron_sol") {
+                    attr.parse_nested_meta(|meta| {
+                        if meta.path.is_ident("tronz_crate") {
+                            let path: syn::Path = meta.value()?.parse()?;
+                            krate = quote!(#path);
+                            Ok(())
+                        } else {
+                            Err(meta.error("unknown `tron_sol` option; expected `tronz_crate`"))
+                        }
+                    })?;
+                }
+            }
+        }
+
+        Ok(Self { items, krate, pre_forwarded: Some(forwarded), include_path })
+    }
+
     fn expand(&self, original: TokenStream2) -> Result<TokenStream2> {
         // All runtime paths go through `__private` to avoid a direct dependency
         // on tronz-contract from this proc-macro crate.
@@ -130,9 +270,19 @@ impl TronSol {
             hasher.finish()
         };
 
-        // The full type layer, with TRON-specific attributes stripped so alloy's
-        // `sol!` sees only what it understands.
-        let forwarded = strip_tron_attrs(original);
+        // The full type layer forwarded to alloy's `sol!`. For JSON ABI inputs
+        // this is the pre-built Solidity interface; for inline-Solidity inputs
+        // we strip TRON-specific attributes that alloy doesn't understand.
+        let forwarded = match self.pre_forwarded.clone() {
+            Some(ts) => ts,
+            None => strip_tron_attrs(original),
+        };
+
+        // Emit `include_bytes!` for file-based JSON ABI inputs so that rustc
+        // tracks the file and re-expands the macro when its content changes.
+        let include = self.include_path.as_deref().map(|p| {
+            quote! { const _: &'static [u8] = ::core::include_bytes!(#p); }
+        });
 
         let mut rpc_contracts: Vec<&ItemContract> = Vec::new();
         for item in &self.items {
@@ -147,6 +297,7 @@ impl TronSol {
         // plain `sol!`), supporting multiple items and bare type definitions.
         if rpc_contracts.is_empty() {
             return Ok(quote! {
+                #include
                 #alloy::sol! {
                     #![sol(alloy_sol_types = #alloy)]
                     #forwarded
@@ -170,6 +321,8 @@ impl TronSol {
         }
 
         Ok(quote! {
+            #include
+
             #[doc(hidden)]
             #[allow(non_camel_case_types, non_snake_case, missing_docs, clippy::all)]
             mod #types_mod {
