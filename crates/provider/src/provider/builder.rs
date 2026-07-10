@@ -62,10 +62,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
     /// use tronz_provider::{ProviderBuilder, transport::grpc::TRONGRID_MAINNET};
     /// # async fn run() -> tronz_provider::Result<()> {
     /// let api_key: Option<String> = std::env::var("TRON_API_KEY").ok();
-    /// let provider = ProviderBuilder::new()
-    ///     .maybe_api_key(api_key)
-    ///     .on_grpc(TRONGRID_MAINNET)
-    ///     .await?;
+    /// let provider = ProviderBuilder::new().maybe_api_key(api_key).on_grpc(TRONGRID_MAINNET).await?;
     /// # Ok(()) }
     /// ```
     pub fn maybe_api_key(mut self, key: Option<impl Into<String>>) -> Self {
@@ -108,22 +105,14 @@ impl<F: TxFiller> ProviderBuilder<F> {
     pub fn with_recommended_fillers(
         self,
     ) -> ProviderBuilder<JoinFill<JoinFill<F, TaposFiller>, FeeLimitFiller>> {
-        self.with_tapos()
-            .with_fee_limit(Trx::from_sun_unchecked(20_000_000))
+        self.with_tapos().with_fee_limit(Trx::from_sun_unchecked(20_000_000))
     }
 
     /// Add the TAPOS filler (required before broadcasting client-built txs).
     pub fn with_tapos(self) -> ProviderBuilder<JoinFill<F, TaposFiller>> {
         // Destructure so adding a transport-config field later is a compile
         // error here, not a silently dropped setting.
-        let Self {
-            filler,
-            api_key,
-            connect_timeout,
-            request_timeout,
-            retry,
-            endpoints,
-        } = self;
+        let Self { filler, api_key, connect_timeout, request_timeout, retry, endpoints } = self;
         ProviderBuilder {
             filler: JoinFill::new(filler, TaposFiller::new()),
             api_key,
@@ -136,14 +125,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
 
     /// Add a default `fee_limit` for contract operations.
     pub fn with_fee_limit(self, limit: Trx) -> ProviderBuilder<JoinFill<F, FeeLimitFiller>> {
-        let Self {
-            filler,
-            api_key,
-            connect_timeout,
-            request_timeout,
-            retry,
-            endpoints,
-        } = self;
+        let Self { filler, api_key, connect_timeout, request_timeout, retry, endpoints } = self;
         ProviderBuilder {
             filler: JoinFill::new(filler, FeeLimitFiller::new(limit)),
             api_key,
@@ -159,14 +141,7 @@ impl<F: TxFiller> ProviderBuilder<F> {
         self,
         signer: S,
     ) -> ProviderBuilder<JoinFill<F, SignerFiller<S>>> {
-        let Self {
-            filler,
-            api_key,
-            connect_timeout,
-            request_timeout,
-            retry,
-            endpoints,
-        } = self;
+        let Self { filler, api_key, connect_timeout, request_timeout, retry, endpoints } = self;
         ProviderBuilder {
             filler: JoinFill::new(filler, SignerFiller::new(signer)),
             api_key,
@@ -198,13 +173,9 @@ impl<F: TxFiller> ProviderBuilder<F> {
         if let Some(r) = self.retry {
             cfg.retry = r;
         }
-        let transport = GrpcTransport::connect_with_config(uri, cfg)
-            .await
-            .map_err(Error::Transport)?;
-        Ok(FilledProvider::new(
-            RootProvider::new(transport),
-            self.filler,
-        ))
+        let transport =
+            GrpcTransport::connect_with_config(uri, cfg).await.map_err(Error::Transport)?;
+        Ok(FilledProvider::new(RootProvider::new(transport), self.filler))
     }
 
     /// Connect with an explicit TronGrid API key.
@@ -287,10 +258,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for Fille
             .map_err(Error::local_usage)?;
 
         let tx_id = raw.tx_id();
-        let signed = SignedTransaction {
-            raw,
-            signatures: vec![sig],
-        };
+        let signed = SignedTransaction { raw, signatures: vec![sig] };
         self.inner
             .transport()
             .broadcast_transaction(&signed)
@@ -321,10 +289,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> FilledProvider<T, F> {
         filler.fill_sync(&mut req); // second sync pass after async fill
 
         // ── 2. Route contract → transport build call ─────────────────────────
-        let contract = req
-            .contract
-            .take()
-            .ok_or(Error::missing_field("contract"))?;
+        let contract = req.contract.take().ok_or(Error::missing_field("contract"))?;
         let transport = self.inner.transport();
 
         let raw_result = match contract {

@@ -85,9 +85,9 @@ impl From<PendingTransactionError> for ContractError {
             // Forward any future variants added to PendingTransactionError as a
             // LocalUsageError so this From impl doesn't need updating on every
             // minor version of tronz-provider.
-            _ => Self::Provider(ProviderError::local_usage_str(
-                "unknown pending transaction error",
-            )),
+            _ => {
+                Self::Provider(ProviderError::local_usage_str("unknown pending transaction error"))
+            }
         }
     }
 }
@@ -97,11 +97,7 @@ impl ContractError {
     ///
     /// [`Revert`]: ContractError::Revert
     pub fn as_revert_data(&self) -> Option<&Bytes> {
-        if let Self::Revert(data) = self {
-            Some(data)
-        } else {
-            None
-        }
+        if let Self::Revert(data) = self { Some(data) } else { None }
     }
 
     /// Attempt to ABI-decode the revert data into a specific [`SolError`] type.
@@ -121,16 +117,14 @@ impl ContractError {
     /// # }
     /// ```
     pub fn as_decoded_error<E: SolError>(&self) -> Option<E> {
-        self.as_revert_data()
-            .and_then(|data| E::abi_decode(data).ok())
+        self.as_revert_data().and_then(|data| E::abi_decode(data).ok())
     }
 
     /// Attempt to ABI-decode the revert data into one of the custom errors in a [`SolInterface`].
     ///
     /// Returns `None` if the error is not a revert, or if decoding fails.
     pub fn as_decoded_interface_error<I: SolInterface>(&self) -> Option<I> {
-        self.as_revert_data()
-            .and_then(|data| I::abi_decode(data).ok())
+        self.as_revert_data().and_then(|data| I::abi_decode(data).ok())
     }
 
     /// Build a [`ContractError`] from a failed output decode.
@@ -152,10 +146,7 @@ mod tests {
     use super::*;
 
     fn dummy_err() -> alloy_dyn_abi::Error {
-        alloy_dyn_abi::Error::TypeMismatch {
-            expected: "uint256".into(),
-            actual: "bytes".into(),
-        }
+        alloy_dyn_abi::Error::TypeMismatch { expected: "uint256".into(), actual: "bytes".into() }
     }
 
     #[test]

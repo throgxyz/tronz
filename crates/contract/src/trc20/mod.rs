@@ -34,52 +34,27 @@ sol! {
 /// ABI-encode the `transfer(to, amount)` call into the calldata bytes used by a
 /// `TriggerSmartContract`.
 pub fn encode_transfer(to: Address, amount: U256) -> Bytes {
-    ITRC20::transferCall {
-        to: to.into(),
-        amount,
-    }
-    .abi_encode()
-    .into()
+    ITRC20::transferCall { to: to.into(), amount }.abi_encode().into()
 }
 
 /// ABI-encode the `approve(spender, amount)` call.
 pub fn encode_approve(spender: Address, amount: U256) -> Bytes {
-    ITRC20::approveCall {
-        spender: spender.into(),
-        amount,
-    }
-    .abi_encode()
-    .into()
+    ITRC20::approveCall { spender: spender.into(), amount }.abi_encode().into()
 }
 
 /// ABI-encode the `transferFrom(from, to, amount)` call.
 pub fn encode_transfer_from(from: Address, to: Address, amount: U256) -> Bytes {
-    ITRC20::transferFromCall {
-        from: from.into(),
-        to: to.into(),
-        amount,
-    }
-    .abi_encode()
-    .into()
+    ITRC20::transferFromCall { from: from.into(), to: to.into(), amount }.abi_encode().into()
 }
 
 /// ABI-encode the `balanceOf(account)` constant call.
 pub fn encode_balance_of(account: Address) -> Bytes {
-    ITRC20::balanceOfCall {
-        account: account.into(),
-    }
-    .abi_encode()
-    .into()
+    ITRC20::balanceOfCall { account: account.into() }.abi_encode().into()
 }
 
 /// ABI-encode the `allowance(owner, spender)` constant call.
 pub fn encode_allowance(owner: Address, spender: Address) -> Bytes {
-    ITRC20::allowanceCall {
-        owner: owner.into(),
-        spender: spender.into(),
-    }
-    .abi_encode()
-    .into()
+    ITRC20::allowanceCall { owner: owner.into(), spender: spender.into() }.abi_encode().into()
 }
 
 /// Decode the `uint256` returned by `balanceOf` / `allowance` / `totalSupply`.

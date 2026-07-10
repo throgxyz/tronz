@@ -19,9 +19,7 @@ tron_sol! {
 #[test]
 fn default_path_encodes() {
     let owner: Address = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".parse().unwrap();
-    let call = IERC20::balanceOfCall {
-        owner: owner.into(),
-    };
+    let call = IERC20::balanceOfCall { owner: owner.into() };
     // 4-byte selector + 32-byte address argument
     assert_eq!(call.abi_encode().len(), 36);
 }

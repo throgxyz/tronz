@@ -34,28 +34,19 @@ impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
     /// Wrap a raw [`CallBuilder`].
     #[inline]
     pub fn new(inner: CallBuilder<P>) -> Self {
-        Self {
-            inner,
-            _call: PhantomData,
-        }
+        Self { inner, _call: PhantomData }
     }
 
     /// Attach a TRX amount to the call (for payable functions).
     #[inline]
     pub fn value(self, trx: Trx) -> Self {
-        Self {
-            inner: self.inner.value(trx),
-            _call: PhantomData,
-        }
+        Self { inner: self.inner.value(trx), _call: PhantomData }
     }
 
     /// Attach a TRC10 token to the call.
     #[inline]
     pub fn token(self, token_id: i64, value: Trx) -> Self {
-        Self {
-            inner: self.inner.token(token_id, value),
-            _call: PhantomData,
-        }
+        Self { inner: self.inner.token(token_id, value), _call: PhantomData }
     }
 
     /// Estimate the energy this call would consume.
@@ -105,19 +96,13 @@ mod tests {
     }
 
     fn canned(output: Vec<u8>) -> ConstantCallResult {
-        ConstantCallResult {
-            output,
-            energy_used: 0,
-            revert_reason: None,
-        }
+        ConstantCallResult { output, energy_used: 0, revert_reason: None }
     }
 
     #[tokio::test]
     async fn empty_output_yields_zero_data_error() {
         let provider = RootProvider::new(MockTransport::new());
-        provider
-            .transport()
-            .push_ok("trigger_constant_contract", canned(vec![]));
+        provider.transport().push_ok("trigger_constant_contract", canned(vec![]));
         let err = make_builder(provider).call().await.unwrap_err();
         assert!(
             matches!(&err, ContractError::ZeroData(name, _) if name == "balanceOf"),
@@ -130,9 +115,7 @@ mod tests {
         let provider = RootProvider::new(MockTransport::new());
         let mut out = [0u8; 32];
         out[31] = 99;
-        provider
-            .transport()
-            .push_ok("trigger_constant_contract", canned(out.to_vec()));
+        provider.transport().push_ok("trigger_constant_contract", canned(out.to_vec()));
         let value = make_builder(provider).call().await.unwrap();
         assert_eq!(value, U256::from(99u64));
     }
@@ -140,13 +123,8 @@ mod tests {
     #[tokio::test]
     async fn truncated_output_yields_abi_error() {
         let provider = RootProvider::new(MockTransport::new());
-        provider
-            .transport()
-            .push_ok("trigger_constant_contract", canned(vec![0xde, 0xad]));
+        provider.transport().push_ok("trigger_constant_contract", canned(vec![0xde, 0xad]));
         let err = make_builder(provider).call().await.unwrap_err();
-        assert!(
-            matches!(err, ContractError::Abi(_)),
-            "expected Abi(_), got {err:?}"
-        );
+        assert!(matches!(err, ContractError::Abi(_)), "expected Abi(_), got {err:?}");
     }
 }

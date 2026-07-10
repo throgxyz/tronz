@@ -111,12 +111,7 @@ impl RawTransaction {
             .try_into()
             .map_err(|_| TransportErrorKind::Malformed("txid must be 32 bytes".into()))?;
 
-        Ok(Self {
-            expiration,
-            timestamp,
-            tx_id: TxId::from(tx_id_bytes),
-            raw_proto,
-        })
+        Ok(Self { expiration, timestamp, tx_id: TxId::from(tx_id_bytes), raw_proto })
     }
 
     /// The transaction id — `sha256` of the encoded `Transaction.raw`.

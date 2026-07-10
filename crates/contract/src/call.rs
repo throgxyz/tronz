@@ -87,10 +87,7 @@ impl<P: TronProvider> CallBuilder<P> {
             call_token_value: self.call_token_value,
             token_id: self.token_id,
         };
-        self.provider
-            .estimate_energy(params)
-            .await
-            .map_err(ContractError::Provider)
+        self.provider.estimate_energy(params).await.map_err(ContractError::Provider)
     }
 
     /// Execute as a **constant call** (`trigger_constant_contract`).

@@ -44,11 +44,7 @@ impl Interface {
     pub fn new(abi: JsonAbi) -> Self {
         let functions = build_selector_map(&abi);
         let events = build_event_map(&abi);
-        Self {
-            abi,
-            functions,
-            events,
-        }
+        Self { abi, functions, events }
     }
 
     /// Create an empty interface (no functions, no events).
@@ -82,10 +78,7 @@ impl Interface {
         selector: &Selector,
         args: &[DynSolValue],
     ) -> Result<Bytes> {
-        Ok(self
-            .get_by_selector(selector)?
-            .abi_encode_input(args)?
-            .into())
+        Ok(self.get_by_selector(selector)?.abi_encode_input(args)?.into())
     }
 
     // ── decode input ──────────────────────────────────────────────────────────
@@ -121,8 +114,7 @@ impl Interface {
     ) -> Result<Vec<DynSolValue>> {
         let f = self.get_by_selector(selector)?;
         let name = f.name.as_str();
-        f.abi_decode_output(data)
-            .map_err(|e| ContractError::decode_err(name, data, e))
+        f.abi_decode_output(data).map_err(|e| ContractError::decode_err(name, data, e))
     }
 
     // ── decode log ────────────────────────────────────────────────────────────
@@ -207,10 +199,7 @@ fn build_selector_map(abi: &JsonAbi) -> HashMap<Selector, (String, usize)> {
     abi.functions
         .iter()
         .flat_map(|(name, overloads)| {
-            overloads
-                .iter()
-                .enumerate()
-                .map(move |(idx, f)| (f.selector(), (name.clone(), idx)))
+            overloads.iter().enumerate().map(move |(idx, f)| (f.selector(), (name.clone(), idx)))
         })
         .collect()
 }

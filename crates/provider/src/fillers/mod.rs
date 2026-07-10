@@ -129,10 +129,7 @@ impl TaposFiller {
 
     /// Override the transaction expiry window.
     pub fn with_expiry(expiry: Duration) -> Self {
-        Self {
-            expiry,
-            ..Self::new()
-        }
+        Self { expiry, ..Self::new() }
     }
 
     /// Override how long a fetched block is reused before the next
@@ -151,11 +148,7 @@ impl Default for TaposFiller {
 
 impl TxFiller for TaposFiller {
     fn status(&self, tx: &TransactionRequest) -> FillerStatus {
-        if tx.ref_block_bytes.is_none() {
-            FillerStatus::NeedsWork
-        } else {
-            FillerStatus::Ready
-        }
+        if tx.ref_block_bytes.is_none() { FillerStatus::NeedsWork } else { FillerStatus::Ready }
     }
 
     fn fill(
@@ -331,9 +324,7 @@ impl<S: TronSigner> HasSigner for SignerFiller<S> {
 
 impl<L: HasSigner + Clone + Send, R: HasSigner + Clone + Send> HasSigner for JoinFill<L, R> {
     fn signer_address(&self) -> Option<Address> {
-        self.right
-            .signer_address()
-            .or_else(|| self.left.signer_address())
+        self.right.signer_address().or_else(|| self.left.signer_address())
     }
 
     fn sign(
@@ -372,11 +363,7 @@ mod tests {
     }
 
     fn block(num: i64, ts: i64) -> BlockInfo {
-        BlockInfo {
-            number: num,
-            hash: B256::ZERO,
-            timestamp: ts,
-        }
+        BlockInfo { number: num, hash: B256::ZERO, timestamp: ts }
     }
 
     fn mock_provider() -> RootProvider<MockTransport> {
@@ -388,9 +375,7 @@ mod tests {
     #[tokio::test]
     async fn tapos_filler_fills_from_block() {
         let provider = mock_provider();
-        provider
-            .transport()
-            .push_ok("get_now_block", block(0x0011_2233_4455_6677, 1_000_000));
+        provider.transport().push_ok("get_now_block", block(0x0011_2233_4455_6677, 1_000_000));
 
         let filler = TaposFiller::new();
         let tx = TransactionRequest::default();
@@ -408,10 +393,7 @@ mod tests {
         let provider = mock_provider();
 
         let filler = TaposFiller::new();
-        let tx = TransactionRequest {
-            ref_block_bytes: Some([0xaa, 0xbb]),
-            ..Default::default()
-        };
+        let tx = TransactionRequest { ref_block_bytes: Some([0xaa, 0xbb]), ..Default::default() };
         assert_eq!(filler.status(&tx), FillerStatus::Ready);
 
         let filled = filler.fill(tx, &provider).await.unwrap();
@@ -422,20 +404,12 @@ mod tests {
     async fn tapos_filler_reuses_cached_block() {
         let provider = mock_provider();
         // Only one response queued — second fill() must hit the cache.
-        provider
-            .transport()
-            .push_ok("get_now_block", block(0x0011_2233_4455_6677, 2_000_000));
+        provider.transport().push_ok("get_now_block", block(0x0011_2233_4455_6677, 2_000_000));
 
         let filler = TaposFiller::new(); // default TTL = 3 s
-        let filled1 = filler
-            .fill(TransactionRequest::default(), &provider)
-            .await
-            .unwrap();
+        let filled1 = filler.fill(TransactionRequest::default(), &provider).await.unwrap();
         // Second call: MockTransport would panic if it tried to pop a second response.
-        let filled2 = filler
-            .fill(TransactionRequest::default(), &provider)
-            .await
-            .unwrap();
+        let filled2 = filler.fill(TransactionRequest::default(), &provider).await.unwrap();
 
         assert_eq!(filled1.ref_block_bytes, filled2.ref_block_bytes);
         assert_eq!(filled1.timestamp, filled2.timestamp);
@@ -445,21 +419,13 @@ mod tests {
     async fn tapos_filler_cache_shared_across_clones() {
         let provider = mock_provider();
         // One response — the clone must share the cache and not re-fetch.
-        provider
-            .transport()
-            .push_ok("get_now_block", block(0x0011_2233_4455_6677, 3_000_000));
+        provider.transport().push_ok("get_now_block", block(0x0011_2233_4455_6677, 3_000_000));
 
         let filler = TaposFiller::new();
         let clone = filler.clone();
-        filler
-            .fill(TransactionRequest::default(), &provider)
-            .await
-            .unwrap();
+        filler.fill(TransactionRequest::default(), &provider).await.unwrap();
         // Clone shares the Arc — no second push_ok needed.
-        clone
-            .fill(TransactionRequest::default(), &provider)
-            .await
-            .unwrap();
+        clone.fill(TransactionRequest::default(), &provider).await.unwrap();
     }
 
     // ── FeeLimitFiller ───────────────────────────────────────────────────────
@@ -553,9 +519,7 @@ mod tests {
     #[tokio::test]
     async fn join_fill_runs_tapos_and_fee_limit() {
         let provider = mock_provider();
-        provider
-            .transport()
-            .push_ok("get_now_block", block(0x0011_2233_4455_6677, 1_000_000));
+        provider.transport().push_ok("get_now_block", block(0x0011_2233_4455_6677, 1_000_000));
 
         let limit = Trx::from_sun_unchecked(10_000_000);
         let join = JoinFill::new(TaposFiller::new(), FeeLimitFiller::new(limit));

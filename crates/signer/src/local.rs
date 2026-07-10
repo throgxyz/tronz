@@ -80,9 +80,7 @@ impl LocalSigner {
 impl core::fmt::Debug for LocalSigner {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // Never print the private key.
-        f.debug_struct("LocalSigner")
-            .field("address", &self.address)
-            .finish_non_exhaustive()
+        f.debug_struct("LocalSigner").field("address", &self.address).finish_non_exhaustive()
     }
 }
 

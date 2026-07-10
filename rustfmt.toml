@@ -4,13 +4,20 @@ unstable_features  = true
 # Imports
 imports_granularity = "Crate"
 group_imports       = "StdExternalCrate"
+reorder_imports     = true
 
 # Width
-max_width    = 100
-comment_width = 100
-wrap_comments = true
+max_width             = 100
+comment_width         = 100
+wrap_comments         = true
+use_small_heuristics  = "Max"
+
+# Docs
+format_code_in_doc_comments  = true
+doc_comment_code_block_width = 100
 
 # Misc
-format_strings         = false
+format_strings           = false
+format_macro_matchers    = true
 use_field_init_shorthand = true
 use_try_shorthand        = true

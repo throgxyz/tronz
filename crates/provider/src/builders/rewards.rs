@@ -20,10 +20,7 @@ pub struct WithdrawBalanceBuilder<'a, P> {
 impl<'a, P: TronProvider> WithdrawBalanceBuilder<'a, P> {
     /// Start a new builder.
     pub fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-        }
+        Self { provider, owner: None }
     }
 
     /// Override the account.

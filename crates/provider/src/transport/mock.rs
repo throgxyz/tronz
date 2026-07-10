@@ -260,8 +260,7 @@ mod tests {
     #[tokio::test]
     async fn returns_queued_ok_responses_in_fifo_order() {
         let mock = MockTransport::new();
-        mock.push_ok::<u64>("get_memo_fee", 1)
-            .push_ok::<u64>("get_memo_fee", 2);
+        mock.push_ok::<u64>("get_memo_fee", 1).push_ok::<u64>("get_memo_fee", 2);
 
         assert_eq!(mock.get_memo_fee().await.unwrap(), 1);
         assert_eq!(mock.get_memo_fee().await.unwrap(), 2);
@@ -270,10 +269,7 @@ mod tests {
     #[tokio::test]
     async fn returns_queued_err_responses() {
         let mock = MockTransport::new();
-        mock.push_err::<u64>(
-            "get_burn_trx",
-            TransportErrorKind::Malformed("boom".to_owned()),
-        );
+        mock.push_err::<u64>("get_burn_trx", TransportErrorKind::Malformed("boom".to_owned()));
 
         let err = mock.get_burn_trx().await.unwrap_err();
         assert!(matches!(err, TransportErrorKind::Malformed(_)));
@@ -286,10 +282,7 @@ mod tests {
 
         // Exercises the real provider -> transport delegation path.
         let provider = RootProvider::new(mock);
-        assert_eq!(
-            provider.transport().get_total_transactions().await.unwrap(),
-            42
-        );
+        assert_eq!(provider.transport().get_total_transactions().await.unwrap(), 42);
     }
 
     #[tokio::test]

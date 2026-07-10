@@ -24,12 +24,7 @@ pub struct CreateAccountBuilder<'a, P> {
 
 impl<'a, P: TronProvider> CreateAccountBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            account_address: None,
-            memo: None,
-        }
+        Self { provider, owner: None, account_address: None, memo: None }
     }
 
     /// Override the payer address (defaults to the provider's signer).
@@ -53,9 +48,8 @@ impl<'a, P: TronProvider> CreateAccountBuilder<'a, P> {
     /// Build, sign, and broadcast.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let account_address = self
-            .account_address
-            .ok_or(Error::missing_field("account_address"))?;
+        let account_address =
+            self.account_address.ok_or(Error::missing_field("account_address"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::CreateAccount(CreateAccountContract {
@@ -83,12 +77,7 @@ pub struct UpdateAccountBuilder<'a, P> {
 
 impl<'a, P: TronProvider> UpdateAccountBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            name: None,
-            memo: None,
-        }
+        Self { provider, owner: None, name: None, memo: None }
     }
 
     /// Override the account address (defaults to the provider's signer).

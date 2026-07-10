@@ -155,10 +155,7 @@ impl<W: Wordlist> MnemonicBuilder<W> {
     ///
     /// Returns an error if no phrase has been set.
     pub fn build(&self) -> Result<LocalSigner, SignerError> {
-        let phrase = self
-            .phrase
-            .as_deref()
-            .ok_or(MnemonicBuilderError::MissingPhrase)?;
+        let phrase = self.phrase.as_deref().ok_or(MnemonicBuilderError::MissingPhrase)?;
         let mnemonic = Mnemonic::<W>::new_from_phrase(phrase)?;
         xpriv_to_local_signer(
             &mnemonic.derive_key(&self.derivation_path, self.password.as_deref())?,
@@ -201,10 +198,7 @@ impl<W: Wordlist> MnemonicBuilder<W> {
     /// Useful for deriving many sequential accounts without re-processing the
     /// whole BIP-39 derivation each time.
     pub fn build_parent_key(&self) -> Result<MnemonicKey, SignerError> {
-        let phrase = self
-            .phrase
-            .as_deref()
-            .ok_or(MnemonicBuilderError::MissingPhrase)?;
+        let phrase = self.phrase.as_deref().ok_or(MnemonicBuilderError::MissingPhrase)?;
         let mnemonic = Mnemonic::<W>::new_from_phrase(phrase)?;
         let mut key = mnemonic.master_key(self.password.as_deref())?;
         // Traverse all but the last path component.
@@ -256,9 +250,7 @@ pub struct MnemonicKey {
 impl MnemonicKey {
     /// Derive a child key at `index` (unhardened).
     pub fn child(&self, index: u32) -> Result<Self, SignerError> {
-        Ok(Self {
-            key: self.key.derive_child(index)?,
-        })
+        Ok(Self { key: self.key.derive_child(index)? })
     }
 
     /// Extract a [`LocalSigner`] from this key.
@@ -273,12 +265,7 @@ impl MnemonicKey {
 
     /// Iterator over sequential child signers starting at `start`.
     pub fn children_from(&self, start: u32) -> MnemonicSignerIter {
-        MnemonicSignerIter {
-            state: IterState::Active {
-                key: self.clone(),
-                next: start,
-            },
-        }
+        MnemonicSignerIter { state: IterState::Active { key: self.clone(), next: start } }
     }
 }
 
@@ -313,17 +300,11 @@ enum IterState {
 
 impl MnemonicSignerIter {
     fn missing_phrase() -> Self {
-        Self {
-            state: IterState::Error {
-                error: Some(MnemonicBuilderError::MissingPhrase.into()),
-            },
-        }
+        Self { state: IterState::Error { error: Some(MnemonicBuilderError::MissingPhrase.into()) } }
     }
 
     fn error(e: SignerError) -> Self {
-        Self {
-            state: IterState::Error { error: Some(e) },
-        }
+        Self { state: IterState::Error { error: Some(e) } }
     }
 }
 
@@ -446,10 +427,8 @@ mod tests {
 
     #[test]
     fn build_random_returns_valid_signer() {
-        let (signer, phrase) = MnemonicBuilder::<English>::default()
-            .word_count(12)
-            .build_random()
-            .unwrap();
+        let (signer, phrase) =
+            MnemonicBuilder::<English>::default().word_count(12).build_random().unwrap();
         // Phrase must be 12 words.
         assert_eq!(phrase.split_whitespace().count(), 12);
         // Address must start with 'T' (base58check, TRON prefix byte 0x41).
@@ -458,18 +437,10 @@ mod tests {
 
     #[test]
     fn random_and_phrase_are_consistent() {
-        let (_, phrase) = MnemonicBuilder::<English>::default()
-            .word_count(12)
-            .build_random()
-            .unwrap();
-        let s1 = MnemonicBuilder::<English>::default()
-            .phrase(&phrase)
-            .build()
-            .unwrap();
-        let s2 = MnemonicBuilder::<English>::default()
-            .phrase(&phrase)
-            .build()
-            .unwrap();
+        let (_, phrase) =
+            MnemonicBuilder::<English>::default().word_count(12).build_random().unwrap();
+        let s1 = MnemonicBuilder::<English>::default().phrase(&phrase).build().unwrap();
+        let s2 = MnemonicBuilder::<English>::default().phrase(&phrase).build().unwrap();
         assert_eq!(s1.address(), s2.address());
     }
 
@@ -517,19 +488,13 @@ mod tests {
     #[test]
     fn missing_phrase_returns_error() {
         assert!(MnemonicBuilder::<English>::default().build().is_err());
-        let err = MnemonicBuilder::<English>::default()
-            .into_iter()
-            .next()
-            .unwrap()
-            .unwrap_err();
+        let err = MnemonicBuilder::<English>::default().into_iter().next().unwrap().unwrap_err();
         assert!(err.to_string().contains("phrase"));
     }
 
     #[test]
     fn phrase_set_random_returns_error() {
-        let result = MnemonicBuilder::<English>::default()
-            .phrase(ABANDON_PHRASE)
-            .build_random();
+        let result = MnemonicBuilder::<English>::default().phrase(ABANDON_PHRASE).build_random();
         assert!(result.is_err());
     }
 

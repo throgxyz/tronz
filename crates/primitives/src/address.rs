@@ -36,10 +36,9 @@ impl Address {
 
     /// Construct from a 21-byte slice, validating length and prefix.
     pub fn from_slice(slice: &[u8]) -> Result<Self, AddressError> {
-        let bytes: [u8; ADDRESS_LEN] = slice.try_into().map_err(|_| AddressError::BadLength {
-            expected: ADDRESS_LEN,
-            got: slice.len(),
-        })?;
+        let bytes: [u8; ADDRESS_LEN] = slice
+            .try_into()
+            .map_err(|_| AddressError::BadLength { expected: ADDRESS_LEN, got: slice.len() })?;
         Self::from_bytes(bytes)
     }
 
@@ -86,9 +85,7 @@ impl Address {
     /// The 20-byte EVM-style body (prefix stripped). Use this when bridging to
     /// `alloy` / ABI encoding.
     pub fn as_evm_bytes(&self) -> &[u8; EVM_ADDRESS_LEN] {
-        self.0[1..]
-            .try_into()
-            .expect("address body is always 20 bytes")
+        self.0[1..].try_into().expect("address body is always 20 bytes")
     }
 
     /// Encode as a base58check (`T...`) string.
@@ -124,11 +121,7 @@ impl FromStr for Address {
         let hexish = s.strip_prefix("0x").unwrap_or(s);
         let looks_hex =
             hexish.len() == ADDRESS_LEN * 2 && hexish.bytes().all(|b| b.is_ascii_hexdigit());
-        if looks_hex {
-            Self::from_hex(s)
-        } else {
-            Self::from_base58(s)
-        }
+        if looks_hex { Self::from_hex(s) } else { Self::from_base58(s) }
     }
 }
 
@@ -195,10 +188,7 @@ mod tests {
     fn bad_prefix_rejected() {
         let mut bytes = [0u8; ADDRESS_LEN];
         bytes[0] = 0x42;
-        assert!(matches!(
-            Address::from_bytes(bytes),
-            Err(AddressError::BadPrefix(0x42))
-        ));
+        assert!(matches!(Address::from_bytes(bytes), Err(AddressError::BadPrefix(0x42))));
     }
 
     #[test]

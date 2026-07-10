@@ -83,12 +83,7 @@ impl AwsSigner {
         let pubkey = decode_pubkey(resp)?;
         let address = Address::from_public_key(&pubkey);
         debug!(%address, "AWS KMS signer ready");
-        Ok(Self {
-            kms,
-            key_id,
-            pubkey,
-            address,
-        })
+        Ok(Self { kms, key_id, pubkey, address })
     }
 
     /// The KMS key ID used by this signer.
@@ -103,9 +98,7 @@ impl AwsSigner {
 
     /// Fetch the public key for a given key ID from KMS.
     pub async fn get_pubkey_for_key(&self, key_id: String) -> Result<VerifyingKey, AwsSignerError> {
-        request_get_pubkey(&self.kms, key_id)
-            .await
-            .and_then(decode_pubkey)
+        request_get_pubkey(&self.kms, key_id).await.and_then(decode_pubkey)
     }
 
     /// Fetch the public key for this signer's key ID from KMS.
@@ -141,11 +134,7 @@ async fn request_get_pubkey(
     kms: &Client,
     key_id: String,
 ) -> Result<GetPublicKeyOutput, AwsSignerError> {
-    kms.get_public_key()
-        .key_id(key_id)
-        .send()
-        .await
-        .map_err(Into::into)
+    kms.get_public_key().key_id(key_id).send().await.map_err(Into::into)
 }
 
 #[instrument(skip(kms, digest), fields(digest = %digest), err)]
@@ -166,22 +155,14 @@ async fn request_sign_digest(
 
 /// Decode a KMS `GetPublicKey` response (DER SubjectPublicKeyInfo) into a [`VerifyingKey`].
 fn decode_pubkey(resp: GetPublicKeyOutput) -> Result<VerifyingKey, AwsSignerError> {
-    let raw = resp
-        .public_key
-        .as_ref()
-        .ok_or(AwsSignerError::PublicKeyNotFound)?;
+    let raw = resp.public_key.as_ref().ok_or(AwsSignerError::PublicKeyNotFound)?;
     let spki = spki::SubjectPublicKeyInfoRef::try_from(raw.as_ref())?;
-    Ok(VerifyingKey::from_sec1_bytes(
-        spki.subject_public_key.raw_bytes(),
-    )?)
+    Ok(VerifyingKey::from_sec1_bytes(spki.subject_public_key.raw_bytes())?)
 }
 
 /// Decode a KMS `Sign` response and normalize `s` to low-S (required by TRON, as in EIP-2).
 fn decode_signature(resp: SignOutput) -> Result<ecdsa::Signature, AwsSignerError> {
-    let raw = resp
-        .signature
-        .as_ref()
-        .ok_or(AwsSignerError::SignatureNotFound)?;
+    let raw = resp.signature.as_ref().ok_or(AwsSignerError::SignatureNotFound)?;
     let sig = ecdsa::Signature::from_der(raw.as_ref())?;
     Ok(sig.normalize_s().unwrap_or(sig))
 }

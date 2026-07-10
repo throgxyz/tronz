@@ -21,21 +21,13 @@ struct RootProviderInner<T> {
 impl<T: TronTransport> RootProvider<T> {
     /// Create a read-only provider.
     pub fn new(transport: T) -> Self {
-        Self {
-            inner: Arc::new(RootProviderInner {
-                transport,
-                signer_address: None,
-            }),
-        }
+        Self { inner: Arc::new(RootProviderInner { transport, signer_address: None }) }
     }
 
     /// Create a provider that knows its signer's address.
     pub fn new_with_signer(transport: T, signer_address: Address) -> Self {
         Self {
-            inner: Arc::new(RootProviderInner {
-                transport,
-                signer_address: Some(signer_address),
-            }),
+            inner: Arc::new(RootProviderInner { transport, signer_address: Some(signer_address) }),
         }
     }
 

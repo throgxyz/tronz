@@ -29,11 +29,7 @@ impl RecoverableSignature {
         let mut s = [0u8; 32];
         r.copy_from_slice(&bytes[..32]);
         s.copy_from_slice(&bytes[32..]);
-        Self {
-            r,
-            s,
-            v: recovery_id.to_byte(),
-        }
+        Self { r, s, v: recovery_id.to_byte() }
     }
 
     /// Parse the 65-byte `r || s || v` representation.
@@ -94,11 +90,7 @@ impl RecoverableSignature {
 
 impl fmt::Debug for RecoverableSignature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "RecoverableSignature(0x{})",
-            hex::encode(self.to_bytes())
-        )
+        write!(f, "RecoverableSignature(0x{})", hex::encode(self.to_bytes()))
     }
 }
 

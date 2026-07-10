@@ -21,13 +21,7 @@ pub struct TransferBuilder<'a, P> {
 impl<'a, P: TronProvider> TransferBuilder<'a, P> {
     /// Start a new transfer builder.
     pub fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            to: None,
-            amount: None,
-            memo: None,
-        }
+        Self { provider, owner: None, to: None, amount: None, memo: None }
     }
 
     /// Override the sender (defaults to the provider's signer address).
@@ -109,14 +103,7 @@ mod tests {
     #[tokio::test]
     async fn missing_amount_returns_error() {
         let provider = mock_provider();
-        let err = provider
-            .send_trx()
-            .from(addr(1))
-            .to(addr(2))
-            .send()
-            .await
-            .err()
-            .unwrap();
+        let err = provider.send_trx().from(addr(1)).to(addr(2)).send().await.err().unwrap();
         assert!(err.is_local_usage_error());
     }
 }

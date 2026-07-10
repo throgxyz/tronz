@@ -35,11 +35,7 @@ pub struct TronEventFilter<P, E> {
 impl<P: TronProvider, E: SolEvent> TronEventFilter<P, E> {
     /// Create a new filter, optionally restricted to a specific contract address.
     pub fn new(provider: P, address: Option<Address>) -> Self {
-        Self {
-            provider,
-            address,
-            _event: PhantomData,
-        }
+        Self { provider, address, _event: PhantomData }
     }
 
     /// Narrow the filter to a specific contract address.
@@ -69,10 +65,7 @@ impl<P: TronProvider, E: SolEvent> TronEventFilter<P, E> {
             .get_transaction_info_by_block_num(block_num)
             .await
             .map_err(ContractError::Provider)?;
-        Ok(infos
-            .iter()
-            .flat_map(|info| self.decode_logs(&info.logs))
-            .collect())
+        Ok(infos.iter().flat_map(|info| self.decode_logs(&info.logs)).collect())
     }
 
     // ── internal ──────────────────────────────────────────────────────────────

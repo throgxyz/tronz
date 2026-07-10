@@ -28,11 +28,7 @@ impl<P> ContractInstance<P> {
     /// Create a contract instance with a dynamic ABI [`Interface`].
     #[inline]
     pub fn new(address: Address, provider: P, interface: Interface) -> Self {
-        Self {
-            address,
-            provider,
-            interface,
-        }
+        Self { address, provider, interface }
     }
 
     /// The contract address.
@@ -84,9 +80,7 @@ impl<P> std::ops::Deref for ContractInstance<P> {
 
 impl<P> std::fmt::Debug for ContractInstance<P> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ContractInstance")
-            .field("address", &self.address)
-            .finish()
+        f.debug_struct("ContractInstance").field("address", &self.address).finish()
     }
 }
 
@@ -98,11 +92,7 @@ impl<P: TronProvider> ContractInstance<P> {
     /// [`Trc20Instance`]: crate::trc20::Trc20Instance
     #[inline]
     pub fn new_raw(provider: P, address: Address) -> Self {
-        Self {
-            address,
-            provider,
-            interface: Interface::empty(),
-        }
+        Self { address, provider, interface: Interface::empty() }
     }
 
     // ── raw calldata ──────────────────────────────────────────────────────────

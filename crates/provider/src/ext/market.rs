@@ -79,10 +79,7 @@ pub trait MarketApi: TronProvider + Sized {
 
 impl<P: TronProvider> MarketApi for P {
     async fn get_market_order_by_id(&self, order_id: &[u8]) -> Result<Option<MarketOrderInfo>> {
-        self.transport()
-            .get_market_order_by_id(order_id)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_market_order_by_id(order_id).await.map_err(|e| Error::from(e.into()))
     }
 
     async fn get_market_order_by_account(&self, address: Address) -> Result<Vec<MarketOrderInfo>> {
@@ -115,10 +112,7 @@ impl<P: TronProvider> MarketApi for P {
     }
 
     async fn get_market_pair_list(&self) -> Result<Vec<MarketOrderPair>> {
-        self.transport()
-            .get_market_pair_list()
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_market_pair_list().await.map_err(|e| Error::from(e.into()))
     }
 
     fn market_sell(&self) -> MarketSellBuilder<'_, Self> {
@@ -197,18 +191,12 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
     /// Build, sign, and broadcast the sell order.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let sell_token_id = self
-            .sell_token_id
-            .ok_or(Error::missing_field("sell_token_id"))?;
-        let sell_token_quantity = self
-            .sell_token_quantity
-            .ok_or(Error::missing_field("sell_token_quantity"))?;
-        let buy_token_id = self
-            .buy_token_id
-            .ok_or(Error::missing_field("buy_token_id"))?;
-        let buy_token_quantity = self
-            .buy_token_quantity
-            .ok_or(Error::missing_field("buy_token_quantity"))?;
+        let sell_token_id = self.sell_token_id.ok_or(Error::missing_field("sell_token_id"))?;
+        let sell_token_quantity =
+            self.sell_token_quantity.ok_or(Error::missing_field("sell_token_quantity"))?;
+        let buy_token_id = self.buy_token_id.ok_or(Error::missing_field("buy_token_id"))?;
+        let buy_token_quantity =
+            self.buy_token_quantity.ok_or(Error::missing_field("buy_token_quantity"))?;
 
         let req = TransactionRequest {
             contract: Some(ContractType::MarketSellAsset(MarketSellAssetContract {
@@ -239,12 +227,7 @@ pub struct MarketCancelBuilder<'a, P> {
 
 impl<'a, P: TronProvider> MarketCancelBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            order_id: None,
-            memo: None,
-        }
+        Self { provider, owner: None, order_id: None, memo: None }
     }
 
     /// Override the canceller address (defaults to the provider's signer address).
@@ -323,18 +306,10 @@ mod tests {
     async fn get_market_pair_list_returns_pushed_pairs() {
         let provider = mock_provider();
         let pairs = vec![
-            MarketOrderPair {
-                sell_token_id: "_".into(),
-                buy_token_id: "1000001".into(),
-            },
-            MarketOrderPair {
-                sell_token_id: "1000001".into(),
-                buy_token_id: "_".into(),
-            },
+            MarketOrderPair { sell_token_id: "_".into(), buy_token_id: "1000001".into() },
+            MarketOrderPair { sell_token_id: "1000001".into(), buy_token_id: "_".into() },
         ];
-        provider
-            .transport()
-            .push_ok::<Vec<MarketOrderPair>>("get_market_pair_list", pairs);
+        provider.transport().push_ok::<Vec<MarketOrderPair>>("get_market_pair_list", pairs);
         let result = provider.get_market_pair_list().await.unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].sell_token_id, "_");

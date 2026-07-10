@@ -107,12 +107,7 @@ pub struct UnfreezeV1Builder<'a, P> {
 impl<'a, P: TronProvider> UnfreezeV1Builder<'a, P> {
     /// Start a new V1 unfreeze builder (defaults to releasing energy stake).
     pub fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            resource: ResourceCode::Energy,
-            receiver: None,
-        }
+        Self { provider, owner: None, resource: ResourceCode::Energy, receiver: None }
     }
 
     /// Override the account.
@@ -160,12 +155,7 @@ pub struct FreezeBuilder<'a, P> {
 impl<'a, P: TronProvider> FreezeBuilder<'a, P> {
     /// Start a new freeze builder (defaults to staking for energy).
     pub fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            amount: None,
-            resource: ResourceCode::Energy,
-        }
+        Self { provider, owner: None, amount: None, resource: ResourceCode::Energy }
     }
 
     /// Override the staking account.
@@ -214,12 +204,7 @@ pub struct UnfreezeBuilder<'a, P> {
 impl<'a, P: TronProvider> UnfreezeBuilder<'a, P> {
     /// Start a new unfreeze builder (defaults to releasing energy stake).
     pub fn new(provider: &'a P) -> Self {
-        Self {
-            provider,
-            owner: None,
-            amount: None,
-            resource: ResourceCode::Energy,
-        }
+        Self { provider, owner: None, amount: None, resource: ResourceCode::Energy }
     }
 
     /// Override the account.
@@ -279,39 +264,21 @@ mod freeze_builder_tests {
     #[tokio::test]
     async fn freeze_missing_amount_returns_error() {
         let provider = mock_provider();
-        let err = provider
-            .freeze_balance()
-            .from(addr(1))
-            .send()
-            .await
-            .err()
-            .unwrap();
+        let err = provider.freeze_balance().from(addr(1)).send().await.err().unwrap();
         assert!(err.is_local_usage_error());
     }
 
     #[tokio::test]
     async fn freeze_v1_missing_amount_returns_error() {
         let provider = mock_provider();
-        let err = provider
-            .freeze_balance_v1()
-            .from(addr(1))
-            .send()
-            .await
-            .err()
-            .unwrap();
+        let err = provider.freeze_balance_v1().from(addr(1)).send().await.err().unwrap();
         assert!(err.is_local_usage_error());
     }
 
     #[tokio::test]
     async fn unfreeze_missing_amount_returns_error() {
         let provider = mock_provider();
-        let err = provider
-            .unfreeze_balance()
-            .from(addr(1))
-            .send()
-            .await
-            .err()
-            .unwrap();
+        let err = provider.unfreeze_balance().from(addr(1)).send().await.err().unwrap();
         assert!(err.is_local_usage_error());
     }
 }

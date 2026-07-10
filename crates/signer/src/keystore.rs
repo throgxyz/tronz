@@ -188,9 +188,8 @@ pub fn decrypt(ks: &KeystoreFile, password: &str) -> Result<[u8; 32], SignerErro
     // ── Parse hex fields ──────────────────────────────────────────────────────
     let salt = hex::decode(&kp.salt)?;
     let iv_bytes = hex::decode(&ks.crypto.cipherparams.iv)?;
-    let iv: [u8; 16] = iv_bytes
-        .try_into()
-        .map_err(|_| KeystoreError::InvalidField("iv must be 16 bytes"))?;
+    let iv: [u8; 16] =
+        iv_bytes.try_into().map_err(|_| KeystoreError::InvalidField("iv must be 16 bytes"))?;
     let mut ciphertext = hex::decode(&ks.crypto.ciphertext)?;
     let stored_mac = hex::decode(&ks.crypto.mac)?;
 
@@ -256,19 +255,14 @@ fn encrypt_inner(
     cipher.apply_keystream(&mut ciphertext);
 
     // ── MAC: keccak256(derivedKey[16..32] || ciphertext) ─────────────────────
-    let mac = Keccak256::new()
-        .chain_update(&derived_key[16..])
-        .chain_update(ciphertext)
-        .finalize();
+    let mac = Keccak256::new().chain_update(&derived_key[16..]).chain_update(ciphertext).finalize();
 
     Ok(KeystoreFile {
         address: address.to_string(),
         crypto: CryptoJson {
             cipher: "aes-128-ctr".into(),
             ciphertext: hex::encode(ciphertext),
-            cipherparams: CipherparamsJson {
-                iv: hex::encode(iv),
-            },
+            cipherparams: CipherparamsJson { iv: hex::encode(iv) },
             kdf: "scrypt".into(),
             kdfparams: KdfparamsJson {
                 n: 1u64 << log_n,
@@ -305,16 +299,7 @@ mod tests {
     }
 
     fn encrypt_light(key: &[u8; 32], addr: &str, password: &str) -> KeystoreFile {
-        encrypt_inner(
-            key,
-            addr,
-            password,
-            &mut rand::rng(),
-            TEST_LOG_N,
-            TEST_R,
-            TEST_P,
-        )
-        .unwrap()
+        encrypt_inner(key, addr, password, &mut rand::rng(), TEST_LOG_N, TEST_R, TEST_P).unwrap()
     }
 
     // ── Round-trip ─────────────────────────────────────────────────────────────
@@ -340,10 +325,7 @@ mod tests {
         let key = test_key();
         let ks = encrypt_light(&key, ADDR, "pw");
         assert_eq!(ks.address, ADDR);
-        assert!(
-            ks.address.starts_with('T'),
-            "TRON address must start with T"
-        );
+        assert!(ks.address.starts_with('T'), "TRON address must start with T");
     }
 
     #[test]
