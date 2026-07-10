@@ -39,7 +39,7 @@ Or add it to your `Cargo.toml` manually:
 
 ```toml
 [dependencies]
-tronz = "0.2"
+tronz = "0.3"
 ```
 
 Optional features:
@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
 ### Stake TRX and delegate energy
 
 ```rust,no_run
-use tronz::{LocalSigner, ProviderBuilder, TronProvider, Trx, ResourceCode, TRONGRID_NILE};
+use tronz::{LocalSigner, ProviderBuilder, TronProvider, ResourceCode, TRONGRID_NILE, parse_trx};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -143,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
     // Freeze 100 TRX for energy
     provider
         .freeze_balance()
-        .amount(Trx::from_trx(100)?)
+        .amount(parse_trx("100")?)
         .resource(ResourceCode::Energy)
         .send()
         .await?
@@ -154,7 +154,7 @@ async fn main() -> anyhow::Result<()> {
     provider
         .delegate_resource()
         .resource(ResourceCode::Energy)
-        .amount(Trx::from_trx(100)?)
+        .amount(parse_trx("100")?)
         .to(receiver)
         .send()
         .await?

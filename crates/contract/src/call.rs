@@ -17,6 +17,8 @@ use crate::error::{ContractError, Result};
 /// Optionally attach TRX or TRC10 tokens before executing:
 ///
 /// ```ignore
+/// use tronz_primitives::parse_trx;
+///
 /// // Read-only simulation (trigger_constant_contract)
 /// let output = contract.call_raw(calldata).call().await?;
 ///
@@ -26,7 +28,7 @@ use crate::error::{ContractError, Result};
 /// // Payable call — send 1 TRX alongside
 /// let pending = contract
 ///     .call_raw(calldata)
-///     .value(Trx::from_sun_unchecked(1_000_000))
+///     .value(parse_trx("1")?)
 ///     .send()
 ///     .await?;
 /// ```

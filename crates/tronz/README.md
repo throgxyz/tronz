@@ -15,7 +15,7 @@ cargo add tronz --features full
 Or in your `Cargo.toml`:
 
 ```toml
-tronz = { version = "0.2", features = ["full"] }
+tronz = { version = "0.3", features = ["full"] }
 ```
 
 A full list of available features can be found in the
@@ -40,7 +40,7 @@ println!("Latest block: {} ({}ms)", block.number, block.timestamp);
 ### Sending TRX
 
 ```rust,no_run
-use tronz::{LocalSigner, ProviderBuilder, TronProvider, TronSigner, Trx, TRONGRID_NILE};
+use tronz::{LocalSigner, ProviderBuilder, TronProvider, TronSigner, TRONGRID_NILE, parse_trx};
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let signer = LocalSigner::from_hex("PRIVATE_KEY_HEX").expect("valid key");
@@ -55,7 +55,7 @@ let provider = ProviderBuilder::new()
 let pending = provider
     .send_trx()
     .to(from)
-    .amount(Trx::from_sun_unchecked(1_000_000))
+    .amount(parse_trx("1")?)
     .send()
     .await?;
 
