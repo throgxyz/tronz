@@ -39,7 +39,7 @@ Or add it to your `Cargo.toml` manually:
 
 ```toml
 [dependencies]
-tronz = "0.3"
+tronz = "0.4"
 ```
 
 Optional features:
