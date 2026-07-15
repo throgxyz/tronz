@@ -1,6 +1,6 @@
 //! Account management builders: create and rename accounts.
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, Bytes};
 
 use super::resolve_owner;
 use crate::{
@@ -19,7 +19,7 @@ pub struct CreateAccountBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     account_address: Option<Address>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> CreateAccountBuilder<'a, P> {
@@ -40,7 +40,7 @@ impl<'a, P: TronProvider> CreateAccountBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -72,7 +72,7 @@ pub struct UpdateAccountBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     name: Option<String>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> UpdateAccountBuilder<'a, P> {
@@ -93,7 +93,7 @@ impl<'a, P: TronProvider> UpdateAccountBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }

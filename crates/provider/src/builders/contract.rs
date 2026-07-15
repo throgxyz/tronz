@@ -1,6 +1,6 @@
 //! Smart-contract management builders.
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, Bytes};
 
 use super::resolve_owner;
 use crate::{
@@ -22,7 +22,7 @@ pub struct SetAccountIdBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     account_id: Option<String>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> SetAccountIdBuilder<'a, P> {
@@ -43,7 +43,7 @@ impl<'a, P: TronProvider> SetAccountIdBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -75,7 +75,7 @@ pub struct ClearContractAbiBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     contract_address: Option<Address>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> ClearContractAbiBuilder<'a, P> {
@@ -96,7 +96,7 @@ impl<'a, P: TronProvider> ClearContractAbiBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -130,7 +130,7 @@ pub struct UpdateContractSettingBuilder<'a, P> {
     owner: Option<Address>,
     contract_address: Option<Address>,
     consume_user_resource_percent: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> UpdateContractSettingBuilder<'a, P> {
@@ -163,7 +163,7 @@ impl<'a, P: TronProvider> UpdateContractSettingBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -201,7 +201,7 @@ pub struct UpdateContractEnergyLimitBuilder<'a, P> {
     owner: Option<Address>,
     contract_address: Option<Address>,
     origin_energy_limit: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> UpdateContractEnergyLimitBuilder<'a, P> {
@@ -234,7 +234,7 @@ impl<'a, P: TronProvider> UpdateContractEnergyLimitBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }

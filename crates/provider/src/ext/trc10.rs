@@ -2,7 +2,7 @@
 //!
 //! Import [`Trc10Api`] to add TRC10 methods to any [`TronProvider`].
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, Bytes};
 
 use crate::{
     builders::resolve_owner,
@@ -191,7 +191,7 @@ pub struct TransferTrc10Builder<'a, P> {
     to: Option<Address>,
     token_id: Option<String>,
     amount: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
@@ -224,7 +224,7 @@ impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -427,7 +427,7 @@ pub struct ParticipateTrc10Builder<'a, P> {
     to: Option<Address>,
     token_id: Option<String>,
     amount: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
@@ -460,7 +460,7 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -494,7 +494,7 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
 pub struct UnfreezeTrc10Builder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> UnfreezeTrc10Builder<'a, P> {
@@ -509,7 +509,7 @@ impl<'a, P: TronProvider> UnfreezeTrc10Builder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -541,7 +541,7 @@ pub struct UpdateTrc10Builder<'a, P> {
     url: Option<String>,
     new_limit: i64,
     new_public_limit: i64,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> UpdateTrc10Builder<'a, P> {
@@ -588,7 +588,7 @@ impl<'a, P: TronProvider> UpdateTrc10Builder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }

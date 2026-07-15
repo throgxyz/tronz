@@ -12,6 +12,7 @@ repository   = { workspace = true }
 [dependencies]
 tronz-primitives = { workspace = true }
 tronz-provider   = { workspace = true, optional = true }
+tronz-abi        = { workspace = true, optional = true, features = ["alloy"] }
 tronz-sol-macro  = { workspace = true }
 alloy-primitives = { workspace = true, optional = true }
 alloy-sol-types  = { workspace = true }
@@ -24,6 +25,7 @@ thiserror        = { workspace = true, optional = true }
 # Provider-bound contract instances: ContractInstance, Trc20Instance, etc.
 provider = [
     "dep:tronz-provider",
+    "dep:tronz-abi",
     "dep:thiserror",
     "dep:alloy-primitives",
     "dep:alloy-dyn-abi",

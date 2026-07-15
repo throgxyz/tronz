@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, Bytes};
 
 use crate::{
     builders::resolve_owner,
@@ -109,7 +109,7 @@ pub struct SubmitProposalBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     parameters: HashMap<i64, i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
@@ -138,7 +138,7 @@ impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -172,7 +172,7 @@ pub struct ApproveProposalBuilder<'a, P> {
     owner: Option<Address>,
     proposal_id: Option<i64>,
     is_add_approval: bool,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
@@ -201,7 +201,7 @@ impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -233,7 +233,7 @@ pub struct CancelProposalBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     proposal_id: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> CancelProposalBuilder<'a, P> {
@@ -254,7 +254,7 @@ impl<'a, P: TronProvider> CancelProposalBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }

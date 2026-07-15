@@ -24,6 +24,9 @@ pub enum ContractError {
     /// ABI encoding or decoding failed.
     #[error("ABI error: {0}")]
     Abi(#[from] alloy_dyn_abi::Error),
+    /// TRON ABI metadata conversion failed.
+    #[error(transparent)]
+    AbiMetadata(#[from] tronz_abi::TronAbiConversionError),
     /// The requested function name was not found in the ABI.
     #[error("unknown function: `{0}`")]
     UnknownFunction(String),

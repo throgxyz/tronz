@@ -96,7 +96,7 @@ mod tests {
     }
 
     fn canned(output: Vec<u8>) -> ConstantCallResult {
-        ConstantCallResult { output, energy_used: 0, revert_reason: None }
+        ConstantCallResult { output: output.into(), energy_used: 0, revert_reason: None }
     }
 
     #[tokio::test]

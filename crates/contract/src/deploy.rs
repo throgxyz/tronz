@@ -18,10 +18,11 @@
 //! # async fn run(
 //! #     provider: impl tronz_provider::TronProvider,
 //! #     bytecode: tronz_primitives::Bytes,
-//! #     abi: &[u8],
+//! #     abi: tronz_contract::JsonAbi,
 //! # ) -> tronz_contract::Result<()> {
 //! // One-shot: broadcast + wait + return address
-//! let address = provider.deploy(bytecode.clone()).abi(abi).name("MyToken").deploy().await?;
+//! let address =
+//!     provider.deploy(bytecode.clone()).abi(abi.clone()).name("MyToken").deploy().await?;
 //!
 //! // Or split into broadcast + poll separately:
 //! let pending = provider.deploy(bytecode).abi(abi).send().await?;
@@ -30,6 +31,8 @@
 //! # Ok(()) }
 //! ```
 
+use alloy_json_abi::JsonAbi;
+use tronz_abi::TronAbi;
 use tronz_primitives::{Address, Bytes, Trx};
 use tronz_provider::{
     Error as ProviderError, PendingTransaction, TronProvider,
@@ -44,12 +47,17 @@ use crate::error::{ContractError, Result};
 pub struct DeployBuilder<P> {
     provider: P,
     bytecode: Bytes,
-    abi: Vec<u8>,
+    abi: DeploymentAbi,
     call_value: Trx,
     fee_limit: Option<Trx>,
     consume_user_resource_percent: i64,
     origin_energy_limit: i64,
     name: String,
+}
+
+enum DeploymentAbi {
+    Json(JsonAbi),
+    Tron(TronAbi),
 }
 
 impl<P: TronProvider> DeployBuilder<P> {
@@ -58,7 +66,7 @@ impl<P: TronProvider> DeployBuilder<P> {
         Self {
             provider,
             bytecode: bytecode.into(),
-            abi: Vec::new(),
+            abi: DeploymentAbi::Tron(TronAbi::new()),
             call_value: Trx::ZERO,
             fee_limit: None,
             consume_user_resource_percent: 100,
@@ -67,11 +75,21 @@ impl<P: TronProvider> DeployBuilder<P> {
         }
     }
 
-    /// Attach the contract's JSON ABI (used by TRON nodes to validate the
-    /// deployment and store ABI metadata on-chain).
+    /// Attach the contract's Alloy JSON ABI.
+    ///
+    /// Conversion to TRON's native metadata model happens when the transaction
+    /// is sent. Tuple parameters are stored as canonical selector types because
+    /// TRON metadata cannot retain component names or `internalType` values.
     #[inline]
-    pub fn abi(mut self, abi: impl Into<Vec<u8>>) -> Self {
-        self.abi = abi.into();
+    pub fn abi(mut self, abi: JsonAbi) -> Self {
+        self.abi = DeploymentAbi::Json(abi);
+        self
+    }
+
+    /// Attach native TRON ABI metadata without converting through Alloy.
+    #[inline]
+    pub fn tron_abi(mut self, abi: TronAbi) -> Self {
+        self.abi = DeploymentAbi::Tron(abi);
         self
     }
 
@@ -150,11 +168,16 @@ impl<P: TronProvider> DeployBuilder<P> {
             .ok_or_else(ProviderError::no_signer)
             .map_err(ContractError::Provider)?;
 
+        let abi = match self.abi {
+            DeploymentAbi::Json(abi) => TronAbi::try_from(abi)?,
+            DeploymentAbi::Tron(abi) => abi,
+        };
+
         let mut req = TransactionRequest::default().with_contract(
             ContractType::CreateSmartContract(CreateSmartContract {
                 owner_address: owner,
                 bytecode: self.bytecode,
-                abi: self.abi,
+                abi,
                 call_value: self.call_value,
                 consume_user_resource_percent: self.consume_user_resource_percent,
                 origin_energy_limit: self.origin_energy_limit,

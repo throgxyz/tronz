@@ -37,7 +37,14 @@ mod interface;
 #[cfg(feature = "provider")]
 pub use alloy_dyn_abi::DecodedEvent;
 #[cfg(feature = "provider")]
+pub use alloy_json_abi::JsonAbi;
+#[cfg(feature = "provider")]
 pub use interface::Interface;
+#[cfg(feature = "provider")]
+pub use tronz_abi::{
+    TronAbi, TronAbiConversionError, TronAbiEntry, TronAbiEntryType, TronAbiParam,
+    TronAbiStateMutability,
+};
 
 #[cfg(feature = "provider")]
 mod instance;

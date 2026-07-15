@@ -10,7 +10,7 @@ use crate::{
     proto,
     types::{
         AccountInfo, AccountPermissionUpdateContract, AccountPermissions, AccountResource,
-        AssetInfo, AssetIssueContract, BlockInfo, ClearContractAbiContract, ConstantCallResult,
+        AssetInfo, AssetIssueContract, ClearContractAbiContract, ConstantCallResult,
         ContractResult, CreateAccountContract, CreateSmartContract, CreateWitnessContract,
         DelegatedResource, DelegatedResourceIndex, ExchangeCreateContract, ExchangeInfo,
         ExchangeInjectContract, ExchangeTransactionContract, ExchangeWithdrawContract, FreezeV2,
@@ -53,8 +53,8 @@ fn opt_addr(bytes: Vec<u8>) -> Option<Address> {
 /// exactly 32 bytes, and emits a `warn!`.
 ///
 /// This is acceptable for log topics (a wrong-length topic simply won't match
-/// any filter) but **not** for block hashes — see [`block_from_extention`]
-/// which validates the length explicitly.
+/// any filter). Block-summary conversion validates block hash lengths instead
+/// of using this fallback.
 fn b256(bytes: Vec<u8>) -> B256 {
     if bytes.len() == 32 {
         let mut arr = [0u8; 32];
@@ -64,31 +64,6 @@ fn b256(bytes: Vec<u8>) -> B256 {
         warn!(len = bytes.len(), "unexpected b256 byte length from node, substituting B256::ZERO");
         B256::ZERO
     }
-}
-
-// ── Block ─────────────────────────────────────────────────────────────────────
-
-pub(super) fn block_from_extention(
-    ext: proto::BlockExtention,
-) -> Result<BlockInfo, TransportErrorKind> {
-    let header = ext
-        .block_header
-        .ok_or_else(|| TransportErrorKind::Malformed("missing block_header".into()))?;
-    let raw = header
-        .raw_data
-        .ok_or_else(|| TransportErrorKind::Malformed("missing block_header.raw_data".into()))?;
-
-    // Block id must be exactly 32 bytes — a wrong length here would silently
-    // corrupt TAPOS (ref_block_hash becomes zero → node rejects the tx).
-    let blockid = ext.blockid;
-    if blockid.len() != 32 {
-        return Err(TransportErrorKind::Malformed(format!(
-            "blockid must be 32 bytes, got {}",
-            blockid.len()
-        )));
-    }
-
-    Ok(BlockInfo { number: raw.number, hash: b256(blockid), timestamp: raw.timestamp })
 }
 
 // ── Account ───────────────────────────────────────────────────────────────────
@@ -314,7 +289,7 @@ pub(super) fn trigger_smart_contract_to_proto(
         owner_address: addr_bytes(p.owner_address),
         contract_address: addr_bytes(p.contract_address),
         call_value: p.call_value.as_sun(),
-        data: p.data.to_vec(),
+        data: p.data.into(),
         call_token_value: p.call_token_value.as_sun(),
         token_id: p.token_id,
     }
@@ -323,7 +298,7 @@ pub(super) fn trigger_smart_contract_to_proto(
 pub(super) fn constant_result_from_extention(
     ext: proto::TransactionExtention,
 ) -> Result<ConstantCallResult, TransportErrorKind> {
-    let output = ext.constant_result.into_iter().next().unwrap_or_default();
+    let output: Bytes = ext.constant_result.into_iter().next().unwrap_or_default().into();
 
     let revert_reason = if let Some(ref r) = ext.result {
         if !r.result {
@@ -344,78 +319,11 @@ pub(super) fn constant_result_from_extention(
     Ok(ConstantCallResult { output, energy_used: ext.energy_used, revert_reason })
 }
 
-/// Convert a proto `SmartContract.ABI` to a JSON ABI byte array compatible
-/// with alloy's `JsonAbi` / EIP-712 tooling.
-fn abi_to_json(abi: proto::smart_contract::Abi) -> Vec<u8> {
-    fn state_mutability(v: i32) -> &'static str {
-        match v {
-            1 => "pure",
-            2 => "view",
-            4 => "payable",
-            _ => "nonpayable",
-        }
-    }
-
-    fn param_to_json(p: &proto::smart_contract::abi::entry::Param) -> serde_json::Value {
-        let mut obj = serde_json::json!({ "name": p.name, "type": p.r#type });
-        if p.indexed {
-            obj["indexed"] = serde_json::json!(true);
-        }
-        obj
-    }
-
-    let entries: Vec<serde_json::Value> = abi
-        .entrys
-        .into_iter()
-        .filter_map(|e| {
-            // EntryType: 0=Unknown, 1=Constructor, 2=Function, 3=Event,
-            //            4=Fallback, 5=Receive, 6=Error
-            let entry = match e.r#type {
-                1 => serde_json::json!({
-                    "type": "constructor",
-                    "inputs": e.inputs.iter().map(param_to_json).collect::<Vec<_>>(),
-                    "stateMutability": state_mutability(e.state_mutability),
-                }),
-                2 => serde_json::json!({
-                    "type": "function",
-                    "name": e.name,
-                    "inputs": e.inputs.iter().map(param_to_json).collect::<Vec<_>>(),
-                    "outputs": e.outputs.iter().map(param_to_json).collect::<Vec<_>>(),
-                    "stateMutability": state_mutability(e.state_mutability),
-                }),
-                3 => serde_json::json!({
-                    "type": "event",
-                    "name": e.name,
-                    "inputs": e.inputs.iter().map(param_to_json).collect::<Vec<_>>(),
-                    "anonymous": e.anonymous,
-                }),
-                4 => serde_json::json!({
-                    "type": "fallback",
-                    "stateMutability": state_mutability(e.state_mutability),
-                }),
-                5 => serde_json::json!({
-                    "type": "receive",
-                    "stateMutability": "payable",
-                }),
-                6 => serde_json::json!({
-                    "type": "error",
-                    "name": e.name,
-                    "inputs": e.inputs.iter().map(param_to_json).collect::<Vec<_>>(),
-                }),
-                _ => return None, // skip UnknownEntryType
-            };
-            Some(entry)
-        })
-        .collect();
-
-    serde_json::to_vec(&entries).unwrap_or_default()
-}
-
 pub(super) fn smart_contract_from_proto(c: proto::SmartContract) -> SmartContractInfo {
     SmartContractInfo {
         address: opt_addr(c.contract_address),
         origin_address: opt_addr(c.origin_address),
-        abi: c.abi.map(abi_to_json).unwrap_or_default(),
+        abi: c.abi.map(super::abi::from_proto).unwrap_or_default(),
         bytecode: Bytes::from(c.bytecode),
         runtime_bytecode: None,
         name: c.name,
@@ -558,8 +466,8 @@ pub(super) fn create_smart_contract_to_proto(p: CreateSmartContract) -> proto::C
         new_contract: Some(proto::SmartContract {
             origin_address: addr_bytes(p.owner_address),
             contract_address: vec![],
-            abi: None,
-            bytecode: p.bytecode.to_vec(),
+            abi: Some(super::abi::to_proto(p.abi)),
+            bytecode: p.bytecode.into(),
             call_value: p.call_value.as_sun(),
             consume_user_resource_percent: p.consume_user_resource_percent,
             name: p.name,
@@ -801,30 +709,6 @@ pub(super) fn update_energy_limit_to_proto(
     }
 }
 
-// ── Block (plain, non-extention) ───────────────────────────────────────────────
-
-/// Convert a plain `Block` proto (returned by `GetBlockById`, etc.) into `BlockInfo`.
-pub(super) fn block_from_plain(block: proto::Block) -> Result<BlockInfo, TransportErrorKind> {
-    let header = block
-        .block_header
-        .ok_or_else(|| TransportErrorKind::Malformed("missing block_header".into()))?;
-    let raw = header
-        .raw_data
-        .ok_or_else(|| TransportErrorKind::Malformed("missing block_header.raw_data".into()))?;
-
-    // For plain Block the block id isn't included — derive it from the header bytes.
-    use prost::Message as _;
-    use sha2::{Digest, Sha256};
-    let header_bytes = raw.encode_to_vec();
-    let hash_bytes: [u8; 32] = Sha256::digest(&header_bytes).into();
-    // Embed the block number in the first 8 bytes (TRON convention).
-    let mut block_id = hash_bytes;
-    let num_be = raw.number.to_be_bytes();
-    block_id[0..8].copy_from_slice(&num_be);
-
-    Ok(BlockInfo { number: raw.number, hash: B256::from(block_id), timestamp: raw.timestamp })
-}
-
 // ── Raw transaction from plain Transaction proto ───────────────────────────────
 
 /// Convert a plain `Transaction` proto into a `RawTransaction`.
@@ -922,7 +806,7 @@ pub(super) fn market_cancel_order_to_proto(
 ) -> proto::MarketCancelOrderContract {
     proto::MarketCancelOrderContract {
         owner_address: addr_bytes(p.owner_address),
-        order_id: p.order_id,
+        order_id: p.order_id.as_slice().to_vec(),
     }
 }
 
@@ -934,8 +818,12 @@ pub(super) fn market_order_from_proto(
         2 => MarketOrderState::Canceled,
         _ => MarketOrderState::Active,
     };
+    let order_id: [u8; 32] = o
+        .order_id
+        .try_into()
+        .map_err(|_| TransportErrorKind::Malformed("market order id must be 32 bytes".into()))?;
     Ok(MarketOrderInfo {
-        order_id: o.order_id,
+        order_id: B256::from(order_id),
         owner_address: addr(o.owner_address)?,
         create_time: o.create_time,
         sell_token_id: String::from_utf8_lossy(&o.sell_token_id).into_owned(),
@@ -981,4 +869,40 @@ pub(super) fn sign_weight_from_proto(
     let result = w.result.as_ref().map(|r| r.message.clone()).unwrap_or_default();
 
     Ok(SignWeight { approved_list, current_weight: w.current_weight, required_weight, result })
+}
+
+#[cfg(test)]
+mod tests {
+    use tronz_abi::{TronAbi, TronAbiEntry, TronAbiEntryType, TronAbiStateMutability};
+    use tronz_primitives::{Address, Bytes, Trx};
+
+    use super::*;
+
+    #[test]
+    fn deploy_contract_includes_typed_abi() {
+        let abi = TronAbi {
+            entries: vec![TronAbiEntry {
+                entry_type: TronAbiEntryType::Function,
+                name: "totalSupply".into(),
+                constant: true,
+                state_mutability: TronAbiStateMutability::View,
+                ..Default::default()
+            }],
+        };
+        let owner = Address::from_slice(&[0x41; 21]).unwrap();
+        let request = CreateSmartContract {
+            owner_address: owner,
+            bytecode: Bytes::from_static(&[0x60, 0x00]),
+            abi,
+            call_value: Trx::ZERO,
+            consume_user_resource_percent: 100,
+            origin_energy_limit: 10_000_000,
+            name: "Token".into(),
+        };
+
+        let proto = create_smart_contract_to_proto(request);
+        let stored = proto.new_contract.unwrap().abi.unwrap();
+        assert_eq!(stored.entrys.len(), 1);
+        assert_eq!(stored.entrys[0].name, "totalSupply");
+    }
 }

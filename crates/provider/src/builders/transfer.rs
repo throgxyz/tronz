@@ -1,6 +1,6 @@
 //! TRX transfer builder.
 
-use tronz_primitives::{Address, Trx};
+use tronz_primitives::{Address, Bytes, Trx};
 
 use super::resolve_owner;
 use crate::{
@@ -15,7 +15,7 @@ pub struct TransferBuilder<'a, P> {
     owner: Option<Address>,
     to: Option<Address>,
     amount: Option<Trx>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> TransferBuilder<'a, P> {
@@ -43,7 +43,7 @@ impl<'a, P: TronProvider> TransferBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }

@@ -1,6 +1,6 @@
 //! Domain types for the TRON order-book DEX (Market Orders).
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, B256};
 
 /// State of a market order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,7 +18,7 @@ pub enum MarketOrderState {
 #[non_exhaustive]
 pub struct MarketOrderInfo {
     /// Unique order ID (32-byte hash).
-    pub order_id: Vec<u8>,
+    pub order_id: B256,
     /// Address of the account that placed the order.
     pub owner_address: Address,
     /// Creation timestamp (unix ms).

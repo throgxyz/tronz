@@ -3,13 +3,18 @@
 //! Default endpoint: `https://grpc.trongrid.io:443` (TronGrid mainnet, TLS).
 //! For local/private nodes use `http://127.0.0.1:50051` (no TLS).
 
+mod abi;
 mod codec;
+mod light_block;
 
 use std::{collections::HashMap, future::Future, time::Duration};
 
 use futures::future::try_join_all;
 use prost::Message as _;
 use tonic::{
+    GrpcMethod, Request,
+    client::Grpc,
+    codegen::http::uri::PathAndQuery,
     metadata::MetadataValue,
     service::Interceptor,
     transport::{Channel, Endpoint},
@@ -401,13 +406,54 @@ impl GrpcTransport {
         )
     }
 
+    /// Call a Wallet unary RPC using a custom wire-compatible response type.
+    ///
+    /// Generated clients fix the response type to the full TRON protobuf
+    /// message. Block-summary methods use this helper so prost can skip the
+    /// transaction payload instead of decoding data the public API discards.
+    async fn wallet_unary<Req, Res>(
+        &self,
+        req: Req,
+        path: &'static str,
+        method: &'static str,
+    ) -> Result<Res, TransportErrorKind>
+    where
+        Req: prost::Message + Default + Clone + Send + Sync + 'static,
+        Res: prost::Message + Default + Send + Sync + 'static,
+    {
+        self.call_with_retry(|| {
+            let service = tonic::codegen::InterceptedService::new(
+                self.channel.clone(),
+                ApiKeyInterceptor(self.api_key.clone()),
+            );
+            let req = req.clone();
+            async move {
+                let mut client = Grpc::new(service);
+                client.ready().await.map_err(|e| {
+                    TransportErrorKind::Grpc(tonic::Status::unknown(format!(
+                        "service was not ready: {}",
+                        e
+                    )))
+                })?;
+                let mut request = Request::new(req);
+                request.extensions_mut().insert(GrpcMethod::new("protocol.Wallet", method));
+                let codec = tonic_prost::ProstCodec::default();
+                Ok(client
+                    .unary(request, PathAndQuery::from_static(path), codec)
+                    .await?
+                    .into_inner())
+            }
+        })
+        .await
+    }
+
     /// Check a `Return` message, converting failures to [`TransportErrorKind::NodeError`].
     fn check_return(ret: Option<proto::Return>) -> Result<(), TransportErrorKind> {
-        if let Some(r) = ret {
-            if !r.result {
-                let msg = String::from_utf8_lossy(&r.message).into_owned();
-                return Err(TransportErrorKind::NodeError(msg));
-            }
+        if let Some(r) = ret
+            && !r.result
+        {
+            let msg = String::from_utf8_lossy(&r.message).into_owned();
+            return Err(TransportErrorKind::NodeError(msg));
         }
         Ok(())
     }
@@ -438,14 +484,14 @@ fn signed_to_proto(tx: &SignedTransaction) -> Result<proto::Transaction, Transpo
 
     let mut proto_tx = proto::Transaction::decode(tx.raw.raw_proto.as_ref())?;
     for sig in &tx.signatures {
-        proto_tx.signature.push(sig.to_bytes().to_vec());
+        proto_tx.signature.push(sig.to_bytes().to_vec().into());
     }
     Ok(proto_tx)
 }
 
 /// Decode a lowercase hex string into bytes using only the standard library.
 fn decode_hex(s: &str) -> Result<Vec<u8>, String> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err("odd number of hex digits".into());
     }
     s.as_bytes()
@@ -498,14 +544,16 @@ impl TronTransport for GrpcTransport {
 
     async fn get_now_block(&self) -> Result<BlockInfo, Self::Error> {
         let req = EmptyMessage::default();
-        let ext = retry_unary!(self, wallet_client, get_now_block2, req)?;
-        codec::block_from_extention(ext)
+        let block: light_block::BlockSummaryProto =
+            self.wallet_unary(req, "/protocol.Wallet/GetNowBlock2", "GetNowBlock2").await?;
+        block.into_block_info(None)
     }
 
     async fn get_block_by_number(&self, num: i64) -> Result<BlockInfo, Self::Error> {
         let req = proto::NumberMessage { num };
-        let ext = retry_unary!(self, wallet_client, get_block_by_num2, req)?;
-        codec::block_from_extention(ext)
+        let block: light_block::BlockSummaryProto =
+            self.wallet_unary(req, "/protocol.Wallet/GetBlockByNum2", "GetBlockByNum2").await?;
+        block.into_block_info(None)
     }
 
     // --- Account ---
@@ -1131,14 +1179,17 @@ impl TronTransport for GrpcTransport {
 
     async fn get_block_by_id(&self, block_id: B256) -> Result<BlockInfo, Self::Error> {
         let req = proto::BytesMessage { value: block_id.as_slice().to_vec() };
-        let block = retry_unary!(self, wallet_client, get_block_by_id, req)?;
-        codec::block_from_plain(block)
+        let block: light_block::BlockSummaryProto =
+            self.wallet_unary(req, "/protocol.Wallet/GetBlockById", "GetBlockById").await?;
+        block.into_block_info(Some(block_id))
     }
 
     async fn get_blocks_by_latest_num(&self, count: i64) -> Result<Vec<BlockInfo>, Self::Error> {
         let req = proto::NumberMessage { num: count };
-        let list = retry_unary!(self, wallet_client, get_block_by_latest_num2, req)?;
-        list.block.into_iter().map(codec::block_from_extention).collect()
+        let list: light_block::BlockSummaryListProto = self
+            .wallet_unary(req, "/protocol.Wallet/GetBlockByLatestNum2", "GetBlockByLatestNum2")
+            .await?;
+        list.blocks.into_iter().map(|block| block.into_block_info(None)).collect()
     }
 
     async fn get_blocks_by_limit(
@@ -1147,8 +1198,10 @@ impl TronTransport for GrpcTransport {
         end: i64,
     ) -> Result<Vec<BlockInfo>, Self::Error> {
         let req = proto::BlockLimit { start_num: start, end_num: end };
-        let list = retry_unary!(self, wallet_client, get_block_by_limit_next2, req)?;
-        list.block.into_iter().map(codec::block_from_extention).collect()
+        let list: light_block::BlockSummaryListProto = self
+            .wallet_unary(req, "/protocol.Wallet/GetBlockByLimitNext2", "GetBlockByLimitNext2")
+            .await?;
+        list.blocks.into_iter().map(|block| block.into_block_info(None)).collect()
     }
 
     async fn get_transaction_count_by_block_num(&self, block_num: i64) -> Result<u64, Self::Error> {
@@ -1419,9 +1472,9 @@ impl TronTransport for GrpcTransport {
 
     async fn get_market_order_by_id(
         &self,
-        order_id: &[u8],
+        order_id: B256,
     ) -> Result<Option<MarketOrderInfo>, Self::Error> {
-        let req = proto::BytesMessage { value: order_id.to_vec() };
+        let req = proto::BytesMessage { value: order_id.as_slice().to_vec() };
         let order = retry_unary!(self, wallet_client, get_market_order_by_id, req)?;
         if order.order_id.is_empty() {
             return Ok(None);

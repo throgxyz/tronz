@@ -2,7 +2,7 @@
 //!
 //! Import [`WitnessApi`] to add SR management methods to any [`TronProvider`].
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, Bytes};
 
 use crate::{
     builders::resolve_owner,
@@ -103,7 +103,7 @@ pub struct BecomeWitnessBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     url: Option<String>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
@@ -124,7 +124,7 @@ impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -155,7 +155,7 @@ pub struct UpdateWitnessBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     update_url: Option<String>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
@@ -176,7 +176,7 @@ impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -207,7 +207,7 @@ pub struct UpdateBrokerageBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
     brokerage: Option<i32>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> UpdateBrokerageBuilder<'a, P> {
@@ -231,7 +231,7 @@ impl<'a, P: TronProvider> UpdateBrokerageBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }

@@ -5,6 +5,9 @@ The workhorse crate of the [tronz](https://github.com/throgxyz/tronz) TRON SDK.
 Owns the public TRON domain model, the gRPC transport, and the high-level
 [`TronProvider`] trait with all of its typed operation builders.
 
+Contract metadata is exposed as [`tronz_abi::TronAbi`] so protobuf information
+is preserved without forcing provider-only users to depend on Alloy ABI types.
+
 ## Usage
 
 ```rust,no_run

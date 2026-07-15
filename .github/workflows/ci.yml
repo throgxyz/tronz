@@ -28,7 +28,7 @@ jobs:
         rust:
           - "stable"
           - "nightly"
-          - "1.85" # MSRV
+          - "1.91.1" # MSRV
         flags:
           # No TLS (plain HTTP/2 transport only)
           - "--no-default-features --features provider-grpc,contract"
@@ -38,7 +38,7 @@ jobs:
           - "--all-features"
         exclude:
           # Skip --all-features on MSRV to keep the matrix lean
-          - rust: "1.85" # MSRV
+          - rust: "1.91.1" # MSRV
             flags: "--all-features"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -56,15 +56,15 @@ jobs:
           cache-on-failure: true
       # MSRV: only build, do not run tests (nextest requires a newer Rust)
       - name: build (MSRV)
-        if: ${{ matrix.rust == '1.85' }}
+        if: ${{ matrix.rust == '1.91.1' }}
         run: cargo build --workspace ${{ matrix.flags }}
       - name: Install cargo-nextest
-        if: ${{ matrix.rust != '1.85' }}
+        if: ${{ matrix.rust != '1.91.1' }}
         uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
       - name: test
-        if: ${{ matrix.rust != '1.85' }}
+        if: ${{ matrix.rust != '1.91.1' }}
         run: cargo nextest run --workspace ${{ matrix.flags }}
 
   doctest:

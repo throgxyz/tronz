@@ -161,11 +161,12 @@ pub trait ContractExt: TronProvider + Sized {
     /// # Example
     ///
     /// ```no_run
-    /// use tronz_contract::ContractExt as _;
+    /// use tronz_contract::{ContractExt as _, JsonAbi};
     /// # async fn run(provider: impl tronz_provider::TronProvider, bytecode: tronz_primitives::Bytes) -> tronz_contract::Result<()> {
+    /// let abi = JsonAbi::new();
     /// let pending = provider
     ///     .deploy(bytecode)
-    ///     .abi(b"[]")
+    ///     .abi(abi)
     ///     .name("MyToken")
     ///     .send()
     ///     .await?;

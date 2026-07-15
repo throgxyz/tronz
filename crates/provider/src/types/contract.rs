@@ -2,7 +2,8 @@
 
 use std::collections::HashMap;
 
-use tronz_primitives::{Address, Bytes, ResourceCode, Trx};
+use tronz_abi::TronAbi;
+use tronz_primitives::{Address, B256, Bytes, ResourceCode, Trx};
 
 /// All TRON native contract types. Discriminants mirror the protobuf
 /// `Transaction.Contract.ContractType` enum.
@@ -294,8 +295,8 @@ pub struct CreateSmartContract {
     pub owner_address: Address,
     /// Contract bytecode.
     pub bytecode: Bytes,
-    /// JSON-encoded ABI.
-    pub abi: Vec<u8>,
+    /// Native TRON ABI metadata to store with the contract.
+    pub abi: TronAbi,
     /// TRX sent on deployment.
     pub call_value: Trx,
     /// Percentage of energy the caller (vs origin) pays.
@@ -679,14 +680,14 @@ pub struct MarketCancelOrderContract {
     /// Order owner address.
     pub owner_address: Address,
     /// The 32-byte order ID to cancel.
-    pub order_id: Vec<u8>,
+    pub order_id: B256,
 }
 
 /// Result of a constant (read-only) smart-contract call.
 #[derive(Clone, Debug, Default)]
 pub struct ConstantCallResult {
     /// Raw ABI-encoded return data.
-    pub output: Vec<u8>,
+    pub output: Bytes,
     /// Energy the call would have consumed.
     pub energy_used: i64,
     /// Revert message, if the call reverted.
@@ -856,8 +857,8 @@ pub struct SmartContractInfo {
     pub address: Option<Address>,
     /// Deployer address.
     pub origin_address: Option<Address>,
-    /// JSON-encoded ABI bytes.
-    pub abi: Vec<u8>,
+    /// Native TRON ABI metadata returned by the node.
+    pub abi: TronAbi,
     /// Creation bytecode (as supplied to `deploy_contract`).
     pub bytecode: Bytes,
     /// Deployed (runtime) bytecode — only populated by

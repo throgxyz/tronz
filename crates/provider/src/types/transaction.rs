@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use tronz_primitives::{RecoverableSignature, Trx, TxId};
+use tronz_primitives::{Bytes, RecoverableSignature, Trx, TxId};
 
 use crate::types::{BlockInfo, contract::ContractType};
 
@@ -15,7 +15,7 @@ pub struct TransactionRequest {
     /// Maximum fee (energy + bandwidth) the sender will pay.
     pub fee_limit: Option<Trx>,
     /// Optional memo / note (`raw.data`).
-    pub memo: Option<Vec<u8>>,
+    pub memo: Option<Bytes>,
     /// Permission id for multisig (`Contract.Permission_id`).
     pub permission_id: Option<i32>,
 
@@ -49,7 +49,7 @@ impl TransactionRequest {
     }
 
     /// Attach a memo / note.
-    pub fn with_memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn with_memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -94,14 +94,14 @@ pub struct RawTransaction {
     pub(crate) tx_id: TxId,
     /// Prost-encoded `Transaction` (no signatures yet). Used to build the
     /// broadcast message by appending signatures.
-    pub(crate) raw_proto: Vec<u8>,
+    pub(crate) raw_proto: Bytes,
 }
 
 impl RawTransaction {
     /// Construct from a `TransactionExtention` returned by the node.
     pub(crate) fn from_proto_extention(
         txid: Vec<u8>,
-        raw_proto: Vec<u8>,
+        raw_proto: impl Into<Bytes>,
         expiration: i64,
         timestamp: i64,
     ) -> Result<Self, crate::error::TransportErrorKind> {
@@ -111,7 +111,12 @@ impl RawTransaction {
             .try_into()
             .map_err(|_| TransportErrorKind::Malformed("txid must be 32 bytes".into()))?;
 
-        Ok(Self { expiration, timestamp, tx_id: TxId::from(tx_id_bytes), raw_proto })
+        Ok(Self {
+            expiration,
+            timestamp,
+            tx_id: TxId::from(tx_id_bytes),
+            raw_proto: raw_proto.into(),
+        })
     }
 
     /// The transaction id — `sha256` of the encoded `Transaction.raw`.
@@ -119,7 +124,7 @@ impl RawTransaction {
         self.tx_id
     }
 
-    /// Apply `fee_limit`, `memo`, and `permission_id` from a filled
+    /// Apply fee, memo, permission, and optional TAPOS overrides from a filled
     /// [`TransactionRequest`] to this raw transaction.
     ///
     /// When any field is set, the `Transaction.raw` proto bytes are decoded,
@@ -127,31 +132,53 @@ impl RawTransaction {
     /// recomputed so that the signature covers the updated payload.
     pub(crate) fn apply_request_fields(
         &mut self,
-        fee_limit_sun: Option<i64>,
-        memo: Option<&[u8]>,
-        permission_id: Option<i32>,
+        request: &TransactionRequest,
     ) -> Result<(), crate::error::TransportErrorKind> {
         use prost::Message as _;
         use sha2::{Digest, Sha256};
 
-        if fee_limit_sun.is_none() && memo.is_none() && permission_id.is_none() {
+        if request.fee_limit.is_none()
+            && request.memo.is_none()
+            && request.permission_id.is_none()
+            && request.ref_block_bytes.is_none()
+            && request.ref_block_hash.is_none()
+            && request.timestamp.is_none()
+            && request.expiration.is_none()
+        {
             return Ok(());
         }
 
         let mut tx = crate::proto::Transaction::decode(self.raw_proto.as_ref())?;
 
         if let Some(ref mut raw_data) = tx.raw_data {
-            if let Some(fl) = fee_limit_sun {
-                raw_data.fee_limit = fl;
+            if let Some(value) = request.fee_limit {
+                raw_data.fee_limit = value.as_sun();
             }
-            if let Some(m) = memo {
-                raw_data.data = m.to_vec();
+            if let Some(memo) = &request.memo {
+                raw_data.data = memo.clone().into();
             }
-            if let Some(pid) = permission_id {
-                if let Some(contract) = raw_data.contract.first_mut() {
-                    contract.permission_id = pid;
-                }
+            if let Some(pid) = request.permission_id
+                && let Some(contract) = raw_data.contract.first_mut()
+            {
+                contract.permission_id = pid;
             }
+            if let Some(bytes) = request.ref_block_bytes {
+                raw_data.ref_block_bytes = bytes.to_vec();
+            }
+            if let Some(hash) = request.ref_block_hash {
+                raw_data.ref_block_hash = hash.to_vec();
+            }
+            if let Some(value) = request.timestamp {
+                raw_data.timestamp = value;
+            }
+            if let Some(value) = request.expiration {
+                raw_data.expiration = value;
+            }
+
+            // Keep the public metadata in sync with the protobuf payload that
+            // is signed and broadcast.
+            self.timestamp = raw_data.timestamp;
+            self.expiration = raw_data.expiration;
 
             // Recompute tx_id = sha256(encoded raw_data)
             let new_tx_id_bytes: [u8; 32] = Sha256::digest(raw_data.encode_to_vec()).into();
@@ -162,7 +189,7 @@ impl RawTransaction {
             ));
         }
 
-        self.raw_proto = tx.encode_to_vec();
+        self.raw_proto = tx.encode_to_vec().into();
         Ok(())
     }
 }
@@ -195,8 +222,50 @@ impl SignedTransaction {
             }
         };
         for sig in &self.signatures {
-            proto_tx.signature.push(sig.to_bytes().to_vec());
+            proto_tx.signature.push(sig.to_bytes().to_vec().into());
         }
         proto_tx.encoded_len() as u64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use prost::Message as _;
+
+    use super::*;
+
+    #[test]
+    fn applies_explicit_tapos_fields_to_node_built_transaction() {
+        let tx = crate::proto::Transaction {
+            raw_data: Some(crate::proto::transaction::Raw {
+                timestamp: 1,
+                expiration: 2,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let mut raw =
+            RawTransaction::from_proto_extention(vec![0; 32], tx.encode_to_vec(), 2, 1).unwrap();
+
+        let request = TransactionRequest {
+            memo: Some(Bytes::from_static(b"memo")),
+            ref_block_bytes: Some([0xaa, 0xbb]),
+            ref_block_hash: Some([1, 2, 3, 4, 5, 6, 7, 8]),
+            timestamp: Some(10),
+            expiration: Some(20),
+            ..Default::default()
+        };
+        raw.apply_request_fields(&request).unwrap();
+
+        let decoded = crate::proto::Transaction::decode(raw.raw_proto.as_ref()).unwrap();
+        let data = decoded.raw_data.unwrap();
+        assert_eq!(data.ref_block_bytes, vec![0xaa, 0xbb]);
+        assert_eq!(data.ref_block_hash, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(data.data.as_ref(), b"memo");
+        assert_eq!(data.timestamp, 10);
+        assert_eq!(data.expiration, 20);
+        assert_eq!(raw.timestamp, 10);
+        assert_eq!(raw.expiration, 20);
+        assert_ne!(raw.tx_id(), TxId::from([0; 32]));
     }
 }

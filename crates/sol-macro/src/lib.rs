@@ -286,10 +286,10 @@ impl TronSol {
 
         let mut rpc_contracts: Vec<&ItemContract> = Vec::new();
         for item in &self.items {
-            if let SolItem::Contract(c) = item {
-                if contract_opts(&c.attrs)?.rpc {
-                    rpc_contracts.push(c);
-                }
+            if let SolItem::Contract(c) = item
+                && contract_opts(&c.attrs)?.rpc
+            {
+                rpc_contracts.push(c);
             }
         }
 
@@ -709,29 +709,29 @@ fn strip_tron_attrs(ts: TokenStream2) -> TokenStream2 {
         }
 
         // Attribute: `#` [`!`] `[ ... ]`
-        if let TokenTree::Punct(p) = &tokens[i] {
-            if p.as_char() == '#' {
-                let mut j = i + 1;
-                let bang = matches!(tokens.get(j), Some(TokenTree::Punct(q)) if q.as_char() == '!');
-                if bang {
-                    j += 1;
-                }
-                if let Some(TokenTree::Group(g)) = tokens.get(j) {
-                    if g.delimiter() == Delimiter::Bracket {
-                        // `None` => drop the whole attribute (emit nothing).
-                        if let Some(inner) = rewrite_attr(g.stream()) {
-                            out.extend(once(tokens[i].clone()));
-                            if bang {
-                                out.extend(once(tokens[i + 1].clone()));
-                            }
-                            let mut ng = Group::new(Delimiter::Bracket, inner);
-                            ng.set_span(g.span());
-                            out.extend(once(TokenTree::Group(ng)));
-                        }
-                        i = j + 1;
-                        continue;
+        if let TokenTree::Punct(p) = &tokens[i]
+            && p.as_char() == '#'
+        {
+            let mut j = i + 1;
+            let bang = matches!(tokens.get(j), Some(TokenTree::Punct(q)) if q.as_char() == '!');
+            if bang {
+                j += 1;
+            }
+            if let Some(TokenTree::Group(g)) = tokens.get(j)
+                && g.delimiter() == Delimiter::Bracket
+            {
+                // `None` => drop the whole attribute (emit nothing).
+                if let Some(inner) = rewrite_attr(g.stream()) {
+                    out.extend(once(tokens[i].clone()));
+                    if bang {
+                        out.extend(once(tokens[i + 1].clone()));
                     }
+                    let mut ng = Group::new(Delimiter::Bracket, inner);
+                    ng.set_span(g.span());
+                    out.extend(once(TokenTree::Group(ng)));
                 }
+                i = j + 1;
+                continue;
             }
         }
 
@@ -757,16 +757,16 @@ fn rewrite_attr(inner: TokenStream2) -> Option<TokenStream2> {
         "tron_sol" => None,
         // `#[sol(...)]` — strip the TRON-only keys, keep the rest.
         "sol" => {
-            if let Some(TokenTree::Group(g)) = toks.get(1) {
-                if g.delimiter() == Delimiter::Parenthesis {
-                    let kept = filter_sol_meta(g.stream());
-                    if kept.is_empty() {
-                        return None;
-                    }
-                    let mut grp = Group::new(Delimiter::Parenthesis, kept);
-                    grp.set_span(g.span());
-                    return Some([toks[0].clone(), TokenTree::Group(grp)].into_iter().collect());
+            if let Some(TokenTree::Group(g)) = toks.get(1)
+                && g.delimiter() == Delimiter::Parenthesis
+            {
+                let kept = filter_sol_meta(g.stream());
+                if kept.is_empty() {
+                    return None;
                 }
+                let mut grp = Group::new(Delimiter::Parenthesis, kept);
+                grp.set_span(g.span());
+                return Some([toks[0].clone(), TokenTree::Group(grp)].into_iter().collect());
             }
             Some(inner)
         }
@@ -781,11 +781,11 @@ fn filter_sol_meta(stream: TokenStream2) -> TokenStream2 {
     // Split into comma-separated items (commas inside nested groups are atomic).
     let mut items: Vec<Vec<TokenTree>> = vec![Vec::new()];
     for tt in stream {
-        if let TokenTree::Punct(p) = &tt {
-            if p.as_char() == ',' {
-                items.push(Vec::new());
-                continue;
-            }
+        if let TokenTree::Punct(p) = &tt
+            && p.as_char() == ','
+        {
+            items.push(Vec::new());
+            continue;
         }
         items.last_mut().expect("non-empty").push(tt);
     }
@@ -969,7 +969,7 @@ fn parse_hex(lit: &LitStr) -> Result<Vec<u8>> {
     let span = lit.span();
     let s = lit.value();
     let s = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(&s);
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err(syn::Error::new(span, "bytecode hex string has odd length"));
     }
     s.as_bytes()

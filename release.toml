@@ -2,7 +2,8 @@ sign-commit    = false
 sign-tag       = false
 push           = false
 publish        = false
+shared-version = true
+tag            = false
 
 pre-release-commit-message  = "chore: release {{version}}"
 tag-message                 = "chore: release {{crate_name}} v{{version}}"
-tag-name                    = "{{crate_name}}-v{{version}}"

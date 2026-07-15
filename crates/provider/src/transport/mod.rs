@@ -659,7 +659,7 @@ pub trait TronTransport: Clone + Send + Sync + 'static + private::Sealed {
     /// Returns `None` if no order with that ID exists.
     fn get_market_order_by_id(
         &self,
-        order_id: &[u8],
+        order_id: B256,
     ) -> impl Future<Output = Result<Option<MarketOrderInfo>, Self::Error>> + Send;
 
     /// Fetch all market orders placed by `address`.

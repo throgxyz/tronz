@@ -3,21 +3,22 @@ members  = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version      = "0.3.0"
+version      = "0.4.0"
 edition      = "2024"
-rust-version = "1.85"
+rust-version = "1.91.1"
 license      = "MIT OR Apache-2.0"
 repository   = "https://github.com/throgxyz/tronz"
 readme       = "README.md"
 
 [workspace.dependencies]
 # internal
-tronz-primitives  = { path = "crates/primitives",  version = "0.3.0", default-features = false }
-tronz-signer      = { path = "crates/signer",      version = "0.3.0", default-features = false }
-tronz-signer-aws  = { path = "crates/signer-aws",  version = "0.3.0", default-features = false }
-tronz-provider    = { path = "crates/provider",    version = "0.3.0", default-features = false }
-tronz-contract    = { path = "crates/contract",    version = "0.3.0", default-features = false }
-tronz-sol-macro   = { path = "crates/sol-macro",   version = "0.3.0" }
+tronz-primitives  = { path = "crates/primitives",  version = "0.4.0", default-features = false }
+tronz-abi         = { path = "crates/abi",         version = "0.4.0", default-features = false }
+tronz-signer      = { path = "crates/signer",      version = "0.4.0", default-features = false }
+tronz-signer-aws  = { path = "crates/signer-aws",  version = "0.4.0", default-features = false }
+tronz-provider    = { path = "crates/provider",    version = "0.4.0", default-features = false }
+tronz-contract    = { path = "crates/contract",    version = "0.4.0", default-features = false }
+tronz-sol-macro   = { path = "crates/sol-macro",   version = "0.4.0" }
 
 # alloy (reused directly)
 alloy-primitives = { version = "1", default-features = false, features = ["std", "serde"] }
@@ -58,7 +59,7 @@ tonic       = { version = "0.14", default-features = false, features = ["transpo
 tonic-prost = { version = "0.14" }
 
 # async
-tokio   = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
+tokio   = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
 futures = { version = "0.3" }
 
 # serde

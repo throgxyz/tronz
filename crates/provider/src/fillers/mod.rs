@@ -5,10 +5,11 @@
 
 use core::future::Future;
 use std::{
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
+use tokio::sync::Mutex;
 use tronz_primitives::{Address, B256, RecoverableSignature, Trx};
 use tronz_signer::{SignerError, TronSigner};
 
@@ -165,22 +166,24 @@ impl TxFiller for TaposFiller {
                 return Ok(tx);
             }
 
-            // Return the cached block if it is still fresh.  The lock is held
-            // only while reading the Option — never across an await point.
-            let cached_block = cached
-                .lock()
-                .unwrap()
-                .as_ref()
-                .and_then(|(b, t)| (t.elapsed() < block_ttl).then(|| b.clone()));
-
-            let block = match cached_block {
-                Some(b) => b,
-                None => {
-                    let b = provider.get_now_block().await?;
-                    *cached.lock().unwrap() = Some((b.clone(), Instant::now()));
-                    b
+            // Keep the async mutex through a cache miss so concurrent callers
+            // coalesce into one get_now_block request instead of stampeding the
+            // node when the TTL expires.
+            let mut cache = cached.lock().await;
+            let block = if let Some((block, fetched_at)) = cache.as_ref() {
+                if fetched_at.elapsed() < block_ttl {
+                    block.clone()
+                } else {
+                    let block = provider.get_now_block().await?;
+                    *cache = Some((block.clone(), Instant::now()));
+                    block
                 }
+            } else {
+                let block = provider.get_now_block().await?;
+                *cache = Some((block.clone(), Instant::now()));
+                block
             };
+            drop(cache);
 
             let mut tx = tx;
             tx.ref_block_bytes = Some(block.ref_block_bytes());
@@ -426,6 +429,24 @@ mod tests {
         filler.fill(TransactionRequest::default(), &provider).await.unwrap();
         // Clone shares the Arc — no second push_ok needed.
         clone.fill(TransactionRequest::default(), &provider).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tapos_filler_coalesces_concurrent_cache_misses() {
+        let provider = mock_provider();
+        // Only one response is available. A second concurrent node request
+        // would make MockTransport panic.
+        provider.transport().push_ok("get_now_block", block(7, 4_000_000));
+
+        let filler = TaposFiller::new();
+        let clone = filler.clone();
+        let (first, second) = tokio::join!(
+            filler.fill(TransactionRequest::default(), &provider),
+            clone.fill(TransactionRequest::default(), &provider),
+        );
+
+        assert_eq!(first.unwrap().timestamp, Some(4_000_000));
+        assert_eq!(second.unwrap().timestamp, Some(4_000_000));
     }
 
     // ── FeeLimitFiller ───────────────────────────────────────────────────────

@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `tronz-abi` crate with a protobuf-independent `TronAbi` metadata model,
+  forward-compatible unknown enum values, optional serde support, and an
+  optional Alloy `JsonAbi` bridge.
+- `DeployBuilder::tron_abi` for deploying with native TRON ABI metadata while
+  `DeployBuilder::abi` continues to accept Alloy's `JsonAbi`.
+
+### Changed (Breaking)
+
+- The minimum supported Rust version is now 1.91.1, matching the current tonic
+  and AWS SDK dependency requirements.
+- `ConstantCallResult::output` now uses reference-counted `Bytes` instead of
+  `Vec<u8>` to avoid copying contract return data.
+- Transaction memos now use reference-counted `Bytes` throughout
+  `TransactionRequest` and every transaction builder.
+- Market order IDs now use the fixed-size `B256` type in contracts, query APIs,
+  builders, and returned order metadata instead of unchecked byte vectors.
+- Low-level contract deployment and metadata APIs now use native `TronAbi`
+  instead of JSON-encoded `Vec<u8>` values. Alloy `JsonAbi` conversion lives in
+  `tronz-abi` behind its `alloy` feature.
+- `ProviderBuilder::with_recommended_fillers()` no longer installs
+  `TaposFiller`: every currently supported transaction is constructed by a
+  node endpoint that already fills TAPOS. Explicit `.with_tapos()` remains
+  available and its fields are now applied to the returned transaction.
+
+### Performance
+
+- Block-summary RPCs now use wire-compatible lightweight protobuf responses
+  that skip transaction payloads when only block number, timestamp, and hash
+  are requested.
+- High-volume protobuf fields such as calldata, bytecode, log data, constant
+  results, transaction memo data, and signatures now use reference-counted
+  `bytes::Bytes` across the tonic boundary.
+- Concurrent `TaposFiller` cache misses are coalesced into one
+  `get_now_block` request.
+
+### Fixed
+
+- Contract deployment now includes the supplied ABI in the TRON protobuf
+  request instead of silently sending `abi: None`.
+- Contract ABI responses are preserved exactly as `TronAbi`, including bare
+  tuples and unknown protobuf enum values, instead of being replaced with an
+  empty byte array or making the entire contract query fail.
+
 ## [0.3.0] - 2026-07-10
 
 ### Added

@@ -5,7 +5,7 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 [![Crates.io](https://img.shields.io/crates/v/tronz.svg)](https://crates.io/crates/tronz)
 [![docs.rs](https://docs.rs/tronz/badge.svg)](https://docs.rs/tronz)
 [![License: MIT / Apache-2.0](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](#license)
-[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.91.1+](https://img.shields.io/badge/rust-1.91.1%2B-orange.svg)](https://www.rust-lang.org)
 [![CI](https://github.com/throgxyz/tronz/actions/workflows/ci.yml/badge.svg)](https://github.com/throgxyz/tronz/actions/workflows/ci.yml)
 
 ## Features
@@ -14,7 +14,7 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 - **Resilient by default** — per-call timeouts plus automatic retries with exponential back-off and jitter, configurable via `ProviderBuilder` / `GrpcTransport::builder()`
 - **Failover** — load-balance and fail over across multiple equivalent endpoints (`with_endpoints`, tonic `balance_list`)
 - **Typed provider** — fluent builder API for every native contract operation
-- **Filler chain** — automatic TAPOS, fee-limit, and signing (mirrors alloy's `JoinFill`)
+- **Filler chain** — automatic fee-limit and signing, plus optional explicit TAPOS overrides (mirrors alloy's `JoinFill`)
 - **TRX / TRC10 / TRC20** — transfers, balance queries, and token metadata
 - **Staking** — Stake 2.0 (freeze, unfreeze, delegate, undelegate, claim rewards) and Stake 1.0 legacy (`freeze_balance_v1`, `unfreeze_balance_v1`)
 - **HD wallets** — BIP-39 mnemonic generation and BIP-44 key derivation (`signer-mnemonic` feature, TRON coin type 195)
@@ -22,7 +22,7 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 - **AWS KMS** — sign with a key that never leaves the HSM (`signer-aws` feature, `AwsSigner`)
 - **`tron_sol!` macro** — type-safe contract bindings with typed call/event builders and JSON ABI file path support (superset of alloy's `sol!`)
 - **TRC721** — `Trc721Instance`: `transfer_from`, `approve`, `owner_of`, `token_uri`, and standard ERC-721 queries
-- **Contract deploy & call** — `DeployBuilder`, `CallBuilder`, dynamic ABI, energy estimation
+- **Contract deploy & call** — native `TronAbi` metadata with an Alloy `JsonAbi` bridge, `DeployBuilder`, dynamic calls, and energy estimation
 - **Event decoding** — decode and filter logs with `SolEvent`
 - **Votes & account management** — SR voting, account activation, name and permission updates
 - **Super representatives** — `WitnessApi`: become SR, update URL, update brokerage ratio
@@ -264,6 +264,7 @@ async fn main() -> anyhow::Result<()> {
 |---|---|
 | [`tronz`](https://crates.io/crates/tronz) | Meta-crate — re-exports everything |
 | [`tronz-primitives`](https://crates.io/crates/tronz-primitives) | `Address`, `Trx`, `ResourceCode`, `RecoverableSignature` |
+| [`tronz-abi`](https://crates.io/crates/tronz-abi) | Native TRON ABI metadata and optional Alloy `JsonAbi` conversion |
 | [`tronz-signer`](https://crates.io/crates/tronz-signer) | `TronSigner` trait and `LocalSigner` (in-memory secp256k1) |
 | [`tronz-provider`](https://crates.io/crates/tronz-provider) | gRPC transport, provider, fillers, domain types, extension traits |
 | [`tronz-contract`](https://crates.io/crates/tronz-contract) | `ContractInstance`, `DeployBuilder`, TRC20 bindings, event decoding |
@@ -327,7 +328,7 @@ use tronz::{TRONGRID_MAINNET, TRONGRID_NILE};
 
 ## Minimum Supported Rust Version
 
-**1.85** (Rust 2024 edition, required for stable RPITIT).
+**1.91.1** (Rust 2024 edition).
 
 ## License
 
