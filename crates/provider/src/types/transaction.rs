@@ -157,10 +157,10 @@ impl RawTransaction {
             if let Some(memo) = &request.memo {
                 raw_data.data = memo.clone().into();
             }
-            if let Some(pid) = request.permission_id {
-                if let Some(contract) = raw_data.contract.first_mut() {
-                    contract.permission_id = pid;
-                }
+            if let Some(pid) = request.permission_id
+                && let Some(contract) = raw_data.contract.first_mut()
+            {
+                contract.permission_id = pid;
             }
             if let Some(bytes) = request.ref_block_bytes {
                 raw_data.ref_block_bytes = bytes.to_vec();

@@ -13,6 +13,20 @@ model without leaking generated protobuf types:
 - `TronAbiEntryType`
 - `TronAbiStateMutability`
 
+## Serialization formats
+
+The `serde` feature serializes the native `TronAbi` data model. Its JSON shape
+is intended for persisting TRON metadata and is **not** the standard Solidity
+JSON ABI array format. Parse a standard JSON ABI as Alloy's `JsonAbi`, then
+convert it explicitly:
+
+```rust,ignore
+use tronz_abi::{JsonAbi, TronAbi};
+
+let json_abi: JsonAbi = serde_json::from_str(ABI_JSON)?;
+let tron_abi = TronAbi::try_from(&json_abi)?;
+```
+
 Enable the `alloy` feature to convert between `TronAbi` and Alloy's `JsonAbi`:
 
 ```rust,ignore
@@ -34,6 +48,13 @@ metadata in the other direction fails when it contains a bare `tuple` without
 recoverable component types. `JsonAbi` also groups items by kind and name, so
 top-level entry order is not preserved across conversion. The native protobuf
 conversion preserves the metadata and ordering returned by the node.
+
+Converting `TronAbi` to `JsonAbi` normalizes each entry to the fields supported
+by its Solidity JSON ABI item kind. TRON metadata fields that have no meaning
+for that item kind, such as outputs on an event or `anonymous` on a function,
+are ignored. Conversion still fails when a value cannot be represented safely,
+including unknown entry kinds, invalid identifiers or types, bare tuples, and
+duplicate singleton entries.
 
 ## License
 

@@ -238,6 +238,10 @@ impl TronAbi {
     /// events, and errors by name. Legacy `constant` and `payable` flags are
     /// used only when `state_mutability` is `Unknown(0)`.
     ///
+    /// Each entry is normalized to the fields supported by its Solidity JSON
+    /// ABI item kind. Fields with no meaning for that kind, such as outputs on
+    /// an event or `anonymous` on a function, are ignored.
+    ///
     /// # Errors
     ///
     /// Returns an error for invalid identifiers or types, bare `tuple` types,
