@@ -3435,11 +3435,22 @@ dependencies = [
 name = "tronz"
 version = "0.3.0"
 dependencies = [
+ "tronz-abi",
  "tronz-contract",
  "tronz-primitives",
  "tronz-provider",
  "tronz-signer",
  "tronz-signer-aws",
+]
+
+[[package]]
+name = "tronz-abi"
+version = "0.3.0"
+dependencies = [
+ "alloy-json-abi",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -3454,6 +3465,7 @@ dependencies = [
  "hex",
  "thiserror 2.0.18",
  "tokio",
+ "tronz-abi",
  "tronz-primitives",
  "tronz-provider",
  "tronz-sol-macro",
@@ -3479,7 +3491,6 @@ dependencies = [
  "futures",
  "prost",
  "prost-types",
- "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.18",
  "tokio",
@@ -3487,6 +3498,7 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tracing",
+ "tronz-abi",
  "tronz-primitives",
  "tronz-signer",
 ]

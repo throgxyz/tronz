@@ -72,6 +72,7 @@ For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/
 | Crate | Description |
 |-------|-------------|
 | [`tronz`] | Meta-crate re-exporting all sub-crates |
+| [`tronz-abi`] | Native TRON ABI metadata and optional Alloy JSON ABI conversion |
 | [`tronz-primitives`] | `Address`, `Trx`, `ResourceCode`, signatures |
 | [`tronz-signer`] | `TronSigner` trait and `LocalSigner` implementation |
 | [`tronz-provider`] | Transport, provider, fillers, and domain types |
@@ -79,6 +80,7 @@ For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/
 | [`tronz-signer-aws`] | AWS KMS signer (`signer-aws` feature) |
 
 [`tronz`]: https://github.com/throgxyz/tronz/tree/main/crates/tronz
+[`tronz-abi`]: https://github.com/throgxyz/tronz/tree/main/crates/abi
 [`tronz-primitives`]: https://github.com/throgxyz/tronz/tree/main/crates/primitives
 [`tronz-signer`]: https://github.com/throgxyz/tronz/tree/main/crates/signer
 [`tronz-provider`]: https://github.com/throgxyz/tronz/tree/main/crates/provider
@@ -87,7 +89,7 @@ For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/
 
 ## Supported Rust Versions (MSRV)
 
-The minimum supported Rust version is **1.85**.
+The minimum supported Rust version is **1.91.1**.
 
 ## Contributing
 

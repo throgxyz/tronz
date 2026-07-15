@@ -98,14 +98,16 @@ impl<F: TxFiller> ProviderBuilder<F> {
         self
     }
 
-    /// Add both the TAPOS filler and a 20 TRX default fee-limit filler in one
-    /// call — the most common setup for a read/write provider.
+    /// Add the recommended filler chain.
     ///
-    /// Equivalent to `.with_tapos().with_fee_limit(Trx::from_sun(20_000_000).unwrap())`.
-    pub fn with_recommended_fillers(
-        self,
-    ) -> ProviderBuilder<JoinFill<JoinFill<F, TaposFiller>, FeeLimitFiller>> {
-        self.with_tapos().with_fee_limit(Trx::from_sun_unchecked(20_000_000))
+    /// This currently installs a 20 TRX default fee limit. All supported
+    /// transaction builders ask the node to construct the transaction, so TAPOS
+    /// is already filled by the node. Use [`with_tapos`] explicitly only when
+    /// overriding TAPOS for a locally referenced block.
+    ///
+    /// [`with_tapos`]: Self::with_tapos
+    pub fn with_recommended_fillers(self) -> ProviderBuilder<JoinFill<F, FeeLimitFiller>> {
+        self.with_fee_limit(Trx::from_sun_unchecked(20_000_000))
     }
 
     /// Add the TAPOS filler (required before broadcasting client-built txs).
@@ -247,7 +249,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for Fille
     // ── send_transaction ─────────────────────────────────────────────────────
 
     async fn send_transaction(&self, req: TransactionRequest) -> Result<PendingTransaction<Self>> {
-        // Build (fill TAPOS / fee-limit + node round-trip), then sign & broadcast.
+        // Build (run configured fillers + node round-trip), then sign & broadcast.
         let raw = self.build_transaction(req).await?;
 
         let sig = self
@@ -361,14 +363,46 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> FilledProvider<T, F> {
         };
         let mut raw = raw_result.map_err(|e| Error::from(e.into()))?;
 
-        // ── 3. Apply fee_limit / memo / permission_id ────────────────────────
-        raw.apply_request_fields(
-            req.fee_limit.map(|t| t.as_sun()),
-            req.memo.as_deref(),
-            req.permission_id,
-        )
-        .map_err(Error::Transport)?;
+        // ── 3. Apply request-level overrides ────────────────────────────────
+        raw.apply_request_fields(&req).map_err(Error::Transport)?;
 
         Ok(raw)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tronz_primitives::{Address, Bytes};
+
+    use super::*;
+    use crate::{
+        transport::mock::MockTransport,
+        types::{ContractType, TriggerSmartContract},
+    };
+
+    #[tokio::test]
+    async fn recommended_fillers_do_not_fetch_tapos() {
+        // No get_now_block response is queued. The mock would panic if the
+        // recommended chain still contained TaposFiller.
+        let provider = RootProvider::new(MockTransport::new());
+        let builder = ProviderBuilder::new().with_recommended_fillers();
+        let address = Address::from_evm_bytes([1; 20]);
+        let request = TransactionRequest {
+            contract: Some(ContractType::TriggerSmartContract(TriggerSmartContract {
+                owner_address: address,
+                contract_address: address,
+                call_value: Trx::ZERO,
+                data: Bytes::new(),
+                call_token_value: Trx::ZERO,
+                token_id: 0,
+            })),
+            ..Default::default()
+        };
+
+        let mut filled = builder.filler.fill(request, &provider).await.unwrap();
+        builder.filler.fill_sync(&mut filled);
+
+        assert_eq!(filled.fee_limit, Some(Trx::from_sun_unchecked(20_000_000)));
+        assert!(filled.ref_block_bytes.is_none());
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Import [`MarketApi`] to add market-order methods to any [`TronProvider`].
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, B256, Bytes};
 
 use crate::{
     builders::resolve_owner,
@@ -42,7 +42,7 @@ pub trait MarketApi: TronProvider + Sized {
     /// Returns `None` if no order with that ID exists.
     fn get_market_order_by_id(
         &self,
-        order_id: &[u8],
+        order_id: B256,
     ) -> impl std::future::Future<Output = Result<Option<MarketOrderInfo>>> + Send;
 
     /// Fetch all market orders placed by `address`.
@@ -78,7 +78,7 @@ pub trait MarketApi: TronProvider + Sized {
 }
 
 impl<P: TronProvider> MarketApi for P {
-    async fn get_market_order_by_id(&self, order_id: &[u8]) -> Result<Option<MarketOrderInfo>> {
+    async fn get_market_order_by_id(&self, order_id: B256) -> Result<Option<MarketOrderInfo>> {
         self.transport().get_market_order_by_id(order_id).await.map_err(|e| Error::from(e.into()))
     }
 
@@ -136,7 +136,7 @@ pub struct MarketSellBuilder<'a, P> {
     sell_token_quantity: Option<i64>,
     buy_token_id: Option<String>,
     buy_token_quantity: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
@@ -183,7 +183,7 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -221,8 +221,8 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
 pub struct MarketCancelBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
-    order_id: Option<Vec<u8>>,
-    memo: Option<Vec<u8>>,
+    order_id: Option<B256>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> MarketCancelBuilder<'a, P> {
@@ -237,13 +237,13 @@ impl<'a, P: TronProvider> MarketCancelBuilder<'a, P> {
     }
 
     /// Set the 32-byte order ID to cancel.
-    pub fn order_id(mut self, id: impl Into<Vec<u8>>) -> Self {
-        self.order_id = Some(id.into());
+    pub fn order_id(mut self, id: B256) -> Self {
+        self.order_id = Some(id);
         self
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -289,7 +289,7 @@ mod tests {
 
     fn order(owner: Address) -> MarketOrderInfo {
         MarketOrderInfo {
-            order_id: vec![0u8; 32],
+            order_id: B256::ZERO,
             owner_address: owner,
             create_time: 0,
             sell_token_id: "_".into(),

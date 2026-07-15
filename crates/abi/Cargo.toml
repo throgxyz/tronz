@@ -1,0 +1,23 @@
+[package]
+name         = "tronz-abi"
+description  = "TRON contract ABI metadata types and optional Alloy JSON ABI conversion."
+keywords     = ["tron", "blockchain", "abi", "solidity", "smart-contracts"]
+categories   = ["cryptography::cryptocurrencies", "data-structures"]
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+repository   = { workspace = true }
+
+[dependencies]
+alloy-json-abi = { workspace = true, optional = true }
+serde          = { workspace = true, optional = true }
+thiserror      = { workspace = true }
+
+[features]
+default = []
+alloy = ["dep:alloy-json-abi"]
+serde = ["dep:serde"]
+
+[dev-dependencies]
+serde_json = { workspace = true }

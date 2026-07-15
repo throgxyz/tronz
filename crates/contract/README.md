@@ -18,8 +18,7 @@ hand-rolling an encoder.
 Load a JSON ABI at runtime and call any function by name:
 
 ```rust,ignore
-use tronz_contract::{Interface, instance::ContractExt};
-use alloy_json_abi::JsonAbi;
+use tronz_contract::{Interface, JsonAbi, instance::ContractExt};
 
 let abi: JsonAbi = serde_json::from_str(ABI_JSON).unwrap();
 let contract = provider.contract(address, abi.into());
@@ -31,6 +30,36 @@ let values = contract.call("balanceOf", &[account.into()]).await?;
 let pending = contract.send("transfer", &[to.into(), amount.into()]).await?;
 let receipt = pending.get_receipt().await?;
 ```
+
+## Deploying with ABI metadata
+
+`DeployBuilder` accepts Alloy's typed `JsonAbi` and converts it to native
+`TronAbi` metadata before sending the protobuf request:
+
+```rust,ignore
+use tronz_contract::{ContractExt as _, JsonAbi};
+
+let abi: JsonAbi = serde_json::from_str(ABI_JSON)?;
+let pending = provider
+    .deploy(bytecode)
+    .abi(abi)
+    .name("MyContract")
+    .send()
+    .await?;
+```
+
+Provider queries return native `TronAbi` so all node metadata remains readable,
+including unknown entry types and incomplete tuples. Convert explicitly when a
+dynamic Alloy interface is needed:
+
+```rust,ignore
+let info = provider.get_contract_info(address).await?;
+let json_abi = info.abi.try_to_json_abi()?;
+let contract = provider.contract(address, Interface::new(json_abi));
+```
+
+Use `.tron_abi(abi)` instead of `.abi(abi)` to deploy already-native metadata
+without an Alloy conversion.
 
 ## Standard token interfaces (static ABI)
 

@@ -12,6 +12,19 @@ pub use primitives::{Address, ResourceCode, Trx, U256, format_trx, parse_trx};
 #[doc(inline)]
 pub use tronz_primitives as primitives;
 
+/* ------------------------------------ ABI ------------------------------------- */
+
+/// Native TRON smart-contract ABI metadata types.
+pub mod abi {
+    #[doc(inline)]
+    pub use tronz_abi::*;
+}
+
+#[doc(no_inline)]
+pub use tronz_abi::{
+    TronAbi, TronAbiEntry, TronAbiEntryType, TronAbiParam, TronAbiStateMutability,
+};
+
 /* ---------------------------------- Signers ----------------------------------- */
 
 /// TRON signer abstraction and local key implementation.
@@ -76,3 +89,7 @@ pub mod contract {
     #[doc(inline)]
     pub use tronz_contract::*;
 }
+
+#[cfg(feature = "contract")]
+#[doc(no_inline)]
+pub use tronz_contract::JsonAbi;

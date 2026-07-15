@@ -113,9 +113,9 @@ impl<P: TronProvider> CallBuilder<P> {
             .await
             .map_err(|e| ContractError::Provider(ProviderError::Transport(e.into())))?;
         if result.revert_reason.is_some() {
-            return Err(ContractError::Revert(result.output.into()));
+            return Err(ContractError::Revert(result.output));
         }
-        Ok(result.output.into())
+        Ok(result.output)
     }
 
     /// Execute as a **state-changing call** (`trigger_smart_contract`).

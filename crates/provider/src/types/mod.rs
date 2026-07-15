@@ -40,3 +40,6 @@ pub use network::{
 pub use receipt::{ContractResult, Log, ResourceReceipt, TransactionInfo, TxStatus};
 pub use transaction::{RawTransaction, SignedTransaction, TransactionRequest};
 pub use trc10::AssetInfo;
+pub use tronz_abi::{
+    TronAbi, TronAbiEntry, TronAbiEntryType, TronAbiParam, TronAbiStateMutability,
+};

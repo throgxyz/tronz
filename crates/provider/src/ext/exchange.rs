@@ -2,7 +2,7 @@
 //!
 //! Import [`ExchangeApi`] to add exchange methods to any [`TronProvider`].
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, Bytes};
 
 use crate::{
     builders::resolve_owner,
@@ -121,7 +121,7 @@ pub struct ExchangeCreateBuilder<'a, P> {
     first_token_balance: Option<i64>,
     second_token_id: Option<String>,
     second_token_balance: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
@@ -168,7 +168,7 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -210,7 +210,7 @@ pub struct ExchangeInjectBuilder<'a, P> {
     exchange_id: Option<i64>,
     token_id: Option<String>,
     quant: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
@@ -243,7 +243,7 @@ impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -280,7 +280,7 @@ pub struct ExchangeWithdrawBuilder<'a, P> {
     exchange_id: Option<i64>,
     token_id: Option<String>,
     quant: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
@@ -313,7 +313,7 @@ impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }
@@ -351,7 +351,7 @@ pub struct ExchangeTradeBuilder<'a, P> {
     token_id: Option<String>,
     quant: Option<i64>,
     expected: Option<i64>,
-    memo: Option<Vec<u8>>,
+    memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> ExchangeTradeBuilder<'a, P> {
@@ -398,7 +398,7 @@ impl<'a, P: TronProvider> ExchangeTradeBuilder<'a, P> {
     }
 
     /// Attach a memo.
-    pub fn memo(mut self, memo: impl Into<Vec<u8>>) -> Self {
+    pub fn memo(mut self, memo: impl Into<Bytes>) -> Self {
         self.memo = Some(memo.into());
         self
     }

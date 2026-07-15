@@ -244,7 +244,7 @@ impl TronTransport for MockTransport {
         fn get_exchange_by_id(&self, exchange_id: i64) -> Option<ExchangeInfo>;
         fn market_sell_asset(&self, params: MarketSellAssetContract) -> RawTransaction;
         fn market_cancel_order(&self, params: MarketCancelOrderContract) -> RawTransaction;
-        fn get_market_order_by_id(&self, order_id: &[u8]) -> Option<MarketOrderInfo>;
+        fn get_market_order_by_id(&self, order_id: B256) -> Option<MarketOrderInfo>;
         fn get_market_order_by_account(&self, address: Address) -> Vec<MarketOrderInfo>;
         fn get_market_price_by_pair(&self, sell_token_id: &str, buy_token_id: &str) -> Vec<MarketPrice>;
         fn get_market_order_list_by_pair(&self, sell_token_id: &str, buy_token_id: &str) -> Vec<MarketOrderInfo>;

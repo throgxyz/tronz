@@ -12,6 +12,7 @@ build        = "build.rs"
 
 [dependencies]
 tronz-primitives = { workspace = true }
+tronz-abi        = { workspace = true }
 tronz-signer     = { workspace = true }
 
 prost       = { workspace = true }
@@ -19,7 +20,6 @@ prost-types = { workspace = true }
 tonic       = { workspace = true }
 tonic-prost = { workspace = true }
 sha2        = { workspace = true }
-serde_json  = { workspace = true }
 futures     = { workspace = true }
 tokio       = { workspace = true }
 tracing     = { workspace = true }

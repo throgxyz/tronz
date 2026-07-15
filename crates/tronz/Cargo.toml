@@ -12,6 +12,7 @@ readme       = { workspace = true }
 
 [dependencies]
 tronz-primitives = { workspace = true }
+tronz-abi        = { workspace = true }
 tronz-signer     = { workspace = true }
 tronz-provider   = { workspace = true }
 tronz-contract   = { workspace = true, optional = true, features = ["provider"] }
@@ -34,4 +35,3 @@ signer-mnemonic = ["tronz-signer/mnemonic"]
 signer-keystore = ["tronz-signer/keystore"]
 # AWS KMS signer (private key stays in the HSM).
 signer-aws = ["dep:tronz-signer-aws"]
-
