@@ -29,6 +29,21 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 - **Governance** — `GovernanceApi`: list, query, submit, approve, and cancel chain-parameter proposals
 - **TRC10 extended** — participate in ICOs, release frozen supply, update token metadata, look up by name
 
+## Sponsors
+
+tronz is grateful to the organizations that support its ongoing development
+and maintenance.
+
+<p align="center">
+  <a href="https://catfee.io">
+    <img src="./assets/sponsors/catfee.png" alt="CatFee logo" width="112">
+  </a>
+  <br>
+  <strong><a href="https://catfee.io">CatFee</a></strong>
+  <br>
+  <sub>Project Sponsor</sub>
+</p>
+
 ## Installation
 
 ```sh
