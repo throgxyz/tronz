@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Lightweight structured `tracing` events for gRPC requests, retries,
+  transaction broadcast, inclusion, and execution without
+  logging protobuf payloads.
+- A deterministic, repository-local Criterion benchmark for measuring tracing
+  overhead over a real in-process tonic HTTP/2 connection.
+- Explicit full-node transaction lifecycle polling: `get_receipt()` and
+  `await_included()` wait for inclusion, while `await_success()` additionally
+  checks the execution result.
+
+### Changed
+
+- `PendingTransaction::await_confirmed()` is retained as a compatibility alias
+  for FullNode receipt polling; it does not imply TRON solidification.
+- `DeployBuilder::deploy()` now waits for included successful execution before
+  returning the deployed contract address.
+
 ## [0.4.0] - 2026-07-16
 
 ### Added

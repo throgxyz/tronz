@@ -18,7 +18,7 @@
 //! 1. **Connectivity** — the gRPC endpoint responds and codec round-trips work.
 //! 2. **Not-found edge cases** — the codec correctly returns `Ok(None)` (not `Err(...)`) when the
 //!    node returns default/empty proto messages. This is critical: `PendingTransaction` polls on
-//!    `Ok(None)` to detect unconfirmed transactions; any `Err` variant aborts the poll early.
+//!    `Ok(None)` while waiting for inclusion; any `Err` variant aborts the poll early.
 //! 3. **Never-activated accounts** — node returns `Account { address: [] }` for addresses that have
 //!    never received funds; we must fill in the queried address and set `is_activated = false`, NOT
 //!    return an error.
@@ -148,7 +148,7 @@ async fn test_get_account_activated() {
 
 // ── Transaction not found ─────────────────────────────────────────────────────
 
-/// TRON nodes return an empty `TransactionInfo { id: [] }` for unknown/unconfirmed
+/// TRON nodes return an empty `TransactionInfo { id: [] }` for unknown or not-yet-indexed
 /// tx IDs. Our codec MUST translate that into `Ok(None)`.
 ///
 /// If it returns `Err(TransportErrorKind::Malformed)` instead, the `PendingTransaction`
@@ -271,7 +271,7 @@ async fn test_trx_transfer_and_receipt() {
     eprintln!("Broadcast tx: {}", pending.tx_id());
 
     let info = pending.get_receipt().await.expect("get_receipt failed");
-    eprintln!("Confirmed: block #{}, energy_used={}", info.block_number, info.energy_usage);
+    eprintln!("Included: block #{}, energy_used={}", info.block_number, info.energy_usage);
 
     assert_eq!(
         info.status,

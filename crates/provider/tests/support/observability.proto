@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package tronz.observability;
+
+service Wallet {
+  rpc GetNowBlock2(EmptyMessage) returns (BlockExtension);
+  rpc CreateTransaction2(TransferContract) returns (TransactionExtension);
+  rpc BroadcastTransaction(Transaction) returns (Return);
+}
+
+message EmptyMessage {}
+
+// Wire-compatible subset of protocol.BlockExtention.
+message BlockExtension {
+  BlockHeader block_header = 2;
+  bytes blockid = 3;
+}
+
+// Wire-compatible subset of protocol.BlockHeader.
+message BlockHeader {
+  message Raw {
+    int64 timestamp = 1;
+    int64 number = 7;
+  }
+
+  Raw raw_data = 1;
+}
+
+// Wire-compatible subset of protocol.Transaction.
+message Transaction {
+  message Raw {
+    int64 expiration = 8;
+    int64 timestamp = 14;
+  }
+
+  Raw raw_data = 1;
+  repeated bytes signature = 2;
+}
+
+// The test server intentionally discards every transfer field.
+message TransferContract {}
+
+// Wire-compatible subset of protocol.TransactionExtention.
+message TransactionExtension {
+  Transaction transaction = 1;
+  bytes txid = 2;
+  Return result = 4;
+}
+
+// Wire-compatible subset of protocol.Return.
+message Return {
+  bool result = 1;
+  int32 code = 2;
+  bytes message = 3;
+}

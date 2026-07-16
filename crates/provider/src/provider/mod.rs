@@ -21,6 +21,7 @@ use crate::{
         VoteBuilder, WithdrawBalanceBuilder, WithdrawExpireBuilder,
     },
     error::{Error, ProviderError, Result},
+    observability::{OUTCOME_ERROR, OUTCOME_NODE_ERROR, OUTCOME_OK, elapsed_ms},
     transport::TronTransport,
     types::{
         AccountInfo, AccountNet, AccountResource, BlockInfo, ChainProperties, DelegatedResource,
@@ -29,6 +30,64 @@ use crate::{
         TriggerSmartContract, WitnessInfo,
     },
 };
+
+/// Broadcast a signed transaction and emit transport-independent lifecycle events.
+pub(crate) async fn broadcast_signed<T: TronTransport>(
+    transport: &T,
+    tx: &SignedTransaction,
+) -> Result<()> {
+    let tx_id = tx.raw.tx_id();
+    let started_at = tracing::enabled!(
+        target: "tronz::transaction",
+        tracing::Level::WARN
+    )
+    .then(std::time::Instant::now);
+
+    debug!(
+        target: "tronz::transaction",
+        %tx_id,
+        operation = "broadcast",
+        "broadcasting transaction"
+    );
+
+    match transport.broadcast_transaction(tx).await {
+        Ok(()) => {
+            debug!(
+                target: "tronz::transaction",
+                %tx_id,
+                operation = "broadcast",
+                stage = "broadcasted",
+                elapsed_ms = elapsed_ms(started_at),
+                outcome = OUTCOME_OK,
+                "transaction broadcast accepted by node"
+            );
+            Ok(())
+        }
+        Err(error) => {
+            let error = ProviderError::from(error.into());
+            if error.is_node_error() {
+                warn!(
+                    target: "tronz::transaction",
+                    %tx_id,
+                    operation = "broadcast",
+                    elapsed_ms = elapsed_ms(started_at),
+                    outcome = OUTCOME_NODE_ERROR,
+                    "transaction rejected by node"
+                );
+            } else {
+                debug!(
+                    target: "tronz::transaction",
+                    %tx_id,
+                    operation = "broadcast",
+                    elapsed_ms = elapsed_ms(started_at),
+                    outcome = OUTCOME_ERROR,
+                    "transaction broadcast failed"
+                );
+            }
+            Err(error)
+        }
+    }
+}
 
 pub(crate) mod private {
     /// Sealed marker: only this crate may implement [`TronProvider`](super::TronProvider).
@@ -94,10 +153,10 @@ pub trait TronProvider: Clone + Send + Sync + 'static + private::Sealed {
         async move { t.get_transaction_by_id(tx_id).await.map_err(|e| ProviderError::from(e.into())) }
     }
 
-    /// Fetch a transaction's receipt/info.
+    /// Fetch an included transaction's receipt/info from the full-node state.
     ///
-    /// Returns `None` if the node has not yet indexed the transaction.
-    /// Use [`PendingTransaction::get_receipt`] to poll until confirmed.
+    /// Returns `None` if this node has not yet indexed the transaction. A
+    /// returned receipt does not imply that the containing block is solidified.
     fn get_transaction_info(
         &self,
         tx_id: TxId,
@@ -647,7 +706,7 @@ pub trait TronProvider: Clone + Send + Sync + 'static + private::Sealed {
         let this = self.clone();
         async move {
             let tx_id = tx.raw.tx_id();
-            t.broadcast_transaction(&tx).await.map_err(|e| ProviderError::from(e.into()))?;
+            broadcast_signed(&t, &tx).await?;
             Ok(PendingTransaction::new(this, tx_id))
         }
     }

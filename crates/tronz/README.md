@@ -15,7 +15,7 @@ cargo add tronz --features full
 Or in your `Cargo.toml`:
 
 ```toml
-tronz = { version = "0.3", features = ["full"] }
+tronz = { version = "0.4", features = ["full"] }
 ```
 
 A full list of available features can be found in the
@@ -59,7 +59,7 @@ let pending = provider
     .send()
     .await?;
 
-let receipt = pending.get_receipt().await?;
+let receipt = pending.await_success().await?;
 println!("Status: {:?}", receipt.status);
 # Ok(())
 # }

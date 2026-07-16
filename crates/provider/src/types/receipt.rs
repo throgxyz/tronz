@@ -2,7 +2,10 @@
 
 use tronz_primitives::{Address, B256, Bytes, Trx, TxId};
 
-/// Receipt returned after a transaction is confirmed on-chain.
+/// Receipt returned after a transaction is included on-chain.
+///
+/// tronz currently queries the full-node Wallet service. Receipt availability
+/// proves inclusion, but does not prove TRON solidification.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct TransactionInfo {
@@ -35,7 +38,7 @@ pub struct TransactionInfo {
 impl TransactionInfo {
     /// Whether the transaction's on-chain execution succeeded.
     ///
-    /// A confirmed transaction can still have failed (reverted, out of energy,
+    /// An included transaction can still have failed (reverted, out of energy,
     /// etc.); this returns `true` only for a clean success.
     pub fn is_success(&self) -> bool {
         matches!(self.status, TxStatus::Success)

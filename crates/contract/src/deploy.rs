@@ -26,7 +26,7 @@
 //!
 //! // Or split into broadcast + poll separately:
 //! let pending = provider.deploy(bytecode).abi(abi).send().await?;
-//! let info = pending.get_receipt().await?;
+//! let info = pending.await_success().await?;
 //! let contract_address = info.contract_address;
 //! # Ok(()) }
 //! ```
@@ -136,12 +136,11 @@ impl<P: TronProvider> DeployBuilder<P> {
         self
     }
 
-    /// Build, sign, broadcast, wait for confirmation, and return the deployed
-    /// contract address.
+    /// Build, sign, broadcast, wait for successful inclusion, and return the
+    /// deployed contract address.
     ///
-    /// Returns [`ContractError::ContractNotDeployed`] if the transaction was
-    /// confirmed but `contract_address` was absent from the receipt (e.g. the
-    /// deployment transaction reverted or the node rejected it).
+    /// Returns [`ContractError::ContractNotDeployed`] if included execution
+    /// succeeded but `contract_address` was absent from the receipt.
     ///
     /// For a lower-level path that gives you the [`PendingTransaction`] handle,
     /// use [`send`](Self::send) instead.
@@ -149,15 +148,18 @@ impl<P: TronProvider> DeployBuilder<P> {
         let pending = self.send().await?;
         // `?` uses `From<PendingTransactionError> for ContractError`:
         // Transport errors → ContractError::Provider,
-        // timeout → ContractError::ConfirmationTimeout.
-        let info = pending.get_receipt().await?;
+        // receipt timeouts and execution failures are flattened
+        // into their corresponding ContractError variants.
+        let info = pending.await_success().await?;
         info.contract_address.ok_or(ContractError::ContractNotDeployed)
     }
 
     /// Build, sign, and broadcast the deployment transaction.
     ///
     /// The returned [`PendingTransaction`] can be awaited with
-    /// [`get_receipt`](tronz_provider::PendingTransaction::get_receipt).
+    /// [`get_receipt`](tronz_provider::PendingTransaction::get_receipt),
+    /// [`await_confirmed`](tronz_provider::PendingTransaction::await_confirmed),
+    /// or [`await_success`](tronz_provider::PendingTransaction::await_success).
     /// The deployed contract address is in [`TransactionInfo::contract_address`].
     ///
     /// [`TransactionInfo::contract_address`]: tronz_provider::types::TransactionInfo::contract_address

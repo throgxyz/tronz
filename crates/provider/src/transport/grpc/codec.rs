@@ -219,8 +219,8 @@ pub(super) fn signed_tx_from_proto(
 // ── Transaction info ───────────────────────────────────────────────────────────
 
 /// Returns `Ok(None)` when the node has not yet indexed the transaction
-/// (empty `id` field).  Callers that need to wait for confirmation should
-/// poll until they receive `Ok(Some(_))`.
+/// (empty `id` field). Callers should poll the full-node Wallet service until
+/// they receive `Ok(Some(_))`.
 pub(super) fn transaction_info_from_proto(
     info: proto::TransactionInfo,
 ) -> Result<Option<TransactionInfo>, TransportErrorKind> {
@@ -237,8 +237,6 @@ pub(super) fn transaction_info_from_proto(
         TxId::from(bytes)
     };
 
-    let status = if info.result == 0 { TxStatus::Success } else { TxStatus::Failed };
-
     let receipt = info.receipt.unwrap_or_default();
     let contract_result = match receipt.result {
         1 => ContractResult::Success,
@@ -246,6 +244,15 @@ pub(super) fn transaction_info_from_proto(
         10 => ContractResult::OutOfEnergy,
         r if r != 0 => ContractResult::Failed,
         _ => ContractResult::Default,
+    };
+    let status = if info.result != 0
+        || matches!(
+            contract_result,
+            ContractResult::Revert | ContractResult::OutOfEnergy | ContractResult::Failed
+        ) {
+        TxStatus::Failed
+    } else {
+        TxStatus::Success
     };
 
     let logs = info
@@ -904,5 +911,35 @@ mod tests {
         let stored = proto.new_contract.unwrap().abi.unwrap();
         assert_eq!(stored.entrys.len(), 1);
         assert_eq!(stored.entrys[0].name, "totalSupply");
+    }
+
+    #[test]
+    fn receipt_failure_overrides_default_top_level_result() {
+        let info = proto::TransactionInfo {
+            id: vec![7; 32],
+            result: 0,
+            receipt: Some(proto::ResourceReceipt { result: 2, ..Default::default() }),
+            ..Default::default()
+        };
+
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+        assert_eq!(decoded.status, TxStatus::Failed);
+        assert_eq!(decoded.contract_result, ContractResult::Revert);
+        assert!(!decoded.is_success());
+    }
+
+    #[test]
+    fn default_receipt_result_preserves_system_contract_success() {
+        let info = proto::TransactionInfo {
+            id: vec![7; 32],
+            result: 0,
+            receipt: Some(proto::ResourceReceipt::default()),
+            ..Default::default()
+        };
+
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+        assert_eq!(decoded.status, TxStatus::Success);
+        assert_eq!(decoded.contract_result, ContractResult::Default);
+        assert!(decoded.is_success());
     }
 }

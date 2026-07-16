@@ -10,7 +10,7 @@ use tronz_signer::TronSigner;
 use crate::{
     error::{Error, Result},
     fillers::{FeeLimitFiller, HasSigner, Identity, JoinFill, SignerFiller, TaposFiller, TxFiller},
-    provider::{PendingTransaction, RootProvider, TronProvider},
+    provider::{PendingTransaction, RootProvider, TronProvider, broadcast_signed},
     transport::{
         TronTransport,
         grpc::{GrpcTransport, GrpcTransportConfig, RetryConfig},
@@ -261,11 +261,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for Fille
 
         let tx_id = raw.tx_id();
         let signed = SignedTransaction { raw, signatures: vec![sig] };
-        self.inner
-            .transport()
-            .broadcast_transaction(&signed)
-            .await
-            .map_err(|e| Error::from(e.into()))?;
+        broadcast_signed(self.inner.transport(), &signed).await?;
 
         Ok(PendingTransaction::new(self.clone(), tx_id))
     }
