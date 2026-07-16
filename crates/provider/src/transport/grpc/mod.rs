@@ -1,4 +1,4 @@
-//! tonic-backed gRPC transport targeting the TRON full-node WalletClient API.
+//! tonic-backed gRPC transport targeting the TRON full-node Wallet API.
 //!
 //! Default endpoint: `https://grpc.trongrid.io:443` (TronGrid mainnet, TLS).
 //! For local/private nodes use `http://127.0.0.1:50051` (no TLS).
@@ -23,6 +23,7 @@ use tronz_primitives::{Address, B256, ResourceCode, Trx, TxId};
 
 use crate::{
     error::TransportErrorKind,
+    observability::{OUTCOME_ERROR, OUTCOME_OK, elapsed_ms, grpc_code},
     proto::{
         self, EmptyMessage, database_client::DatabaseClient, wallet_client::WalletClient,
         wallet_extension_client::WalletExtensionClient,
@@ -349,33 +350,116 @@ impl GrpcTransport {
     /// clone a fresh client + request into an `async move` future (see the
     /// `retry_unary!` macro) so nothing borrows `self` across `.await`.
     ///
-    /// `broadcast_transaction` must **never** be wrapped in this helper
-    /// (double-spend risk).
-    async fn call_with_retry<F, Fut, T>(&self, f: F) -> Result<T, TransportErrorKind>
+    /// `broadcast_transaction` must use [`call_once`](Self::call_once) instead
+    /// so an ambiguous transport failure can never cause a duplicate send.
+    async fn call_with_retry<F, Fut, T>(
+        &self,
+        service: &'static str,
+        method: &'static str,
+        f: F,
+    ) -> Result<T, TransportErrorKind>
     where
         F: Fn() -> Fut,
         Fut: Future<Output = Result<T, TransportErrorKind>>,
     {
-        let max = self.retry.max_attempts.max(1);
-        let mut backoff = self.retry.initial_backoff;
-        let mut attempt = 0u32;
+        self.call(service, method, true, f).await
+    }
 
-        loop {
+    /// Run a single non-retryable gRPC request through the standard event path.
+    async fn call_once<F, Fut, T>(
+        &self,
+        service: &'static str,
+        method: &'static str,
+        f: F,
+    ) -> Result<T, TransportErrorKind>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = Result<T, TransportErrorKind>>,
+    {
+        self.call(service, method, false, f).await
+    }
+
+    /// Run one logical RPC call, optionally applying the configured retry policy.
+    async fn call<F, Fut, T>(
+        &self,
+        service: &'static str,
+        method: &'static str,
+        retry: bool,
+        f: F,
+    ) -> Result<T, TransportErrorKind>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = Result<T, TransportErrorKind>>,
+    {
+        let started_at = tracing::enabled!(target: "tronz::rpc", tracing::Level::DEBUG)
+            .then(std::time::Instant::now);
+        let max = if retry { self.retry.max_attempts.max(1) } else { 1 };
+        let mut backoff = self.retry.initial_backoff;
+
+        for attempt in 1..=max {
+            let attempt_started_at = tracing::enabled!(target: "tronz::rpc", tracing::Level::TRACE)
+                .then(std::time::Instant::now);
             match f().await {
-                Ok(v) => return Ok(v),
-                Err(e) => {
-                    attempt += 1;
-                    if attempt >= max || !e.is_retryable() {
-                        return Err(e);
+                Ok(value) => {
+                    trace!(
+                        target: "tronz::rpc",
+                        service,
+                        method,
+                        attempt,
+                        elapsed_ms = elapsed_ms(attempt_started_at),
+                        outcome = OUTCOME_OK,
+                        "RPC attempt completed"
+                    );
+                    debug!(
+                        target: "tronz::rpc",
+                        service,
+                        method,
+                        attempts = attempt,
+                        elapsed_ms_total = elapsed_ms(started_at),
+                        outcome = OUTCOME_OK,
+                        "RPC request completed"
+                    );
+                    return Ok(value);
+                }
+                Err(error) => {
+                    let terminal = attempt >= max || !error.is_retryable();
+                    let code = grpc_code(&error).unwrap_or("none");
+                    trace!(
+                        target: "tronz::rpc",
+                        service,
+                        method,
+                        attempt,
+                        elapsed_ms = elapsed_ms(attempt_started_at),
+                        outcome = OUTCOME_ERROR,
+                        grpc_code = code,
+                        "RPC attempt completed"
+                    );
+                    if terminal {
+                        debug!(
+                            target: "tronz::rpc",
+                            service,
+                            method,
+                            attempts = attempt,
+                            elapsed_ms_total = elapsed_ms(started_at),
+                            outcome = OUTCOME_ERROR,
+                            grpc_code = code,
+                            "RPC request failed"
+                        );
+                        return Err(error);
                     }
+
                     // Jitter the sleep value only; advance the base backoff
                     // separately so randomness never accumulates in the sequence.
                     let jittered = backoff.mul_f64(0.75 + fastrand::f64() * 0.5);
                     debug!(
+                        target: "tronz::rpc",
+                        service,
+                        method,
                         attempt,
-                        backoff_ms = jittered.as_millis(),
-                        error = %e,
-                        "retrying gRPC call"
+                        max_attempts = max,
+                        backoff_ms = u64::try_from(jittered.as_millis()).unwrap_or(u64::MAX),
+                        grpc_code = code,
+                        "retrying RPC request"
                     );
                     tokio::time::sleep(jittered).await;
                     backoff =
@@ -383,6 +467,8 @@ impl GrpcTransport {
                 }
             }
         }
+
+        unreachable!("the retry loop always returns on its final attempt")
     }
 
     fn wallet_client(&self) -> WalletClientI {
@@ -421,7 +507,7 @@ impl GrpcTransport {
         Req: prost::Message + Default + Clone + Send + Sync + 'static,
         Res: prost::Message + Default + Send + Sync + 'static,
     {
-        self.call_with_retry(|| {
+        self.call_with_retry("wallet", method, || {
             let service = tonic::codegen::InterceptedService::new(
                 self.channel.clone(),
                 ApiKeyInterceptor(self.api_key.clone()),
@@ -436,7 +522,8 @@ impl GrpcTransport {
                     )))
                 })?;
                 let mut request = Request::new(req);
-                request.extensions_mut().insert(GrpcMethod::new("protocol.Wallet", method));
+                let wire_method = path.rsplit('/').next().unwrap_or(method);
+                request.extensions_mut().insert(GrpcMethod::new("protocol.Wallet", wire_method));
                 let codec = tonic_prost::ProstCodec::default();
                 Ok(client
                     .unary(request, PathAndQuery::from_static(path), codec)
@@ -525,13 +612,26 @@ fn hex_digit(b: u8) -> Result<u8, String> {
 macro_rules! retry_unary {
     ($self:ident, $client:ident, $method:ident, $req:ident) => {
         $self
-            .call_with_retry(|| {
+            .call_with_retry(grpc_service!($client), stringify!($method), || {
                 let mut client = $self.$client();
                 let req = $req.clone();
                 // `?` converts tonic::Status -> TransportErrorKind via `#[from]`.
                 async move { Ok(client.$method(req).await?.into_inner()) }
             })
             .await
+    };
+}
+
+/// Map generated client accessors to canonical tracing service names.
+macro_rules! grpc_service {
+    (wallet_client) => {
+        "wallet"
+    };
+    (wallet_extension_client) => {
+        "wallet_extension"
+    };
+    (database_client) => {
+        "database"
     };
 }
 
@@ -545,14 +645,14 @@ impl TronTransport for GrpcTransport {
     async fn get_now_block(&self) -> Result<BlockInfo, Self::Error> {
         let req = EmptyMessage::default();
         let block: light_block::BlockSummaryProto =
-            self.wallet_unary(req, "/protocol.Wallet/GetNowBlock2", "GetNowBlock2").await?;
+            self.wallet_unary(req, "/protocol.Wallet/GetNowBlock2", "get_now_block2").await?;
         block.into_block_info(None)
     }
 
     async fn get_block_by_number(&self, num: i64) -> Result<BlockInfo, Self::Error> {
         let req = proto::NumberMessage { num };
         let block: light_block::BlockSummaryProto =
-            self.wallet_unary(req, "/protocol.Wallet/GetBlockByNum2", "GetBlockByNum2").await?;
+            self.wallet_unary(req, "/protocol.Wallet/GetBlockByNum2", "get_block_by_num2").await?;
         block.into_block_info(None)
     }
 
@@ -574,9 +674,15 @@ impl TronTransport for GrpcTransport {
 
     async fn broadcast_transaction(&self, tx: &SignedTransaction) -> Result<(), Self::Error> {
         let proto_tx = signed_to_proto(tx)?;
-
-        let ret = self.wallet_client().broadcast_transaction(proto_tx).await?.into_inner();
-        Self::check_return(Some(ret))
+        self.call_once("wallet", "broadcast_transaction", || {
+            let mut client = self.wallet_client();
+            let proto_tx = proto_tx.clone();
+            async move {
+                let ret = client.broadcast_transaction(proto_tx).await?.into_inner();
+                Self::check_return(Some(ret))
+            }
+        })
+        .await
     }
 
     async fn get_transaction_by_id(&self, tx_id: TxId) -> Result<SignedTransaction, Self::Error> {
@@ -1180,14 +1286,14 @@ impl TronTransport for GrpcTransport {
     async fn get_block_by_id(&self, block_id: B256) -> Result<BlockInfo, Self::Error> {
         let req = proto::BytesMessage { value: block_id.as_slice().to_vec() };
         let block: light_block::BlockSummaryProto =
-            self.wallet_unary(req, "/protocol.Wallet/GetBlockById", "GetBlockById").await?;
+            self.wallet_unary(req, "/protocol.Wallet/GetBlockById", "get_block_by_id").await?;
         block.into_block_info(Some(block_id))
     }
 
     async fn get_blocks_by_latest_num(&self, count: i64) -> Result<Vec<BlockInfo>, Self::Error> {
         let req = proto::NumberMessage { num: count };
         let list: light_block::BlockSummaryListProto = self
-            .wallet_unary(req, "/protocol.Wallet/GetBlockByLatestNum2", "GetBlockByLatestNum2")
+            .wallet_unary(req, "/protocol.Wallet/GetBlockByLatestNum2", "get_block_by_latest_num2")
             .await?;
         list.blocks.into_iter().map(|block| block.into_block_info(None)).collect()
     }
@@ -1199,7 +1305,7 @@ impl TronTransport for GrpcTransport {
     ) -> Result<Vec<BlockInfo>, Self::Error> {
         let req = proto::BlockLimit { start_num: start, end_num: end };
         let list: light_block::BlockSummaryListProto = self
-            .wallet_unary(req, "/protocol.Wallet/GetBlockByLimitNext2", "GetBlockByLimitNext2")
+            .wallet_unary(req, "/protocol.Wallet/GetBlockByLimitNext2", "get_block_by_limit_next2")
             .await?;
         list.blocks.into_iter().map(|block| block.into_block_info(None)).collect()
     }

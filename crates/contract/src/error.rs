@@ -52,18 +52,18 @@ pub enum ContractError {
     #[error("contract not deployed: deployment transaction did not produce a contract address")]
     ContractNotDeployed,
 
-    /// Confirmation polling timed out without the transaction being indexed.
+    /// Receipt polling timed out before the full node indexed the transaction.
     ///
     /// Flattened from [`PendingTransactionError::ConfirmationTimeout`] via the
     /// [`From`] impl so callers can match it directly without nesting.
-    #[error("timed out waiting for transaction confirmation")]
+    #[error("timed out waiting for transaction receipt")]
     ConfirmationTimeout,
 
-    /// The transaction was confirmed on-chain but its execution did not succeed
+    /// The transaction was included on-chain but its execution did not succeed
     /// (reverted, ran out of energy, etc.). Carries the full receipt.
     ///
     /// Flattened from [`PendingTransactionError::Reverted`].
-    #[error("transaction confirmed but execution failed: {:?}", .0.contract_result)]
+    #[error("transaction execution failed: {:?}", .0.contract_result)]
     ExecutionFailed(Box<TransactionInfo>),
 }
 
@@ -74,7 +74,7 @@ impl From<alloy_sol_types::Error> for ContractError {
 }
 
 /// Flatten [`PendingTransactionError`] into `ContractError` so that
-/// `pending.get_receipt().await?` works inside contract methods.
+/// pending-transaction methods work directly inside contract methods.
 ///
 /// - [`PendingTransactionError::Transport`] → [`ContractError::Provider`]
 /// - [`PendingTransactionError::ConfirmationTimeout`] → [`ContractError::ConfirmationTimeout`]

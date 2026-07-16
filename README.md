@@ -12,6 +12,7 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 
 - **gRPC transport** — connects to TronGrid or any full node via tonic
 - **Resilient by default** — per-call timeouts plus automatic retries with exponential back-off and jitter, configurable via `ProviderBuilder` / `GrpcTransport::builder()`
+- **Structured observability** — lightweight `tracing` events for RPCs, retries, receipt inclusion, and execution results
 - **Failover** — load-balance and fail over across multiple equivalent endpoints (`with_endpoints`, tonic `balance_list`)
 - **Typed provider** — fluent builder API for every native contract operation
 - **Filler chain** — automatic fee-limit and signing, plus optional explicit TAPOS overrides (mirrors alloy's `JoinFill`)
@@ -108,11 +109,17 @@ async fn main() -> anyhow::Result<()> {
         .send()
         .await?;
 
-    let receipt = pending.get_receipt().await?;
-    println!("confirmed in block #{}", receipt.block_number);
+    let receipt = pending.await_success().await?;
+    println!("included and succeeded in block #{}", receipt.block_number);
     Ok(())
 }
 ```
+
+`get_receipt()` and `await_included()` return once the full node has indexed
+the transaction in a block. `await_success()` additionally requires the
+included on-chain execution to have succeeded. `await_confirmed()` is retained
+as a compatibility alias for inclusion polling; the FullNode-only API does not
+prove TRON solidification.
 
 ### Call a TRC20 contract
 
@@ -272,6 +279,43 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 ```
+
+## Observability
+
+tronz emits structured [`tracing`](https://docs.rs/tracing) events but
+does not install a global subscriber. Configure one in your application:
+
+```toml
+[dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+```
+
+```rust,no_run
+use tracing_subscriber::EnvFilter;
+
+fn init_tracing() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+}
+```
+
+Use `RUST_LOG=tronz=debug` for request and transaction lifecycles. Enable
+per-attempt and per-poll events temporarily with
+`RUST_LOG=tronz::rpc=trace,tronz::transaction=trace`. The available targets are
+`tronz::rpc` and `tronz::transaction`. RPC completion events include `service`,
+`method`, `attempts`, `elapsed_ms_total`, and `outcome`; failures also include
+`grpc_code`. Outcome values are bounded to `ok`, `error`, `node_error`, and
+`timeout`.
+
+Transaction lifecycle events use the bounded stages `broadcasted`, `included`,
+`execution_success`, and `execution_failed`. Receipt availability comes from
+the full-node Wallet state and proves inclusion, not TRON solidification. An
+included transaction can still have failed during execution.
+
+Request and response bodies are not recorded. This keeps signed transactions,
+signatures, calldata, bytecode, private keys, API keys, mnemonics, passwords,
+and keystore contents out of SDK-generated diagnostics.
 
 ## Crates
 

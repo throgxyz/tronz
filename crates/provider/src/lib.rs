@@ -18,6 +18,11 @@ pub use error::{ProviderError, Result, RpcError, TransportErrorKind, TransportRe
 /// Backward-compatible alias — prefer [`ProviderError`] in new code.
 pub type Error = ProviderError;
 
+mod observability;
+
+#[cfg(test)]
+mod test_utils;
+
 mod provider;
 pub use ext::{GovernanceApi, Trc10Api, WitnessApi};
 pub use fillers::HasSigner;

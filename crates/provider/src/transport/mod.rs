@@ -93,9 +93,10 @@ pub trait TronTransport: Clone + Send + Sync + 'static + private::Sealed {
         tx_id: TxId,
     ) -> impl Future<Output = Result<SignedTransaction, Self::Error>> + Send;
 
-    /// Fetch a transaction's post-confirmation info/receipt.
+    /// Fetch a transaction receipt from the full-node Wallet service.
     ///
-    /// Returns `None` if the node has not yet indexed the transaction.
+    /// A returned receipt means the transaction is included on-chain and
+    /// indexed by this node, but the containing block may not be solidified.
     fn get_transaction_info(
         &self,
         tx_id: TxId,

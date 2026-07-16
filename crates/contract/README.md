@@ -28,7 +28,7 @@ let values = contract.call("balanceOf", &[account.into()]).await?;
 
 // state-changing call
 let pending = contract.send("transfer", &[to.into(), amount.into()]).await?;
-let receipt = pending.get_receipt().await?;
+let receipt = pending.await_success().await?;
 ```
 
 ## Deploying with ABI metadata
@@ -73,7 +73,7 @@ println!("name    : {}", token.name().await?);
 println!("balance : {}", token.balance_of(my_address).await?);
 
 let pending = token.transfer(recipient, amount).await?;
-let receipt = pending.get_receipt().await?;
+let receipt = pending.await_success().await?;
 ```
 
 ## Crate layout

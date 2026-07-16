@@ -41,4 +41,13 @@ mock = []
 [dev-dependencies]
 tronz-primitives = { workspace = true }
 tronz-signer     = { workspace = true }
-tokio = { workspace = true, features = ["rt", "macros"] }
+criterion          = { workspace = true }
+hex                = { workspace = true }
+tokio              = { workspace = true, features = ["rt", "macros"] }
+tokio-stream       = { workspace = true }
+tonic              = { workspace = true, features = ["router"] }
+tracing-subscriber = { workspace = true }
+
+[[bench]]
+name = "observability"
+harness = false
