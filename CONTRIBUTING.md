@@ -42,6 +42,22 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/). Examples
 - Update `CHANGELOG.md` under `[Unreleased]` with a brief description.
 - PRs are squash-merged; the PR title becomes the commit message.
 
+## Releasing
+
+`release-plz` creates a release PR after changes land on `main`. Merging that PR
+publishes every workspace crate, then creates one `vX.Y.Z` tag and GitHub
+release.
+
+One-time repository setup:
+
+1. Enable **Allow GitHub Actions to create and approve pull requests**.
+2. Create a `crates-io` GitHub environment.
+3. For every published `tronz-*` crate, configure a crates.io trusted publisher
+   for `throgxyz/tronz`, workflow `release-plz.yml`, environment `crates-io`.
+4. Add a `RELEASE_PLZ_TOKEN` secret from a repository-scoped GitHub App or
+   fine-grained PAT so release PRs trigger the normal CI workflow. Grant only
+   Contents and Pull requests read/write permissions.
+
 ## License
 
 By contributing, you agree that your contributions will be dual-licensed under

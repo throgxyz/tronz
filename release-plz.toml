@@ -1,0 +1,26 @@
+[workspace]
+changelog_update = false
+git_release_enable = false
+git_tag_enable = false
+pr_name = "chore: release"
+publish = true
+publish_timeout = "30m"
+release_always = false
+
+[[package]]
+name = "tronz"
+changelog_include = [
+    "tronz-abi",
+    "tronz-contract",
+    "tronz-primitives",
+    "tronz-provider",
+    "tronz-signer",
+    "tronz-signer-aws",
+    "tronz-sol-macro",
+]
+changelog_path = "CHANGELOG.md"
+changelog_update = true
+git_release_enable = true
+git_release_name = "v{{ version }}"
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
