@@ -10,7 +10,8 @@ An idiomatic, async-first Rust SDK for the [TRON](https://tron.network) network 
 
 ## Features
 
-- **gRPC transport** — connects to TronGrid or any full node via tonic
+- **gRPC transport** — connects to TronGrid, FullNodes, and SolidityNodes via tonic
+- **Solidified state** — read-only `SolidityProvider` queries irreversible blocks, accounts, transactions, and contract state
 - **Resilient by default** — per-call timeouts plus automatic retries with exponential back-off and jitter, configurable via `ProviderBuilder` / `GrpcTransport::builder()`
 - **Failover** — load-balance and fail over across multiple equivalent endpoints (`with_endpoints`, tonic `balance_list`)
 - **Typed provider** — fluent builder API for every native contract operation
@@ -273,6 +274,41 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
+### Query solidified (irreversible) state
+
+`SolidityProvider` talks to a TRON **SolidityNode** (`WalletSolidity`), which only
+serves state confirmed by 2/3+ of the super representatives — i.e. irreversible.
+It is read-only by construction: no signer, no fillers, no broadcast. Use it when
+finality matters (exchange credits, settlement) and poll `wait_for_success` to
+block until a transaction has solidified and its execution succeeded.
+
+```rust,no_run
+use tronz::{SolidityProvider, TRONGRID_MAINNET_SOLIDITY};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let solidity = SolidityProvider::connect(TRONGRID_MAINNET_SOLIDITY).await?;
+
+    // Latest solidified head.
+    let head = solidity.get_now_block().await?;
+    println!("solidified head: {}", head.number);
+
+    // Block until a broadcast transaction is solidified *and* succeeded.
+    let tx_id = std::env::var("TRON_TX_ID")?.parse()?;
+    let receipt = solidity.wait_for_success(tx_id).await?;
+    println!("solidified in block {}", receipt.block_number);
+    Ok(())
+}
+```
+
+After broadcasting on a FullNode you can bridge straight to solidification via the
+pending handle — pass the `SolidityProvider` to poll:
+
+```rust,ignore
+let pending = provider.send_trx().to(to).amount(amount).send().await?;
+let receipt = pending.await_solidified_success(&solidity).await?; // waits for irreversibility
+```
+
 ## Crates
 
 | Crate | Description |
@@ -281,7 +317,7 @@ async fn main() -> anyhow::Result<()> {
 | [`tronz-primitives`](https://crates.io/crates/tronz-primitives) | `Address`, `Trx`, `ResourceCode`, `RecoverableSignature` |
 | [`tronz-abi`](https://crates.io/crates/tronz-abi) | Native TRON ABI metadata and optional Alloy `JsonAbi` conversion |
 | [`tronz-signer`](https://crates.io/crates/tronz-signer) | `TronSigner` trait and `LocalSigner` (in-memory secp256k1) |
-| [`tronz-provider`](https://crates.io/crates/tronz-provider) | gRPC transport, provider, fillers, domain types, extension traits |
+| [`tronz-provider`](https://crates.io/crates/tronz-provider) | FullNode and SolidityNode transports/providers, fillers, domain types, extension traits |
 | [`tronz-contract`](https://crates.io/crates/tronz-contract) | `ContractInstance`, `DeployBuilder`, TRC20 bindings, event decoding |
 | [`tronz-sol-macro`](https://crates.io/crates/tronz-sol-macro) | `tron_sol!` procedural macro |
 | [`tronz-signer-aws`](https://crates.io/crates/tronz-signer-aws) | AWS KMS signer (`signer-aws` feature) |
@@ -335,10 +371,15 @@ cargo run -p examples-signers --example signer_mnemonic
 | Network | Constant | Endpoint |
 |---|---|---|
 | Mainnet (TLS) | `TRONGRID_MAINNET` | `https://grpc.trongrid.io:443` |
+| Mainnet SolidityNode | `TRONGRID_MAINNET_SOLIDITY` | `http://grpc.trongrid.io:50052` |
 | Nile testnet | `TRONGRID_NILE` | `http://grpc.nile.trongrid.io:50051` |
+| Nile SolidityNode | `TRONGRID_NILE_SOLIDITY` | `http://grpc.nile.trongrid.io:50061` |
 
 ```rust,no_run
-use tronz::{TRONGRID_MAINNET, TRONGRID_NILE};
+use tronz::{
+    TRONGRID_MAINNET, TRONGRID_MAINNET_SOLIDITY, TRONGRID_NILE,
+    TRONGRID_NILE_SOLIDITY,
+};
 ```
 
 ## Minimum Supported Rust Version

@@ -41,4 +41,6 @@ mock = []
 [dev-dependencies]
 tronz-primitives = { workspace = true }
 tronz-signer     = { workspace = true }
-tokio = { workspace = true, features = ["rt", "macros"] }
+tronz-provider-test-support = { path = "tests/support" }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time"] }
+tonic = { workspace = true }

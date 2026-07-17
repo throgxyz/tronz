@@ -5,15 +5,14 @@ use core::time::Duration;
 use thiserror::Error;
 use tronz_primitives::TxId;
 
-use crate::{error::ProviderError, provider::TronProvider, types::TransactionInfo};
+use crate::{
+    error::ProviderError,
+    provider::{SolidityProvider, TronProvider},
+    transport::SolidityTransport,
+    types::TransactionInfo,
+};
 
 /// Errors that can occur while waiting for a pending transaction to be confirmed.
-///
-/// Separating polling errors from [`ProviderError`] keeps the two concerns
-/// orthogonal: transport failures during polling are wrapped in [`Transport`],
-/// while a clean timeout is its own variant.
-///
-/// [`Transport`]: PendingTransactionError::Transport
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum PendingTransactionError {
@@ -32,9 +31,6 @@ pub enum PendingTransactionError {
 }
 
 /// Handle to a broadcast transaction; can be awaited to confirmation.
-///
-/// Owns a clone of the provider (cheap — all concrete providers are
-/// `Arc`-backed), so no lifetime parameter is needed.
 pub struct PendingTransaction<P: TronProvider> {
     provider: P,
     tx_id: TxId,
@@ -65,26 +61,19 @@ impl<P: TronProvider> PendingTransaction<P> {
 
     /// Poll for confirmation with a custom interval and attempt count.
     ///
-    /// Returns the receipt as soon as the node has indexed the transaction,
-    /// regardless of whether on-chain execution succeeded — inspect
-    /// [`TransactionInfo::is_success`] (or use [`await_success`]) to assert it
-    /// ran successfully.
-    ///
-    /// [`await_success`]: Self::await_success
+    /// Returns once indexed, regardless of execution result. Use
+    /// [`await_success`](Self::await_success) to require success.
     pub async fn await_confirmed_with(
         self,
         interval: Duration,
         max_attempts: u32,
     ) -> Result<TransactionInfo, PendingTransactionError> {
         for attempt in 0..max_attempts {
-            // Check first so a fast-confirming tx returns without waiting a full
-            // interval; only sleep between subsequent attempts.
             if attempt > 0 {
                 tokio::time::sleep(interval).await;
             }
             match self.provider.get_transaction_info(self.tx_id).await {
                 Ok(Some(info)) => return Ok(info),
-                // Not yet indexed — keep polling.
                 Ok(None) => continue,
                 Err(e) => return Err(PendingTransactionError::Transport(e)),
             }
@@ -102,5 +91,49 @@ impl<P: TronProvider> PendingTransaction<P> {
         } else {
             Err(PendingTransactionError::Reverted(Box::new(info)))
         }
+    }
+
+    /// Poll a [`SolidityProvider`] until this transaction has solidified.
+    ///
+    /// Unlike [`await_confirmed`](Self::await_confirmed), which only requires
+    /// FullNode inclusion, this waits for irreversible state and returns the
+    /// receipt regardless of execution result.
+    pub async fn await_solidified<S: SolidityTransport>(
+        &self,
+        solidity: &SolidityProvider<S>,
+    ) -> Result<TransactionInfo, PendingTransactionError> {
+        solidity.wait_for_transaction(self.tx_id).await
+    }
+
+    /// [`await_solidified`](Self::await_solidified) with a custom interval and
+    /// attempt count.
+    pub async fn await_solidified_with<S: SolidityTransport>(
+        &self,
+        solidity: &SolidityProvider<S>,
+        interval: Duration,
+        max_attempts: u32,
+    ) -> Result<TransactionInfo, PendingTransactionError> {
+        solidity.wait_for_transaction_with(self.tx_id, interval, max_attempts).await
+    }
+
+    /// Like [`await_solidified`](Self::await_solidified), but additionally fails
+    /// with [`PendingTransactionError::Reverted`] if the solidified transaction
+    /// did not execute successfully.
+    pub async fn await_solidified_success<S: SolidityTransport>(
+        &self,
+        solidity: &SolidityProvider<S>,
+    ) -> Result<TransactionInfo, PendingTransactionError> {
+        solidity.wait_for_success(self.tx_id).await
+    }
+
+    /// [`await_solidified_success`](Self::await_solidified_success) with a custom
+    /// interval and attempt count.
+    pub async fn await_solidified_success_with<S: SolidityTransport>(
+        &self,
+        solidity: &SolidityProvider<S>,
+        interval: Duration,
+        max_attempts: u32,
+    ) -> Result<TransactionInfo, PendingTransactionError> {
+        solidity.wait_for_success_with(self.tx_id, interval, max_attempts).await
     }
 }

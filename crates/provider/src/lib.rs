@@ -23,9 +23,9 @@ pub use ext::{GovernanceApi, Trc10Api, WitnessApi};
 pub use fillers::HasSigner;
 pub use provider::{
     FilledProvider, PendingTransaction, PendingTransactionError, ProviderBuilder, RootProvider,
-    TronProvider,
+    SolidityProvider, SolidityProviderBuilder, TronProvider,
 };
-pub use transport::TronTransport;
+pub use transport::{SolidityTransport, TronTransport};
 pub use types::{
     AccountNet, ChainProperties, NodeAddress, NodeInfo, ProposalInfo, ProposalState, SignWeight,
 };

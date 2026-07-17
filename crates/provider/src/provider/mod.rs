@@ -3,6 +3,7 @@
 pub mod builder;
 pub mod pending;
 pub mod root;
+pub mod solidity;
 
 use core::future::Future;
 use std::collections::HashMap;
@@ -10,6 +11,7 @@ use std::collections::HashMap;
 pub use builder::{FilledProvider, ProviderBuilder};
 pub use pending::{PendingTransaction, PendingTransactionError};
 pub use root::RootProvider;
+pub use solidity::{SolidityProvider, SolidityProviderBuilder};
 use tronz_primitives::{Address, B256, ResourceCode, Trx, TxId};
 
 use crate::{

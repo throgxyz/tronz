@@ -28,6 +28,17 @@ use crate::{
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+pub(super) fn check_return(ret: Option<proto::Return>) -> Result<(), TransportErrorKind> {
+    if let Some(ret) = ret
+        && !ret.result
+    {
+        return Err(TransportErrorKind::NodeError(
+            String::from_utf8_lossy(&ret.message).into_owned(),
+        ));
+    }
+    Ok(())
+}
+
 /// Serialize a domain `Address` to the proto wire format (21-byte vec).
 #[inline]
 fn addr_bytes(a: Address) -> Vec<u8> {
@@ -47,6 +58,13 @@ fn addr(bytes: Vec<u8>) -> Result<Address, TransportErrorKind> {
 
 fn opt_addr(bytes: Vec<u8>) -> Option<Address> {
     if bytes.is_empty() { None } else { Address::from_slice(&bytes).ok() }
+}
+
+fn log_addr(bytes: Vec<u8>) -> Result<Address, TransportErrorKind> {
+    match bytes.as_slice().try_into() {
+        Ok(evm) => Ok(Address::from_evm_bytes(evm)),
+        Err(_) => addr(bytes),
+    }
 }
 
 /// Convert a byte vec to a B256. Returns `B256::ZERO` when the slice is not
@@ -224,7 +242,6 @@ pub(super) fn signed_tx_from_proto(
 pub(super) fn transaction_info_from_proto(
     info: proto::TransactionInfo,
 ) -> Result<Option<TransactionInfo>, TransportErrorKind> {
-    // An empty id means the node hasn't indexed this transaction yet.
     if info.id.is_empty() {
         return Ok(None);
     }
@@ -237,8 +254,6 @@ pub(super) fn transaction_info_from_proto(
         TxId::from(bytes)
     };
 
-    let status = if info.result == 0 { TxStatus::Success } else { TxStatus::Failed };
-
     let receipt = info.receipt.unwrap_or_default();
     let contract_result = match receipt.result {
         1 => ContractResult::Success,
@@ -248,15 +263,29 @@ pub(super) fn transaction_info_from_proto(
         _ => ContractResult::Default,
     };
 
+    // Contract failures do not always set the top-level result code. A default
+    // receipt keeps the top-level verdict for system contracts and transfers.
+    let status = if info.result != 0
+        || matches!(
+            contract_result,
+            ContractResult::Revert | ContractResult::OutOfEnergy | ContractResult::Failed
+        ) {
+        TxStatus::Failed
+    } else {
+        TxStatus::Success
+    };
+
     let logs = info
         .log
         .into_iter()
-        .map(|l| Log {
-            address: opt_addr(l.address).unwrap_or_else(|| Address::from_evm_bytes([0u8; 20])),
-            topics: l.topics.into_iter().map(b256).collect(),
-            data: Bytes::from(l.data),
+        .map(|l| {
+            Ok(Log {
+                address: log_addr(l.address)?,
+                topics: l.topics.into_iter().map(b256).collect(),
+                data: Bytes::from(l.data),
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, TransportErrorKind>>()?;
 
     let revert_reason = if info.res_message.is_empty() {
         None
@@ -580,7 +609,6 @@ pub(super) fn update_account_to_proto(p: UpdateAccountContract) -> proto::Accoun
 pub(super) fn asset_info_from_proto(
     a: proto::AssetIssueContract,
 ) -> Result<Option<AssetInfo>, TransportErrorKind> {
-    // An empty id means the token was not found.
     if a.id.is_empty() {
         return Ok(None);
     }
@@ -904,5 +932,81 @@ mod tests {
         let stored = proto.new_contract.unwrap().abi.unwrap();
         assert_eq!(stored.entrys.len(), 1);
         assert_eq!(stored.entrys[0].name, "totalSupply");
+    }
+
+    #[test]
+    fn receipt_failure_overrides_default_top_level_result() {
+        let info = proto::TransactionInfo {
+            id: vec![7; 32],
+            result: 0,
+            receipt: Some(proto::ResourceReceipt { result: 2, ..Default::default() }),
+            ..Default::default()
+        };
+
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+        assert_eq!(decoded.status, TxStatus::Failed);
+        assert_eq!(decoded.contract_result, ContractResult::Revert);
+        assert!(!decoded.is_success());
+    }
+
+    #[test]
+    fn transaction_info_maps_all_public_fields() {
+        let contract_address = Address::from_evm_bytes([2; 20]);
+        let log_address = Address::from_evm_bytes([3; 20]);
+        let topic = B256::from([4; 32]);
+        let info = proto::TransactionInfo {
+            id: vec![1; 32],
+            block_number: 123,
+            block_time_stamp: 456,
+            contract_address: contract_address.as_bytes().to_vec(),
+            receipt: Some(proto::ResourceReceipt {
+                energy_fee: 10,
+                energy_usage_total: 20,
+                net_usage: 30,
+                net_fee: 40,
+                result: 2,
+                ..Default::default()
+            }),
+            log: vec![proto::transaction_info::Log {
+                address: log_address.as_evm_bytes().to_vec(),
+                topics: vec![topic.as_slice().to_vec()],
+                data: vec![5, 6, 7].into(),
+            }],
+            result: 1,
+            res_message: b"execution reverted".to_vec(),
+            ..Default::default()
+        };
+
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+        assert_eq!(decoded.tx_id, TxId::from([1; 32]));
+        assert_eq!(decoded.block_number, 123);
+        assert_eq!(decoded.block_timestamp, 456);
+        assert_eq!(decoded.status, TxStatus::Failed);
+        assert_eq!(decoded.energy_usage, 20);
+        assert_eq!(decoded.energy_fee, Trx::from_sun_unchecked(10));
+        assert_eq!(decoded.net_usage, 30);
+        assert_eq!(decoded.net_fee, Trx::from_sun_unchecked(40));
+        assert_eq!(decoded.contract_result, ContractResult::Revert);
+        assert_eq!(decoded.contract_address, Some(contract_address));
+        assert_eq!(decoded.logs.len(), 1);
+        assert_eq!(decoded.logs[0].address, log_address);
+        assert_eq!(decoded.logs[0].topics, vec![topic]);
+        assert_eq!(decoded.logs[0].data.as_ref(), &[5, 6, 7]);
+        assert_eq!(decoded.revert_reason.as_deref(), Some("execution reverted"));
+    }
+
+    #[test]
+    fn default_receipt_result_preserves_system_contract_success() {
+        let info = proto::TransactionInfo {
+            id: vec![7; 32],
+            result: 0,
+            receipt: Some(proto::ResourceReceipt::default()),
+            ..Default::default()
+        };
+
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+        assert_eq!(decoded.status, TxStatus::Success);
+        assert_eq!(decoded.contract_result, ContractResult::Default);
+        assert!(decoded.is_success());
     }
 }

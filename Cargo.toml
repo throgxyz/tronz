@@ -1,5 +1,8 @@
 [workspace]
 members  = ["crates/*"]
+# Test-only gRPC server crate; a path dev-dependency of tronz-provider, kept out
+# of the workspace so its protobuf/server generation never runs on normal builds.
+exclude  = ["crates/provider/tests/support"]
 resolver = "2"
 
 [workspace.package]
