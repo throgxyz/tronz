@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/throgxyz/tronz/compare/v0.4.0...v0.4.1) - 2026-07-17
+
+### Added
+
+- add SolidityNode provider support
+
+### Other
+
+- add CatFee as a project sponsor
+
 ### Added
 
 - `SolidityProvider`: a read-only provider over a TRON SolidityNode
