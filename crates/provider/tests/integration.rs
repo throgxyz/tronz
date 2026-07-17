@@ -12,23 +12,17 @@
 //! ```text
 //! TRON_TEST_KEY=<64-char-hex> cargo test -p tronz-provider --test integration -- --ignored
 //! ```
-//!
-//! # What these tests validate
-//!
-//! 1. **Connectivity** — the gRPC endpoint responds and codec round-trips work.
-//! 2. **Not-found edge cases** — the codec correctly returns `Ok(None)` (not `Err(...)`) when the
-//!    node returns default/empty proto messages. This is critical: `PendingTransaction` polls on
-//!    `Ok(None)` to detect unconfirmed transactions; any `Err` variant aborts the poll early.
-//! 3. **Never-activated accounts** — node returns `Account { address: [] }` for addresses that have
-//!    never received funds; we must fill in the queried address and set `is_activated = false`, NOT
-//!    return an error.
-//! 4. **Full send flow** — fill → sign → broadcast → poll for receipt.
+
+use core::time::Duration;
 
 use tronz_primitives::{Address, TxId};
 use tronz_provider::{
-    ProviderBuilder, TronProvider,
+    ProviderBuilder, SolidityProvider, TronProvider,
     ext::Trc10Api as _,
-    transport::{TronTransport as _, grpc::TRONGRID_NILE},
+    transport::{
+        TronTransport as _,
+        grpc::{TRONGRID_NILE, TRONGRID_NILE_SOLIDITY},
+    },
 };
 use tronz_signer::TronSigner as _;
 
@@ -53,6 +47,13 @@ const NILE_BOGUS_TOKEN_ID: &str = "9999999999";
 /// Build a plain read-only provider connected to Nile.
 async fn read_provider() -> impl TronProvider {
     ProviderBuilder::new().on_grpc(TRONGRID_NILE).await.expect("failed to connect to Nile testnet")
+}
+
+/// Connect to Nile's SolidityNode.
+async fn solidity_provider() -> SolidityProvider {
+    SolidityProvider::connect(TRONGRID_NILE_SOLIDITY)
+        .await
+        .expect("failed to connect to Nile SolidityNode")
 }
 
 /// Read `TRON_TEST_KEY` from the environment.
@@ -97,6 +98,24 @@ async fn test_get_now_block() {
     assert!(block.timestamp > 0, "block timestamp should be positive");
 
     eprintln!("Nile head: block #{} (ts={})", block.number, block.timestamp);
+}
+
+#[tokio::test]
+#[ignore = "requires network"]
+async fn test_solidity_get_now_block() {
+    let full = read_provider().await;
+    let solidity = solidity_provider().await;
+
+    let solid_head = solidity.get_now_block().await.expect("SolidityNode get_now_block failed");
+    let full_head = full.get_now_block().await.expect("FullNode get_now_block failed");
+
+    assert!(solid_head.number > 0, "solidified block number should be positive");
+    assert!(
+        solid_head.number <= full_head.number,
+        "solidified head {} must not be ahead of FullNode head {}",
+        solid_head.number,
+        full_head.number
+    );
 }
 
 // ── Account ───────────────────────────────────────────────────────────────────
@@ -164,9 +183,7 @@ async fn test_get_transaction_info_returns_not_found_for_unknown_txid() {
 
     let result = provider.get_transaction_info(fake_id).await;
     match result {
-        Ok(None) => {
-            // Correct — node hasn't indexed this tx, polling will continue.
-        }
+        Ok(None) => {}
         Err(other) => panic!(
             "Expected Ok(None) for unknown txid, got an error: {other:?}\n\
              This will break PendingTransaction polling!"
@@ -234,7 +251,7 @@ async fn test_trc10_balance_zero_for_holder_without_token() {
 
 // ── Write tests (require funded account) ──────────────────────────────────────
 
-/// Transfer a tiny amount of TRX and wait for the receipt.
+/// Transfer a tiny amount of TRX and wait for solidification.
 ///
 /// Requires `TRON_TEST_KEY` to be set to a funded Nile private key.
 #[tokio::test]
@@ -270,13 +287,21 @@ async fn test_trx_transfer_and_receipt() {
 
     eprintln!("Broadcast tx: {}", pending.tx_id());
 
+    let solidity = solidity_provider().await;
+    let solidified = pending
+        .await_solidified_success_with(&solidity, Duration::from_secs(3), 60)
+        .await
+        .expect("transaction did not solidify successfully");
+    eprintln!("Solidified: block #{}", solidified.block_number);
+
     let info = pending.get_receipt().await.expect("get_receipt failed");
     eprintln!("Confirmed: block #{}, energy_used={}", info.block_number, info.energy_usage);
 
+    assert_eq!(solidified.tx_id, info.tx_id);
     assert_eq!(
         info.status,
         tronz_provider::types::TxStatus::Success,
-        "TRX self-transfer should succeed"
+        "TRX transfer should succeed"
     );
 }
 

@@ -2,8 +2,9 @@
 
 The workhorse crate of the [tronz](https://github.com/throgxyz/tronz) TRON SDK.
 
-Owns the public TRON domain model, the gRPC transport, and the high-level
-[`TronProvider`] trait with all of its typed operation builders.
+Owns the public TRON domain model, the gRPC transports, the high-level
+[`TronProvider`] trait with its typed operation builders, and the read-only
+[`SolidityProvider`].
 
 Contract metadata is exposed as [`tronz_abi::TronAbi`] so protobuf information
 is preserved without forcing provider-only users to depend on Alloy ABI types.
@@ -21,12 +22,27 @@ println!("latest block: {}", block.number);
 # Ok(()) }
 ```
 
+### Solidified state
+
+```rust,no_run
+use tronz_provider::{
+    SolidityProvider,
+    transport::grpc::TRONGRID_MAINNET_SOLIDITY,
+};
+
+# async fn run() -> tronz_provider::Result<()> {
+let provider = SolidityProvider::connect(TRONGRID_MAINNET_SOLIDITY).await?;
+let block = provider.get_now_block().await?;
+println!("solidified block: {}", block.number);
+# Ok(()) }
+```
+
 ## Crate layout
 
 | Module | Description |
 |--------|-------------|
 | [`types`] | Public TRON domain model (accounts, blocks, transactions, contracts) |
-| [`transport`] | [`TronTransport`] trait + gRPC implementation |
+| [`transport`] | [`TronTransport`] / [`SolidityTransport`] traits and gRPC implementations |
 | [`fillers`] | Composable transaction fillers (TAPOS, fee limit, signer) |
 | [`builders`] | Typed per-operation builders (`TransferBuilder`, `FreezeBuilder`, …) |
 

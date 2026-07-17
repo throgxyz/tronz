@@ -252,10 +252,61 @@ impl TronTransport for MockTransport {
     }
 }
 
+/// In-memory [`SolidityTransport`](crate::transport::SolidityTransport).
+#[derive(Clone, Default)]
+pub struct MockSolidityTransport {
+    inner: MockTransport,
+}
+
+impl MockSolidityTransport {
+    /// Creates an empty mock.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Queues a successful response for `method`.
+    pub fn push_ok<T: Send + 'static>(&self, method: &'static str, value: T) -> &Self {
+        self.inner.push_ok(method, value);
+        self
+    }
+
+    /// Queues an error response for `method`.
+    pub fn push_err<T: Send + 'static>(
+        &self,
+        method: &'static str,
+        err: TransportErrorKind,
+    ) -> &Self {
+        self.inner.push_err::<T>(method, err);
+        self
+    }
+
+    fn pop<T: 'static>(&self, method: &'static str) -> Result<T, TransportErrorKind> {
+        self.inner.pop::<T>(method)
+    }
+}
+
+impl super::private::Sealed for MockSolidityTransport {}
+
+impl crate::transport::SolidityTransport for MockSolidityTransport {
+    type Error = TransportErrorKind;
+
+    mock_methods! {
+        fn get_now_block(&self) -> BlockInfo;
+        fn get_block_by_number(&self, num: i64) -> BlockInfo;
+        fn get_account(&self, address: Address) -> AccountInfo;
+        fn get_transaction_by_id(&self, tx_id: TxId) -> SignedTransaction;
+        fn get_transaction_info(&self, tx_id: TxId) -> Option<TransactionInfo>;
+        fn get_transaction_info_by_block_num(&self, block_num: i64) -> Vec<TransactionInfo>;
+        fn get_transaction_count_by_block_num(&self, block_num: i64) -> u64;
+        fn trigger_constant_contract(&self, params: TriggerSmartContract) -> ConstantCallResult;
+        fn estimate_energy(&self, params: TriggerSmartContract) -> i64;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::RootProvider;
+    use crate::{provider::RootProvider, transport::SolidityTransport as _};
 
     #[tokio::test]
     async fn returns_queued_ok_responses_in_fifo_order() {
@@ -290,5 +341,27 @@ mod tests {
     async fn panics_when_no_response_queued() {
         let mock = MockTransport::new();
         let _ = mock.get_memo_fee().await;
+    }
+
+    #[tokio::test]
+    async fn solidity_mock_returns_queued_responses() {
+        let mock = MockSolidityTransport::new();
+        mock.push_ok::<u64>("get_transaction_count_by_block_num", 7);
+        mock.push_ok::<Option<TransactionInfo>>("get_transaction_info", None);
+
+        assert_eq!(mock.get_transaction_count_by_block_num(1).await.unwrap(), 7);
+        assert!(mock.get_transaction_info(TxId::ZERO).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn solidity_mock_surfaces_errors() {
+        let mock = MockSolidityTransport::new();
+        mock.push_err::<AccountInfo>(
+            "get_account",
+            TransportErrorKind::Malformed("boom".to_owned()),
+        );
+
+        let err = mock.get_account(Address::from_evm_bytes([0u8; 20])).await.unwrap_err();
+        assert!(matches!(err, TransportErrorKind::Malformed(_)));
     }
 }

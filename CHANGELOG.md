@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `SolidityProvider`: a read-only provider over a TRON SolidityNode
+  (`protocol.WalletSolidity`) exposing solidified — irreversible — state. It has
+  no signer, fillers, or broadcast, so mutating state through it is a
+  compile-time error. Connect via `SolidityProvider::connect` or the pre-connect
+  `SolidityProvider::builder()`.
+- `SolidityTransport`: a sealed, read-only transport trait with nine
+  `WalletSolidity` RPCs (blocks, account, transaction/receipt lookups, block
+  receipt lists and counts, constant calls, and energy estimation), plus a
+  `SolidityGrpcTransport` gRPC implementation sharing connection/retry/API-key
+  logic with the FullNode transport.
+- `SolidityProvider::wait_for_transaction` / `wait_for_success` polling helpers,
+  and `PendingTransaction::await_solidified` / `await_solidified_success` (and
+  their `*_with` variants) to bridge from a FullNode broadcast straight to
+  solidification.
+
+### Fixed
+
+- `get_transaction_info` now reports `TxStatus::Failed` when the contract-level
+  result is a revert / out-of-energy / failure even if the top-level result flag
+  is `0`, so `await_success` no longer misclassifies a reverted transaction as
+  successful.
+
 ## [0.4.0] - 2026-07-16
 
 ### Added

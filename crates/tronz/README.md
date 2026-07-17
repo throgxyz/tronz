@@ -15,7 +15,7 @@ cargo add tronz --features full
 Or in your `Cargo.toml`:
 
 ```toml
-tronz = { version = "0.3", features = ["full"] }
+tronz = { version = "0.4", features = ["full"] }
 ```
 
 A full list of available features can be found in the
@@ -65,6 +65,29 @@ println!("Status: {:?}", receipt.status);
 # }
 ```
 
+### Querying solidified (irreversible) state
+
+`SolidityProvider` targets a TRON SolidityNode (`WalletSolidity`), which only
+serves state confirmed by 2/3+ of the super representatives. It is read-only by
+construction — no signer, no broadcast — and `wait_for_success` blocks until a
+transaction has solidified *and* its execution succeeded.
+
+```rust,no_run
+use tronz::{SolidityProvider, TRONGRID_MAINNET_SOLIDITY};
+
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let solidity = SolidityProvider::connect(TRONGRID_MAINNET_SOLIDITY).await?;
+
+let head = solidity.get_now_block().await?;
+println!("solidified head: {}", head.number);
+
+let tx_id = std::env::var("TRON_TX_ID")?.parse()?;
+let receipt = solidity.wait_for_success(tx_id).await?;
+println!("solidified in block {}", receipt.block_number);
+# Ok(())
+# }
+```
+
 For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/main/examples) directory.
 
 ## Crates
@@ -75,8 +98,9 @@ For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/
 | [`tronz-abi`] | Native TRON ABI metadata and optional Alloy JSON ABI conversion |
 | [`tronz-primitives`] | `Address`, `Trx`, `ResourceCode`, signatures |
 | [`tronz-signer`] | `TronSigner` trait and `LocalSigner` implementation |
-| [`tronz-provider`] | Transport, provider, fillers, and domain types |
-| [`tronz-contract`] | TRC20 / TRC721 ABI bindings |
+| [`tronz-provider`] | FullNode and SolidityNode transports/providers, fillers, and domain types |
+| [`tronz-contract`] | TRC20 / TRC721 bindings, deployment, calls, and event filters |
+| [`tronz-sol-macro`] | `tron_sol!` procedural macro for provider-bound contract bindings |
 | [`tronz-signer-aws`] | AWS KMS signer (`signer-aws` feature) |
 
 [`tronz`]: https://github.com/throgxyz/tronz/tree/main/crates/tronz
@@ -85,6 +109,7 @@ For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/
 [`tronz-signer`]: https://github.com/throgxyz/tronz/tree/main/crates/signer
 [`tronz-provider`]: https://github.com/throgxyz/tronz/tree/main/crates/provider
 [`tronz-contract`]: https://github.com/throgxyz/tronz/tree/main/crates/contract
+[`tronz-sol-macro`]: https://github.com/throgxyz/tronz/tree/main/crates/sol-macro
 [`tronz-signer-aws`]: https://github.com/throgxyz/tronz/tree/main/crates/signer-aws
 
 ## Supported Rust Versions (MSRV)

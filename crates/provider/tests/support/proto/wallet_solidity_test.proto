@@ -1,0 +1,65 @@
+// Minimal, wire-compatible `protocol.WalletSolidity` service for transport tests.
+//
+// The complex domain messages (Account, Transaction, TransactionInfo,
+// BlockHeader, TriggerSmartContract) are imported from the real TRON protos so
+// their field numbers match exactly. Only the small api-level wrapper messages
+// used by the nine tested RPCs are redefined here (matching api.proto field
+// numbers) so this test service can be generated in isolation — without pulling
+// in the 46-rpc production WalletSolidity service.
+syntax = "proto3";
+
+package protocol;
+
+import "core/Tron.proto";
+import "core/contract/smart_contract.proto";
+
+message EmptyMessage {}
+
+message NumberMessage {
+  int64 num = 1;
+}
+
+message BytesMessage {
+  bytes value = 1;
+}
+
+message Return {
+  bool result = 1;
+  int32 code = 2;
+  bytes message = 3;
+}
+
+message TransactionExtention {
+  Transaction transaction = 1;
+  bytes txid = 2;
+  repeated bytes constant_result = 3;
+  Return result = 4;
+  int64 energy_used = 5;
+}
+
+message EstimateEnergyMessage {
+  Return result = 1;
+  int64 energy_required = 2;
+}
+
+message TransactionInfoList {
+  repeated TransactionInfo transactionInfo = 1;
+}
+
+message BlockExtention {
+  repeated TransactionExtention transactions = 1;
+  BlockHeader block_header = 2;
+  bytes blockid = 3;
+}
+
+service WalletSolidity {
+  rpc GetAccount (Account) returns (Account);
+  rpc GetNowBlock2 (EmptyMessage) returns (BlockExtention);
+  rpc GetBlockByNum2 (NumberMessage) returns (BlockExtention);
+  rpc GetTransactionById (BytesMessage) returns (Transaction);
+  rpc GetTransactionInfoById (BytesMessage) returns (TransactionInfo);
+  rpc GetTransactionInfoByBlockNum (NumberMessage) returns (TransactionInfoList);
+  rpc GetTransactionCountByBlockNum (NumberMessage) returns (NumberMessage);
+  rpc TriggerConstantContract (TriggerSmartContract) returns (TransactionExtention);
+  rpc EstimateEnergy (TriggerSmartContract) returns (EstimateEnergyMessage);
+}

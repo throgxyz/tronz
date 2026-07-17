@@ -67,7 +67,9 @@ pub mod providers {
 }
 
 #[doc(no_inline)]
-pub use tronz_provider::{ProviderBuilder, TronProvider};
+pub use tronz_provider::{
+    ProviderBuilder, SolidityProvider, SolidityProviderBuilder, TronProvider,
+};
 
 /// Low-level gRPC transport and well-known endpoint constants.
 ///
@@ -79,7 +81,9 @@ pub mod transports {
 }
 
 #[doc(no_inline)]
-pub use tronz_provider::transport::grpc::{TRONGRID_MAINNET, TRONGRID_NILE};
+pub use tronz_provider::transport::grpc::{
+    TRONGRID_MAINNET, TRONGRID_MAINNET_SOLIDITY, TRONGRID_NILE, TRONGRID_NILE_SOLIDITY,
+};
 
 /* --------------------------------- Contracts ---------------------------------- */
 

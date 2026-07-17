@@ -1,17 +1,18 @@
 # tronz-contract
 
-ABI bindings and contract instances for the [tronz](https://github.com/throgxyz/tronz) TRON SDK.
+ABI bindings, typed contract instances, deployment, and event filtering for the
+[tronz](https://github.com/throgxyz/tronz) TRON SDK.
 
-TRON smart contracts are EVM-compatible, so this crate reuses `alloy`'s
-[`sol!`](https://docs.rs/alloy-sol-macro) macro and ABI codec directly rather than
-hand-rolling an encoder.
+TRON smart contracts are EVM-compatible, so this crate reuses `alloy`'s ABI
+codec and provides `tron_sol!` for generating provider-bound TRON contract
+bindings from Solidity syntax or a JSON ABI.
 
 ## Features
 
 | Feature | What it enables |
 |---------|-----------------|
-| *(none)* | Static ABI encode/decode via `sol!` (no I/O, no provider dep) |
-| `provider` | [`ContractInstance`], [`Interface`], [`Trc20Instance`], and extension traits |
+| *(none)* | Static ABI encode/decode and `sol!` type generation (no provider dependency) |
+| `provider` | Provider-bound `tron_sol!` instances, [`ContractInstance`], [`Trc20Instance`], [`Trc721Instance`], call/deploy builders, and [`TronEventFilter`] |
 
 ## Interacting with arbitrary contracts (dynamic ABI)
 
@@ -76,9 +77,43 @@ let pending = token.transfer(recipient, amount).await?;
 let receipt = pending.get_receipt().await?;
 ```
 
+`Trc721Instance` provides the equivalent typed interface for NFT metadata,
+ownership, transfers, approvals, and operators:
+
+```rust,ignore
+use tronz_contract::trc721::Trc721Ext;
+
+let nft = provider.trc721(contract_address);
+let owner = nft.owner_of(token_id).await?;
+```
+
+## Generating provider-bound bindings
+
+`tron_sol!` accepts Solidity syntax or a JSON ABI path and generates typed call
+and event builders bound to a TRON provider:
+
+```rust,ignore
+use tronz_contract::tron_sol;
+
+tron_sol! {
+    #[sol(rpc)]
+    interface IToken {
+        function balanceOf(address owner) external view returns (uint256);
+        event Transfer(address indexed from, address indexed to, uint256 value);
+    }
+}
+
+let token = IToken::new(contract_address, provider);
+let balance = token.balance_of(owner).call().await?;
+let transfers = token.Transfer_filter().query_block(block_number).await?;
+```
+
 ## Crate layout
 
-- [`trc20`] — static `sol!` bindings + [`Trc20Instance`] high-level wrapper
+- [`trc20`] — static bindings and the [`Trc20Instance`] high-level wrapper
+- [`trc721`] — static bindings and the [`Trc721Instance`] high-level wrapper
+- [`tron_sol!`] — provider-bound typed calls and [`TronEventFilter`] builders
+- [`DeployBuilder`] — contract deployment with native or Alloy ABI metadata
 - [`Interface`] wrapping [`JsonAbi`] with O(1) selector lookup
 - [`ContractInstance`] — generic contract handle
 - [`ContractError`] and [`Result`] type alias
@@ -86,9 +121,14 @@ let receipt = pending.get_receipt().await?;
 [`ContractInstance`]: crate::ContractInstance
 [`Interface`]: crate::Interface
 [`Trc20Instance`]: crate::trc20::Trc20Instance
+[`Trc721Instance`]: crate::trc721::Trc721Instance
+[`TronEventFilter`]: crate::TronEventFilter
+[`DeployBuilder`]: crate::DeployBuilder
+[`tron_sol!`]: crate::tron_sol
 [`ContractError`]: crate::ContractError
 [`Result`]: crate::Result
 [`trc20`]: crate::trc20
+[`trc721`]: crate::trc721
 [`JsonAbi`]: alloy_json_abi::JsonAbi
 
 ## License

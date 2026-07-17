@@ -27,6 +27,9 @@ use crate::types::{
 
 pub mod grpc;
 
+mod solidity;
+pub use solidity::SolidityTransport;
+
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
 
