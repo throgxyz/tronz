@@ -14,6 +14,7 @@ the workspace depends on.
 | [`Trx`] | Amount denominated in sun (`1 TRX = 1_000_000 sun`); wraps `i64` to match protobuf |
 | [`ResourceCode`] | `Bandwidth`, `Energy`, or `TronPower` — the stakeable network resources |
 | [`RecoverableSignature`] | 65-byte `r ‖ s ‖ v` secp256k1 signature with embedded recovery id |
+| [`Log`] | Smart-contract event log containing an emitter address, indexed topics, and data |
 
 Common byte/arithmetic types (`U256`, `B256`, `Bytes`, `keccak256`) are
 re-exported from [`alloy_primitives`] so the rest of the workspace has a single

@@ -4,8 +4,8 @@ use std::marker::PhantomData;
 
 use alloy_primitives::B256;
 use alloy_sol_types::SolEvent;
-use tronz_primitives::{Address, TxId};
-use tronz_provider::{Error as ProviderError, TronProvider, types::Log};
+use tronz_primitives::{Address, Log, TxId};
+use tronz_provider::{Error as ProviderError, TronProvider};
 
 use crate::error::{ContractError, Result};
 

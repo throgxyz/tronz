@@ -29,8 +29,9 @@
 
 #[cfg(feature = "provider")]
 use {
-    crate::error::Result, alloy_sol_types::SolEvent, tronz_primitives::B256,
-    tronz_provider::types::Log,
+    crate::error::Result,
+    alloy_sol_types::SolEvent,
+    tronz_primitives::{B256, Log},
 };
 
 /// Decode a single log into a typed [`SolEvent`].

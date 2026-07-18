@@ -37,7 +37,7 @@ pub use market::{MarketOrderInfo, MarketOrderPair, MarketOrderState, MarketPrice
 pub use network::{
     AccountNet, ChainProperties, NodeAddress, NodeInfo, ProposalInfo, ProposalState, SignWeight,
 };
-pub use receipt::{ContractResult, Log, ResourceReceipt, TransactionInfo, TxStatus};
+pub use receipt::{ContractResult, ResourceReceipt, TransactionInfo, TxStatus};
 pub use transaction::{RawTransaction, SignedTransaction, TransactionRequest};
 pub use trc10::AssetInfo;
 pub use tronz_abi::{

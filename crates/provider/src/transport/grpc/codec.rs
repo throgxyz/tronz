@@ -3,7 +3,7 @@
 //! All functions are `pub(super)` — only the gRPC transport module needs them.
 
 use prost::Message as _;
-use tronz_primitives::{Address, B256, Bytes, RecoverableSignature, Trx, TxId};
+use tronz_primitives::{Address, B256, Bytes, Log, RecoverableSignature, Trx, TxId};
 
 use crate::{
     error::TransportErrorKind,
@@ -14,15 +14,14 @@ use crate::{
         ContractResult, CreateAccountContract, CreateSmartContract, CreateWitnessContract,
         DelegatedResource, DelegatedResourceIndex, ExchangeCreateContract, ExchangeInfo,
         ExchangeInjectContract, ExchangeTransactionContract, ExchangeWithdrawContract, FreezeV2,
-        Log, MarketCancelOrderContract, MarketOrderInfo, MarketOrderPair, MarketOrderState,
-        MarketPrice, MarketSellAssetContract, ParticipateAssetIssueContract, Permission,
-        PermissionKey, ProposalApproveContract, ProposalCreateContract, ProposalDeleteContract,
-        ProposalInfo, ProposalState, RawTransaction, SetAccountIdContract, SignWeight,
-        SignedTransaction, SmartContractInfo, TransactionInfo, TransferAssetContract,
-        TransferContract, TriggerSmartContract, TxStatus, UnfreezeAssetContract, UnfreezeV2,
-        UpdateAccountContract, UpdateAssetContract, UpdateBrokerageContract,
-        UpdateEnergyLimitContract, UpdateSettingContract, UpdateWitnessContract, Vote,
-        VoteWitnessContract, WitnessInfo,
+        MarketCancelOrderContract, MarketOrderInfo, MarketOrderPair, MarketOrderState, MarketPrice,
+        MarketSellAssetContract, ParticipateAssetIssueContract, Permission, PermissionKey,
+        ProposalApproveContract, ProposalCreateContract, ProposalDeleteContract, ProposalInfo,
+        ProposalState, RawTransaction, SetAccountIdContract, SignWeight, SignedTransaction,
+        SmartContractInfo, TransactionInfo, TransferAssetContract, TransferContract,
+        TriggerSmartContract, TxStatus, UnfreezeAssetContract, UnfreezeV2, UpdateAccountContract,
+        UpdateAssetContract, UpdateBrokerageContract, UpdateEnergyLimitContract,
+        UpdateSettingContract, UpdateWitnessContract, Vote, VoteWitnessContract, WitnessInfo,
     },
 };
 
@@ -279,11 +278,11 @@ pub(super) fn transaction_info_from_proto(
         .log
         .into_iter()
         .map(|l| {
-            Ok(Log {
-                address: log_addr(l.address)?,
-                topics: l.topics.into_iter().map(b256).collect(),
-                data: Bytes::from(l.data),
-            })
+            Ok(Log::new(
+                log_addr(l.address)?,
+                l.topics.into_iter().map(b256).collect(),
+                Bytes::from(l.data),
+            ))
         })
         .collect::<Result<Vec<_>, TransportErrorKind>>()?;
 

@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their `*_with` variants) to bridge from a FullNode broadcast straight to
   solidification.
 
+### Changed
+
+- `Log` now lives in `tronz-primitives` (`tronz_primitives::Log`) instead of
+  `tronz-provider`. The `tronz_provider::types::Log` re-export has been removed;
+  import it from `tronz-primitives` (or the `tronz` umbrella) instead. The type,
+  its fields, and the `Log::new` constructor are otherwise unchanged.
+
 ### Fixed
 
 - `get_transaction_info` now reports `TxStatus::Failed` when the contract-level

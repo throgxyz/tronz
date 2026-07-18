@@ -5,8 +5,7 @@ use std::collections::HashMap;
 use alloy_dyn_abi::{DecodedEvent, DynSolValue, EventExt as _, FunctionExt as _, JsonAbiExt as _};
 use alloy_json_abi::{Event, Function, JsonAbi};
 use alloy_primitives::{B256, Selector};
-use tronz_primitives::{Address, Bytes};
-use tronz_provider::types::Log;
+use tronz_primitives::{Address, Bytes, Log};
 
 use crate::{
     error::{ContractError, Result},

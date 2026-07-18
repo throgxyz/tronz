@@ -7,6 +7,7 @@
 mod address;
 mod amount;
 mod error;
+mod log;
 mod resource;
 mod signature;
 
@@ -15,6 +16,7 @@ pub use address::{ADDRESS_LEN, ADDRESS_PREFIX, Address, EVM_ADDRESS_LEN};
 pub use alloy_primitives::{B256, Bytes, U256, keccak256};
 pub use amount::{SUN_PER_TRX, Trx, format_trx, parse_trx};
 pub use error::{AddressError, AmountError, SignatureError};
+pub use log::Log;
 pub use resource::ResourceCode;
 pub use signature::{RecoverableSignature, SIGNATURE_LEN};
 
