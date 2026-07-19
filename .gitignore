@@ -1,5 +1,9 @@
 /target
 **/*.rs.bk
+# Coverage artifacts (cargo-llvm-cov)
+/lcov.info
+/*.profraw
+**/*.profraw
 .env
 .DS_Store
 .claude

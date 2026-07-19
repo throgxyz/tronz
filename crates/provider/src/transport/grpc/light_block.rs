@@ -119,4 +119,19 @@ mod tests {
         assert_eq!(info.timestamp, 5678);
         assert_eq!(info.hash, expected_hash);
     }
+
+    /// Replay a real `GetNowBlock2` response captured from a live node (see the
+    /// `capture` module). No-op until the fixture is committed. Verifies the
+    /// subset view correctly skips the transaction payload of a genuine block.
+    #[test]
+    fn replay_now_block() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/transport/grpc/fixtures/now_block.bin");
+        let Ok(bytes) = std::fs::read(path) else { return };
+        let light = BlockSummaryProto::decode(bytes.as_slice()).unwrap();
+        let info = light.into_block_info(None).unwrap();
+        assert!(info.number > 0, "captured block should have a positive height");
+        assert_ne!(info.hash, B256::ZERO);
+        assert!(info.timestamp > 0);
+    }
 }

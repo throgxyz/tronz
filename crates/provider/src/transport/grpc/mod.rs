@@ -1,6 +1,8 @@
 //! tonic-backed gRPC transports for TRON FullNode and SolidityNode services.
 
 mod abi;
+#[cfg(test)]
+mod capture;
 mod codec;
 mod core;
 mod fullnode;

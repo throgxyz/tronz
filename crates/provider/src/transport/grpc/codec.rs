@@ -1008,4 +1008,573 @@ mod tests {
         assert_eq!(decoded.contract_result, ContractResult::Default);
         assert!(decoded.is_success());
     }
+
+    /// A valid 21-byte TRON address with the `0x41` prefix and `fill` body.
+    fn tron_addr(fill: u8) -> Address {
+        let mut b = [fill; 21];
+        b[0] = 0x41;
+        Address::from_slice(&b).unwrap()
+    }
+
+    // ── helpers ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn check_return_accepts_none_and_success() {
+        assert!(check_return(None).is_ok());
+        assert!(check_return(Some(proto::Return { result: true, ..Default::default() })).is_ok());
+    }
+
+    #[test]
+    fn check_return_maps_failure_to_node_error() {
+        let ret =
+            proto::Return { result: false, message: b"bad sig".to_vec(), ..Default::default() };
+        match check_return(Some(ret)) {
+            Err(TransportErrorKind::NodeError(msg)) => assert_eq!(msg, "bad sig"),
+            other => panic!("expected NodeError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn b256_requires_exactly_32_bytes() {
+        assert_eq!(b256(vec![9; 32]), B256::from([9u8; 32]));
+        // Wrong lengths fall back to ZERO instead of panicking.
+        assert_eq!(b256(vec![1, 2, 3]), B256::ZERO);
+        assert_eq!(b256(vec![9; 33]), B256::ZERO);
+        assert_eq!(b256(Vec::new()), B256::ZERO);
+    }
+
+    #[test]
+    fn opt_addr_handles_empty_valid_and_malformed() {
+        assert_eq!(opt_addr(Vec::new()), None);
+        assert_eq!(opt_addr(tron_addr(0x11).as_bytes().to_vec()), Some(tron_addr(0x11)));
+        // Wrong prefix / wrong length are silently dropped.
+        assert_eq!(opt_addr(vec![0x99; 21]), None);
+        assert_eq!(opt_addr(vec![0x41; 5]), None);
+    }
+
+    #[test]
+    fn log_addr_accepts_both_evm_and_tron_layouts() {
+        // 20-byte EVM body gets the 0x41 prefix prepended.
+        assert_eq!(log_addr(vec![7; 20]).unwrap(), Address::from_evm_bytes([7; 20]));
+        // 21-byte TRON layout is parsed as-is.
+        let a = tron_addr(0x22);
+        assert_eq!(log_addr(a.as_bytes().to_vec()).unwrap(), a);
+        // Anything else is a hard error.
+        assert!(log_addr(vec![1, 2, 3]).is_err());
+    }
+
+    // ── account ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn account_falls_back_to_queried_address_when_not_activated() {
+        let queried = tron_addr(0x33);
+        let decoded = account_from_proto(proto::Account::default(), queried).unwrap();
+        assert_eq!(decoded.address, queried);
+        assert!(!decoded.is_activated);
+    }
+
+    #[test]
+    fn account_decodes_resources_votes_and_skips_bad_entries() {
+        let addr = tron_addr(0x41);
+        let voter = tron_addr(0x51);
+        let account = proto::Account {
+            address: addr.as_bytes().to_vec(),
+            balance: 5_000,
+            account_name: b"alice".to_vec(),
+            asset_v2: [("1000001".to_string(), 42i64)].into_iter().collect(),
+            frozen_v2: vec![
+                proto::account::FreezeV2 { r#type: 1, amount: 100 },
+                // Unknown resource code is dropped by filter_map.
+                proto::account::FreezeV2 { r#type: 99, amount: 7 },
+            ],
+            unfrozen_v2: vec![proto::account::UnFreezeV2 {
+                r#type: 0,
+                unfreeze_amount: 200,
+                unfreeze_expire_time: 999,
+            }],
+            votes: vec![
+                proto::Vote { vote_address: voter.as_bytes().to_vec(), vote_count: 7 },
+                // Malformed vote address is skipped.
+                proto::Vote { vote_address: vec![1, 2, 3], vote_count: 9 },
+            ],
+            ..Default::default()
+        };
+
+        let decoded = account_from_proto(account, tron_addr(0x01)).unwrap();
+        assert!(decoded.is_activated);
+        assert_eq!(decoded.address, addr);
+        assert_eq!(decoded.balance, Trx::from_sun_unchecked(5_000));
+        assert_eq!(decoded.name, "alice");
+        assert_eq!(decoded.trc10_balances.get("1000001"), Some(&42));
+        assert_eq!(decoded.frozen_v2.len(), 1);
+        assert_eq!(decoded.frozen_v2[0].resource, tronz_primitives::ResourceCode::Energy);
+        assert_eq!(decoded.frozen_v2[0].amount, Trx::from_sun_unchecked(100));
+        assert_eq!(decoded.unfrozen_v2.len(), 1);
+        assert_eq!(decoded.unfrozen_v2[0].expire_time_ms, 999);
+        assert_eq!(decoded.votes.len(), 1);
+        assert_eq!(decoded.votes[0].vote_address, voter);
+        assert_eq!(decoded.votes[0].vote_count, 7);
+    }
+
+    #[test]
+    fn account_resource_scales_tron_power_to_sun() {
+        let msg = proto::AccountResourceMessage {
+            free_net_used: 1,
+            free_net_limit: 2,
+            net_used: 3,
+            net_limit: 4,
+            energy_used: 5,
+            energy_limit: 6,
+            tron_power_used: 5,
+            tron_power_limit: 10,
+            ..Default::default()
+        };
+        let r = account_resource_from_proto(msg);
+        assert_eq!(r.free_bandwidth_used, 1);
+        assert_eq!(r.energy_limit, 6);
+        // TRON Power is reported in whole TRX; converted to sun (×1e6).
+        assert_eq!(r.tron_power_used.as_sun(), 5_000_000);
+        assert_eq!(r.tron_power_limit.as_sun(), 10_000_000);
+    }
+
+    // ── transaction info ─────────────────────────────────────────────────────
+
+    #[test]
+    fn transaction_info_returns_none_for_unindexed_tx() {
+        assert!(transaction_info_from_proto(proto::TransactionInfo::default()).unwrap().is_none());
+    }
+
+    #[test]
+    fn transaction_info_maps_contract_result_codes() {
+        let cases = [
+            (1, ContractResult::Success, TxStatus::Success),
+            (2, ContractResult::Revert, TxStatus::Failed),
+            (10, ContractResult::OutOfEnergy, TxStatus::Failed),
+            (7, ContractResult::Failed, TxStatus::Failed),
+            (0, ContractResult::Default, TxStatus::Success),
+        ];
+        for (code, expected_result, expected_status) in cases {
+            let info = proto::TransactionInfo {
+                id: vec![1; 32],
+                result: 0,
+                receipt: Some(proto::ResourceReceipt { result: code, ..Default::default() }),
+                ..Default::default()
+            };
+            let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+            assert_eq!(decoded.contract_result, expected_result, "code {code}");
+            assert_eq!(decoded.status, expected_status, "code {code}");
+        }
+    }
+
+    #[test]
+    fn transaction_info_empty_res_message_is_none() {
+        let info = proto::TransactionInfo { id: vec![1; 32], ..Default::default() };
+        assert_eq!(transaction_info_from_proto(info).unwrap().unwrap().revert_reason, None);
+    }
+
+    // ── constant call result ──────────────────────────────────────────────────
+
+    #[test]
+    fn constant_result_without_return_has_no_revert() {
+        let ext = proto::TransactionExtention {
+            constant_result: vec![vec![1, 2, 3].into()],
+            energy_used: 50,
+            result: None,
+            ..Default::default()
+        };
+        let r = constant_result_from_extention(ext).unwrap();
+        assert_eq!(r.output.as_ref(), &[1, 2, 3]);
+        assert_eq!(r.energy_used, 50);
+        assert_eq!(r.revert_reason, None);
+    }
+
+    #[test]
+    fn constant_result_success_return_has_no_revert() {
+        let ext = proto::TransactionExtention {
+            constant_result: vec![vec![9].into()],
+            result: Some(proto::Return { result: true, ..Default::default() }),
+            ..Default::default()
+        };
+        assert_eq!(constant_result_from_extention(ext).unwrap().revert_reason, None);
+    }
+
+    #[test]
+    fn constant_result_failure_with_no_output_is_node_error() {
+        let ext = proto::TransactionExtention {
+            constant_result: vec![],
+            result: Some(proto::Return {
+                result: false,
+                message: b"boom".to_vec(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        match constant_result_from_extention(ext) {
+            Err(TransportErrorKind::NodeError(msg)) => assert_eq!(msg, "boom"),
+            other => panic!("expected NodeError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn constant_result_revert_with_output_keeps_reason_and_data() {
+        let ext = proto::TransactionExtention {
+            constant_result: vec![vec![0xde, 0xad].into()],
+            result: Some(proto::Return {
+                result: false,
+                message: b"reverted".to_vec(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = constant_result_from_extention(ext).unwrap();
+        assert_eq!(r.revert_reason.as_deref(), Some("reverted"));
+        assert_eq!(r.output.as_ref(), &[0xde, 0xad]);
+    }
+
+    // ── witness / delegation / asset ──────────────────────────────────────────
+
+    #[test]
+    fn witness_requires_address() {
+        assert!(witness_from_proto(proto::Witness::default()).is_none());
+        let w = proto::Witness {
+            address: tron_addr(0x61).as_bytes().to_vec(),
+            vote_count: 42,
+            url: "https://sr.example".into(),
+            total_produced: 100,
+            total_missed: 3,
+            is_jobs: true,
+            ..Default::default()
+        };
+        let info = witness_from_proto(w).unwrap();
+        assert_eq!(info.vote_count, 42);
+        assert!(info.is_active);
+    }
+
+    #[test]
+    fn delegated_resource_maps_fields_and_rejects_bad_address() {
+        let d = proto::DelegatedResource {
+            from: tron_addr(0x71).as_bytes().to_vec(),
+            to: tron_addr(0x72).as_bytes().to_vec(),
+            frozen_balance_for_bandwidth: 111,
+            frozen_balance_for_energy: 222,
+            expire_time_for_bandwidth: 333,
+            expire_time_for_energy: 444,
+        };
+        let r = delegated_resource_from_proto(d).unwrap();
+        assert_eq!(r.bandwidth_amount, Trx::from_sun_unchecked(111));
+        assert_eq!(r.energy_amount, Trx::from_sun_unchecked(222));
+        assert_eq!(r.energy_expire_time_ms, 444);
+
+        let bad = proto::DelegatedResource {
+            to: tron_addr(0x72).as_bytes().to_vec(),
+            ..Default::default()
+        };
+        assert!(delegated_resource_from_proto(bad).is_err());
+    }
+
+    #[test]
+    fn delegated_resource_index_filters_bad_accounts() {
+        let idx = proto::DelegatedResourceAccountIndex {
+            account: tron_addr(0x81).as_bytes().to_vec(),
+            from_accounts: vec![tron_addr(0x82).as_bytes().to_vec(), vec![1, 2, 3]],
+            to_accounts: vec![vec![], tron_addr(0x83).as_bytes().to_vec()],
+            ..Default::default()
+        };
+        let r = delegated_resource_index_from_proto(idx).unwrap();
+        assert_eq!(r.from_accounts, vec![tron_addr(0x82)]);
+        assert_eq!(r.to_accounts, vec![tron_addr(0x83)]);
+
+        let bad = proto::DelegatedResourceAccountIndex::default();
+        assert!(delegated_resource_index_from_proto(bad).is_err());
+    }
+
+    #[test]
+    fn asset_info_returns_none_without_id() {
+        assert!(asset_info_from_proto(proto::AssetIssueContract::default()).unwrap().is_none());
+        let a = proto::AssetIssueContract {
+            id: "1000001".into(),
+            name: b"BitTorrent".to_vec(),
+            abbr: b"BTT".to_vec(),
+            precision: 6,
+            owner_address: tron_addr(0x91).as_bytes().to_vec(),
+            total_supply: 1_000_000,
+            url: b"https://bt.io".to_vec(),
+            ..Default::default()
+        };
+        let info = asset_info_from_proto(a).unwrap().unwrap();
+        assert_eq!(info.id, "1000001");
+        assert_eq!(info.name, "BitTorrent");
+        assert_eq!(info.decimals, 6);
+        assert_eq!(info.owner, tron_addr(0x91));
+    }
+
+    // ── governance / market / dex ──────────────────────────────────────────────
+
+    #[test]
+    fn proposal_decodes_state_and_filters_addresses() {
+        let p = proto::Proposal {
+            proposal_id: 12,
+            proposer_address: vec![], // empty → None
+            approvals: vec![tron_addr(0xa1).as_bytes().to_vec(), vec![0xff; 3]],
+            state: 2, // Approved
+            ..Default::default()
+        };
+        let info = proposal_from_proto(p);
+        assert_eq!(info.proposal_id, 12);
+        assert_eq!(info.proposer_address, None);
+        assert_eq!(info.approvals, vec![tron_addr(0xa1)]);
+        assert_eq!(info.state, ProposalState::Approved);
+    }
+
+    #[test]
+    fn market_order_maps_state_variants() {
+        for (code, expected) in [
+            (1, MarketOrderState::Inactive),
+            (2, MarketOrderState::Canceled),
+            (0, MarketOrderState::Active),
+        ] {
+            let o = proto::MarketOrder {
+                order_id: vec![3; 32],
+                owner_address: tron_addr(0xb1).as_bytes().to_vec(),
+                state: code,
+                ..Default::default()
+            };
+            assert_eq!(market_order_from_proto(o).unwrap().state, expected, "code {code}");
+        }
+    }
+
+    #[test]
+    fn market_order_rejects_non_32_byte_id() {
+        let o = proto::MarketOrder {
+            order_id: vec![3; 16],
+            owner_address: tron_addr(0xb1).as_bytes().to_vec(),
+            ..Default::default()
+        };
+        assert!(market_order_from_proto(o).is_err());
+    }
+
+    #[test]
+    fn exchange_info_maps_fields_and_rejects_bad_creator() {
+        let e = proto::Exchange {
+            exchange_id: 5,
+            creator_address: tron_addr(0xc1).as_bytes().to_vec(),
+            create_time: 100,
+            first_token_id: b"_".to_vec(),
+            first_token_balance: 1_000,
+            second_token_id: b"1000001".to_vec(),
+            second_token_balance: 2_000,
+        };
+        let info = exchange_info_from_proto(e).unwrap();
+        assert_eq!(info.exchange_id, 5);
+        assert_eq!(info.creator_address, tron_addr(0xc1));
+        assert_eq!(info.first_token_id, "_");
+        assert_eq!(info.second_token_balance, 2_000);
+
+        let bad = proto::Exchange { creator_address: vec![], ..Default::default() };
+        assert!(exchange_info_from_proto(bad).is_err());
+    }
+
+    #[test]
+    fn sign_weight_defaults_when_permission_and_result_absent() {
+        let w = proto::TransactionSignWeight {
+            approved_list: vec![tron_addr(0xd1).as_bytes().to_vec()],
+            current_weight: 3,
+            permission: None,
+            result: None,
+            ..Default::default()
+        };
+        let sw = sign_weight_from_proto(w).unwrap();
+        assert_eq!(sw.approved_list, vec![tron_addr(0xd1)]);
+        assert_eq!(sw.current_weight, 3);
+        assert_eq!(sw.required_weight, 0);
+        assert_eq!(sw.result, "");
+
+        // A malformed approver address is a hard error.
+        let bad = proto::TransactionSignWeight {
+            approved_list: vec![vec![1, 2, 3]],
+            ..Default::default()
+        };
+        assert!(sign_weight_from_proto(bad).is_err());
+    }
+
+    // ── encode (to proto) ──────────────────────────────────────────────────────
+
+    #[test]
+    fn transfer_to_proto_maps_addresses_and_amount() {
+        let p = TransferContract {
+            owner_address: tron_addr(0xe1),
+            to_address: tron_addr(0xe2),
+            amount: Trx::from_sun_unchecked(1_500),
+        };
+        let out = transfer_to_proto(p);
+        assert_eq!(out.owner_address, tron_addr(0xe1).as_bytes().to_vec());
+        assert_eq!(out.to_address, tron_addr(0xe2).as_bytes().to_vec());
+        assert_eq!(out.amount, 1_500);
+    }
+
+    #[test]
+    fn account_permission_update_sets_types_and_active_operations() {
+        use proto::permission::PermissionType;
+
+        let perm = |id: i32| Permission {
+            id,
+            permission_name: format!("p{id}"),
+            threshold: 1,
+            keys: vec![PermissionKey { address: tron_addr(0xf1), weight: 1 }],
+        };
+        let contract = AccountPermissionUpdateContract {
+            owner_address: tron_addr(0xf0),
+            owner: Some(perm(0)),
+            witness: Some(perm(1)),
+            actives: vec![perm(2)],
+        };
+
+        let out = account_permission_update_to_proto(contract);
+        assert_eq!(out.owner_address, tron_addr(0xf0).as_bytes().to_vec());
+        assert_eq!(out.owner.unwrap().r#type, PermissionType::Owner as i32);
+        assert_eq!(out.witness.unwrap().r#type, PermissionType::Witness as i32);
+
+        let active = &out.actives[0];
+        assert_eq!(active.r#type, PermissionType::Active as i32);
+        // The 32-byte operations bitfield must match the hand-computed constant.
+        assert_eq!(active.operations.len(), 32);
+        assert_eq!(&active.operations[0..8], &[0x7f, 0xff, 0x1f, 0xc0, 0x03, 0x7e, 0xfb, 0x0f]);
+        assert!(active.operations[8..].iter().all(|&b| b == 0));
+        assert_eq!(active.keys[0].address, tron_addr(0xf1).as_bytes().to_vec());
+    }
+
+    #[test]
+    fn vote_witness_to_proto_maps_votes() {
+        let p = VoteWitnessContract {
+            owner_address: tron_addr(0x12),
+            votes: vec![crate::types::SrVote { vote_address: tron_addr(0x13), vote_count: 99 }],
+        };
+        let out = vote_witness_to_proto(p);
+        assert_eq!(out.owner_address, tron_addr(0x12).as_bytes().to_vec());
+        assert_eq!(out.votes.len(), 1);
+        assert_eq!(out.votes[0].vote_address, tron_addr(0x13).as_bytes().to_vec());
+        assert_eq!(out.votes[0].vote_count, 99);
+        assert!(!out.support);
+    }
+
+    #[test]
+    fn smart_contract_wrapper_attaches_runtime_bytecode_when_present() {
+        let wrapper = proto::SmartContractDataWrapper {
+            smart_contract: Some(proto::SmartContract {
+                contract_address: tron_addr(0x14).as_bytes().to_vec(),
+                name: "Token".into(),
+                ..Default::default()
+            }),
+            runtimecode: vec![0x60, 0x00].into(),
+            ..Default::default()
+        };
+        let info = smart_contract_info_from_wrapper(wrapper);
+        assert_eq!(info.name, "Token");
+        assert_eq!(info.runtime_bytecode.as_ref().map(|b| b.as_ref()), Some(&[0x60, 0x00][..]));
+
+        // Empty runtimecode leaves the field unset.
+        let empty = proto::SmartContractDataWrapper {
+            smart_contract: Some(proto::SmartContract::default()),
+            runtimecode: Vec::<u8>::new().into(),
+            ..Default::default()
+        };
+        assert!(smart_contract_info_from_wrapper(empty).runtime_bytecode.is_none());
+    }
+
+    #[test]
+    fn raw_from_plain_handles_missing_raw_data() {
+        // No raw_data → zero txid, zero expiration/timestamp, still succeeds.
+        let raw = raw_from_plain(proto::Transaction::default()).unwrap();
+        assert_eq!(raw.tx_id().as_slice(), &[0u8; 32]);
+
+        // With raw_data the txid is a non-zero sha256 of the encoded raw_data.
+        let tx = proto::Transaction {
+            raw_data: Some(proto::transaction::Raw {
+                expiration: 10,
+                timestamp: 20,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let raw = raw_from_plain(tx).unwrap();
+        assert_ne!(raw.tx_id().as_slice(), &[0u8; 32]);
+    }
+
+    // ── fixture replay ─────────────────────────────────────────────────────
+    //
+    // These decode real protobuf bytes captured from a live node (see the
+    // `capture` module) so CI validates the decode paths against genuine wire
+    // data. Each test is a no-op until the corresponding fixture is committed,
+    // then it becomes a real assertion — nothing to gate at compile time.
+
+    /// Mainnet USDT (TRC20) contract, used as the activated-account fixture.
+    const USDT_MAINNET: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+
+    /// The fixed never-activated address used by the capture tool.
+    fn fresh_unused_address() -> Address {
+        Address::from_evm_bytes([
+            0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
+            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+        ])
+    }
+
+    /// Load a committed fixture, or `None` when it has not been captured yet.
+    fn fixture(name: &str) -> Option<Vec<u8>> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/transport/grpc/fixtures")
+            .join(name);
+        std::fs::read(path).ok()
+    }
+
+    #[test]
+    fn replay_tx_info_success() {
+        use prost::Message as _;
+        let Some(bytes) = fixture("tx_info_success.bin") else { return };
+        let info = proto::TransactionInfo::decode(&bytes[..]).unwrap();
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+        assert!(decoded.is_success(), "captured success tx should decode as Success");
+        assert_ne!(decoded.tx_id, TxId::from([0u8; 32]));
+    }
+
+    #[test]
+    fn replay_tx_info_reverted() {
+        use prost::Message as _;
+        let Some(bytes) = fixture("tx_info_reverted.bin") else { return };
+        let info = proto::TransactionInfo::decode(&bytes[..]).unwrap();
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+        assert!(!decoded.is_success(), "captured reverted tx should decode as Failed");
+    }
+
+    #[test]
+    fn replay_account_activated() {
+        use prost::Message as _;
+        let Some(bytes) = fixture("account_activated.bin") else { return };
+        let queried = Address::from_base58(USDT_MAINNET).unwrap();
+        let account = proto::Account::decode(&bytes[..]).unwrap();
+        let decoded = account_from_proto(account, queried).unwrap();
+        assert!(decoded.is_activated);
+        assert_eq!(decoded.address, queried);
+    }
+
+    #[test]
+    fn replay_account_never_activated() {
+        use prost::Message as _;
+        let Some(bytes) = fixture("account_never_activated.bin") else { return };
+        // The node returns an empty Account; the queried address is the fallback.
+        let queried = fresh_unused_address();
+        let account = proto::Account::decode(&bytes[..]).unwrap();
+        let decoded = account_from_proto(account, queried).unwrap();
+        assert!(!decoded.is_activated);
+        assert_eq!(decoded.address, queried);
+    }
+
+    #[test]
+    fn replay_constant_call_balanceof() {
+        use prost::Message as _;
+        let Some(bytes) = fixture("constant_call_balanceof.bin") else { return };
+        let ext = proto::TransactionExtention::decode(&bytes[..]).unwrap();
+        let result = constant_result_from_extention(ext).unwrap();
+        // balanceOf returns a single uint256 → 32 bytes of ABI output.
+        assert_eq!(result.output.len(), 32);
+    }
 }

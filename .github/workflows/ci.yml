@@ -89,6 +89,46 @@ jobs:
       - run: cargo test --workspace --doc
       - run: cargo test --all-features --workspace --doc
 
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: nightly
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
+        with:
+          tool: cargo-llvm-cov
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+      # Generated protobuf code is excluded so it does not dilute the ratio.
+      # Network-gated integration tests stay #[ignore]d; this measures the
+      # mock- and unit-tested surface only. No coverage threshold is enforced.
+      - name: Collect coverage
+        run: |
+          cargo llvm-cov --workspace --all-features --branch \
+            --ignore-filename-regex 'proto|generated|build\.rs' \
+            --lcov --output-path lcov.info
+          cargo llvm-cov report --ignore-filename-regex 'proto|generated|build\.rs' --summary-only
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   feature-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -236,6 +276,7 @@ jobs:
     needs:
       - test
       - doctest
+      - coverage
       - feature-checks
       - typos
       - clippy
