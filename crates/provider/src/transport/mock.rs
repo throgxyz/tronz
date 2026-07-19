@@ -183,6 +183,7 @@ impl TronTransport for MockTransport {
         fn get_contract(&self, address: Address) -> SmartContractInfo;
         fn get_contract_info(&self, address: Address) -> SmartContractInfo;
         fn list_witnesses(&self) -> Vec<WitnessInfo>;
+        fn get_paginated_now_witness_list(&self, offset: i64, limit: i64) -> Vec<WitnessInfo>;
         fn proposal_create(&self, params: ProposalCreateContract) -> RawTransaction;
         fn proposal_approve(&self, params: ProposalApproveContract) -> RawTransaction;
         fn proposal_delete(&self, params: ProposalDeleteContract) -> RawTransaction;
@@ -300,6 +301,8 @@ impl crate::transport::SolidityTransport for MockSolidityTransport {
         fn get_transaction_count_by_block_num(&self, block_num: i64) -> u64;
         fn trigger_constant_contract(&self, params: TriggerSmartContract) -> ConstantCallResult;
         fn estimate_energy(&self, params: TriggerSmartContract) -> i64;
+        fn list_witnesses(&self) -> Vec<WitnessInfo>;
+        fn get_paginated_now_witness_list(&self, offset: i64, limit: i64) -> Vec<WitnessInfo>;
     }
 }
 

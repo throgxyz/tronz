@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   latest or solidified state without gaining write capabilities.
 - `.caller(address)` on contract instances and call builders for explicitly
   setting `msg.sender` during constant calls and energy estimation.
+- `get_paginated_now_witness_list(offset, limit)` on `TronProvider` and
+  `SolidityProvider` (java-tron 4.8.1's `GetPaginatedNowWitnessList`), returning
+  SRs sorted by real-time vote count. Also added `list_witnesses` to
+  `SolidityProvider` for solidified SR lookups. The local `WalletSolidity`/`Wallet`
+  protobuf definitions were synced with the new RPC.
 
 ### Changed
 

@@ -6,7 +6,7 @@ use tronz_primitives::{Address, TxId};
 
 use crate::types::{
     AccountInfo, BlockInfo, ConstantCallResult, SignedTransaction, TransactionInfo,
-    TriggerSmartContract,
+    TriggerSmartContract, WitnessInfo,
 };
 
 /// A low-level transport for `protocol.WalletSolidity`.
@@ -72,4 +72,14 @@ pub trait SolidityTransport: Clone + Send + Sync + 'static + super::private::Sea
         &self,
         params: TriggerSmartContract,
     ) -> impl Future<Output = Result<i64, Self::Error>> + Send;
+
+    /// List all super representatives and candidates from solidified state.
+    fn list_witnesses(&self) -> impl Future<Output = Result<Vec<WitnessInfo>, Self::Error>> + Send;
+
+    /// Fetch a paginated list of witnesses sorted by real-time vote count.
+    fn get_paginated_now_witness_list(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<WitnessInfo>, Self::Error>> + Send;
 }

@@ -9,7 +9,7 @@ use crate::{
     transport::SolidityTransport,
     types::{
         AccountInfo, BlockInfo, ConstantCallResult, SignedTransaction, TransactionInfo,
-        TriggerSmartContract,
+        TriggerSmartContract, WitnessInfo,
     },
 };
 
@@ -190,5 +190,20 @@ impl SolidityTransport for SolidityGrpcTransport {
         let msg = solidity_unary!(self, estimate_energy, req)?;
         codec::check_return(msg.result)?;
         Ok(msg.energy_required)
+    }
+
+    async fn list_witnesses(&self) -> Result<Vec<WitnessInfo>, Self::Error> {
+        let list = solidity_unary!(self, list_witnesses, EmptyMessage::default())?;
+        Ok(list.witnesses.into_iter().filter_map(codec::witness_from_proto).collect())
+    }
+
+    async fn get_paginated_now_witness_list(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> Result<Vec<WitnessInfo>, Self::Error> {
+        let req = proto::PaginatedMessage { offset, limit };
+        let list = solidity_unary!(self, get_paginated_now_witness_list, req)?;
+        Ok(list.witnesses.into_iter().filter_map(codec::witness_from_proto).collect())
     }
 }

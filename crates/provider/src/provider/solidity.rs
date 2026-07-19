@@ -15,7 +15,7 @@ use crate::{
     },
     types::{
         AccountInfo, BlockInfo, ConstantCallResult, SignedTransaction, TransactionInfo,
-        TriggerSmartContract,
+        TriggerSmartContract, WitnessInfo,
     },
 };
 
@@ -117,6 +117,23 @@ impl<T: SolidityTransport> SolidityProvider<T> {
     /// Estimate the energy a contract call would consume against solidified state.
     pub async fn estimate_energy(&self, params: TriggerSmartContract) -> Result<i64> {
         self.inner.estimate_energy(params).await.map_err(ProviderError::transport)
+    }
+
+    /// List all super representatives and candidates from solidified state.
+    pub async fn list_witnesses(&self) -> Result<Vec<WitnessInfo>> {
+        self.inner.list_witnesses().await.map_err(ProviderError::transport)
+    }
+
+    /// Fetch a paginated list of witnesses sorted by real-time vote count.
+    pub async fn get_paginated_now_witness_list(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> Result<Vec<WitnessInfo>> {
+        self.inner
+            .get_paginated_now_witness_list(offset, limit)
+            .await
+            .map_err(ProviderError::transport)
     }
 
     /// Poll until `tx_id` has solidified, regardless of execution result.
@@ -283,6 +300,37 @@ mod tests {
         let receipt =
             ContractReadProvider::transaction_info(&provider(mock), TxId::ZERO).await.unwrap();
         assert!(receipt.is_some_and(|info| info.is_success()));
+    }
+
+    fn witness(vote_count: i64) -> WitnessInfo {
+        WitnessInfo {
+            address: Address::ZERO,
+            vote_count,
+            url: "https://sr.example".to_string(),
+            total_produced: 0,
+            total_missed: 0,
+            is_active: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn list_witnesses_returns_solidified_witnesses() {
+        let mock = MockSolidityTransport::new();
+        mock.push_ok::<Vec<WitnessInfo>>("list_witnesses", vec![witness(10), witness(20)]);
+
+        let witnesses = provider(mock).list_witnesses().await.unwrap();
+        assert_eq!(witnesses.len(), 2);
+        assert_eq!(witnesses[1].vote_count, 20);
+    }
+
+    #[tokio::test]
+    async fn get_paginated_now_witness_list_returns_witnesses() {
+        let mock = MockSolidityTransport::new();
+        mock.push_ok::<Vec<WitnessInfo>>("get_paginated_now_witness_list", vec![witness(99)]);
+
+        let witnesses = provider(mock).get_paginated_now_witness_list(0, 10).await.unwrap();
+        assert_eq!(witnesses.len(), 1);
+        assert_eq!(witnesses[0].vote_count, 99);
     }
 
     #[tokio::test]

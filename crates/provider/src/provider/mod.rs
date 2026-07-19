@@ -229,6 +229,16 @@ pub trait TronProvider: ContractReadProvider + private::Sealed {
         async move { t.list_witnesses().await.map_err(Error::transport) }
     }
 
+    /// Fetch a paginated list of witnesses sorted by real-time vote count.
+    fn get_paginated_now_witness_list(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<WitnessInfo>>> + Send {
+        let t = self.transport().clone();
+        async move { t.get_paginated_now_witness_list(offset, limit).await.map_err(Error::transport) }
+    }
+
     // ---------- New pure query methods ----------
 
     /// Fetch the bandwidth price schedule string.

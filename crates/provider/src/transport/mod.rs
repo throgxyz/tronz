@@ -264,6 +264,13 @@ pub trait TronTransport: Clone + Send + Sync + 'static + private::Sealed {
     /// List all super representatives and candidates.
     fn list_witnesses(&self) -> impl Future<Output = Result<Vec<WitnessInfo>, Self::Error>> + Send;
 
+    /// Fetch a paginated list of witnesses sorted by real-time vote count.
+    fn get_paginated_now_witness_list(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<WitnessInfo>, Self::Error>> + Send;
+
     // --- Governance ---
 
     /// Submit a chain-parameter governance proposal.

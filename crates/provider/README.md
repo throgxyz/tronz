@@ -42,6 +42,10 @@ Both FullNode providers and `SolidityProvider` implement
 estimation, and event queries. State freshness follows the provider: FullNode
 reads latest available state, while SolidityNode reads irreversible state.
 
+`SolidityProvider` also exposes solidified witness queries — `list_witnesses`
+and `get_paginated_now_witness_list(offset, limit)` (the latter returns SRs
+sorted by real-time vote count) — mirroring the FullNode `TronProvider` methods.
+
 ## Crate layout
 
 | Module | Description |

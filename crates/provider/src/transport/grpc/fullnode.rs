@@ -562,6 +562,16 @@ impl TronTransport for GrpcTransport {
         Ok(list.witnesses.into_iter().filter_map(codec::witness_from_proto).collect())
     }
 
+    async fn get_paginated_now_witness_list(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> Result<Vec<WitnessInfo>, Self::Error> {
+        let req = proto::PaginatedMessage { offset, limit };
+        let list = retry_unary!(self, wallet_client, get_paginated_now_witness_list, req)?;
+        Ok(list.witnesses.into_iter().filter_map(codec::witness_from_proto).collect())
+    }
+
     // --- Governance ---
 
     async fn proposal_create(
