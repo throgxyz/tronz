@@ -22,8 +22,8 @@ mod provider;
 pub use ext::{GovernanceApi, Trc10Api, WitnessApi};
 pub use fillers::HasSigner;
 pub use provider::{
-    FilledProvider, PendingTransaction, PendingTransactionError, ProviderBuilder, RootProvider,
-    SolidityProvider, SolidityProviderBuilder, TronProvider,
+    ContractReadProvider, FilledProvider, PendingTransaction, PendingTransactionError,
+    ProviderBuilder, RootProvider, SolidityProvider, SolidityProviderBuilder, TronProvider,
 };
 pub use transport::{SolidityTransport, TronTransport};
 pub use types::{

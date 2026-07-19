@@ -4,7 +4,7 @@ use alloy_dyn_abi::DynSolValue;
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::Selector;
 use tronz_primitives::{Address, Bytes};
-use tronz_provider::TronProvider;
+use tronz_provider::{ContractReadProvider, TronProvider};
 
 use crate::{call::CallBuilder, deploy::DeployBuilder, error::Result, interface::Interface};
 
@@ -20,6 +20,7 @@ use crate::{call::CallBuilder, deploy::DeployBuilder, error::Result, interface::
 #[derive(Clone)]
 pub struct ContractInstance<P> {
     address: Address,
+    caller: Option<Address>,
     provider: P,
     interface: Interface,
 }
@@ -28,7 +29,7 @@ impl<P> ContractInstance<P> {
     /// Create a contract instance with a dynamic ABI [`Interface`].
     #[inline]
     pub fn new(address: Address, provider: P, interface: Interface) -> Self {
-        Self { address, provider, interface }
+        Self { address, caller: None, provider, interface }
     }
 
     /// The contract address.
@@ -48,6 +49,19 @@ impl<P> ContractInstance<P> {
     pub fn at(mut self, address: Address) -> Self {
         self.set_address(address);
         self
+    }
+
+    /// Set the default caller (`msg.sender`) for read-only calls.
+    #[inline]
+    pub fn caller(mut self, caller: Address) -> Self {
+        self.caller = Some(caller);
+        self
+    }
+
+    /// Set the default caller in place.
+    #[inline]
+    pub fn set_caller(&mut self, caller: Address) {
+        self.caller = Some(caller);
     }
 
     /// The underlying [`JsonAbi`].
@@ -84,7 +98,7 @@ impl<P> std::fmt::Debug for ContractInstance<P> {
     }
 }
 
-impl<P: TronProvider> ContractInstance<P> {
+impl<P: ContractReadProvider> ContractInstance<P> {
     /// Create a contract instance without an ABI — only raw calldata calls are available.
     ///
     /// Used internally by static-ABI wrappers like [`Trc20Instance`].
@@ -92,7 +106,7 @@ impl<P: TronProvider> ContractInstance<P> {
     /// [`Trc20Instance`]: crate::trc20::Trc20Instance
     #[inline]
     pub fn new_raw(provider: P, address: Address) -> Self {
-        Self { address, provider, interface: Interface::empty() }
+        Self { address, caller: None, provider, interface: Interface::empty() }
     }
 
     // ── raw calldata ──────────────────────────────────────────────────────────
@@ -103,7 +117,11 @@ impl<P: TronProvider> ContractInstance<P> {
     /// Chain `.value(trx)` for payable calls.
     #[inline]
     pub fn call_raw(&self, data: Bytes) -> CallBuilder<P> {
-        CallBuilder::new(self.provider.clone(), self.address, data)
+        let call = CallBuilder::new(self.provider.clone(), self.address, data);
+        match self.caller {
+            Some(caller) => call.caller(caller),
+            None => call,
+        }
     }
 
     // ── dynamic ABI ───────────────────────────────────────────────────────────
@@ -113,7 +131,7 @@ impl<P: TronProvider> ContractInstance<P> {
     /// Returns an error if the function is not found in the ABI.
     pub fn function(&self, fn_name: &str, args: &[DynSolValue]) -> Result<CallBuilder<P>> {
         let data = self.encode_input(fn_name, args)?;
-        Ok(CallBuilder::new(self.provider.clone(), self.address, data))
+        Ok(self.call_raw(data))
     }
 
     /// Create a [`CallBuilder`] for the function with the given `selector`.
@@ -125,7 +143,7 @@ impl<P: TronProvider> ContractInstance<P> {
         args: &[DynSolValue],
     ) -> Result<CallBuilder<P>> {
         let data = self.encode_input_with_selector(selector, args)?;
-        Ok(CallBuilder::new(self.provider.clone(), self.address, data))
+        Ok(self.call_raw(data))
     }
 
     // ── convenience (dynamic call + immediate decode) ─────────────────────────
@@ -149,8 +167,8 @@ impl<P: TronProvider> ContractInstance<P> {
 
 // ── Extension trait ───────────────────────────────────────────────────────────
 
-/// Convenience methods on any [`TronProvider`] for creating contract handles.
-pub trait ContractExt: TronProvider + Sized {
+/// Convenience methods on any [`ContractReadProvider`] for creating contract handles.
+pub trait ContractExt: ContractReadProvider + Sized {
     /// Bind to the contract at `address` with a dynamic ABI [`Interface`].
     fn contract(&self, address: Address, interface: Interface) -> ContractInstance<Self> {
         ContractInstance::new(address, self.clone(), interface)
@@ -172,9 +190,12 @@ pub trait ContractExt: TronProvider + Sized {
     ///     .await?;
     /// # Ok(()) }
     /// ```
-    fn deploy(&self, bytecode: impl Into<tronz_primitives::Bytes>) -> DeployBuilder<Self> {
+    fn deploy(&self, bytecode: impl Into<tronz_primitives::Bytes>) -> DeployBuilder<Self>
+    where
+        Self: TronProvider,
+    {
         DeployBuilder::new(self.clone(), bytecode)
     }
 }
 
-impl<P: TronProvider> ContractExt for P {}
+impl<P: ContractReadProvider> ContractExt for P {}

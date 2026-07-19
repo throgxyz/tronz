@@ -2,9 +2,14 @@
 
 use std::sync::Arc;
 
-use tronz_primitives::Address;
+use tronz_primitives::{Address, TxId};
 
-use crate::{provider::TronProvider, transport::TronTransport};
+use crate::{
+    error::{ProviderError, Result},
+    provider::{ContractReadProvider, TronProvider},
+    transport::TronTransport,
+    types::{ConstantCallResult, TransactionInfo, TriggerSmartContract},
+};
 
 /// The base provider: wraps a transport (and optional signer address) in an
 /// `Arc` so it is cheap to clone and `Send + Sync`.
@@ -43,6 +48,32 @@ impl<T: TronTransport> RootProvider<T> {
 }
 
 impl<T: TronTransport> crate::provider::private::Sealed for RootProvider<T> {}
+impl<T: TronTransport> crate::provider::private::ContractReadSealed for RootProvider<T> {}
+
+impl<T: TronTransport> ContractReadProvider for RootProvider<T> {
+    fn default_caller(&self) -> Option<Address> {
+        RootProvider::signer_address(self)
+    }
+
+    async fn call_contract(&self, params: TriggerSmartContract) -> Result<ConstantCallResult> {
+        self.transport().trigger_constant_contract(params).await.map_err(ProviderError::transport)
+    }
+
+    async fn estimate_contract_energy(&self, params: TriggerSmartContract) -> Result<i64> {
+        self.transport().estimate_energy(params).await.map_err(ProviderError::transport)
+    }
+
+    async fn transaction_info(&self, tx_id: TxId) -> Result<Option<TransactionInfo>> {
+        self.transport().get_transaction_info(tx_id).await.map_err(ProviderError::transport)
+    }
+
+    async fn transaction_infos_by_block(&self, block_num: i64) -> Result<Vec<TransactionInfo>> {
+        self.transport()
+            .get_transaction_info_by_block_num(block_num)
+            .await
+            .map_err(ProviderError::transport)
+    }
+}
 
 impl<T: TronTransport> TronProvider for RootProvider<T> {
     type Transport = T;

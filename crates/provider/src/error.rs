@@ -247,6 +247,12 @@ impl<E: StdError + 'static> RpcError<E> {
 }
 
 impl RpcError<TransportErrorKind> {
+    /// Lift a transport-layer error into a [`ProviderError`].
+    #[inline]
+    pub(crate) fn transport<E: Into<TransportErrorKind>>(e: E) -> Self {
+        Self::from(e.into())
+    }
+
     /// Returns `true` if the underlying transport error is retryable.
     #[inline]
     pub fn is_retryable(&self) -> bool {

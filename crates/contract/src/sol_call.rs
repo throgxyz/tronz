@@ -9,8 +9,8 @@
 use core::marker::PhantomData;
 
 use alloy_sol_types::SolCall;
-use tronz_primitives::Trx;
-use tronz_provider::{PendingTransaction, TronProvider};
+use tronz_primitives::{Address, Trx};
+use tronz_provider::{ContractReadProvider, PendingTransaction, TronProvider};
 
 use crate::{
     call::CallBuilder,
@@ -30,7 +30,7 @@ pub struct TronCallBuilder<P, C> {
     _call: PhantomData<fn() -> C>,
 }
 
-impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
+impl<P: ContractReadProvider, C: SolCall> TronCallBuilder<P, C> {
     /// Wrap a raw [`CallBuilder`].
     #[inline]
     pub fn new(inner: CallBuilder<P>) -> Self {
@@ -49,6 +49,12 @@ impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
         Self { inner: self.inner.token(token_id, value), _call: PhantomData }
     }
 
+    /// Set the caller (`msg.sender`) used for simulation and energy estimation.
+    #[inline]
+    pub fn caller(self, caller: Address) -> Self {
+        Self { inner: self.inner.caller(caller), _call: PhantomData }
+    }
+
     /// Estimate the energy this call would consume.
     pub async fn estimate_energy(&self) -> Result<i64> {
         self.inner.estimate_energy().await
@@ -62,7 +68,9 @@ impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
         C::abi_decode_returns_validate(&output)
             .map_err(|e| ContractError::decode_err(fn_name, &output, e.into()))
     }
+}
 
+impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
     /// Broadcast the call as a state-changing transaction (`trigger_smart_contract`).
     ///
     /// Requires a signer attached to the provider.
@@ -76,7 +84,11 @@ mod tests {
     use alloy_primitives::U256;
     use alloy_sol_types::sol;
     use tronz_primitives::{Address, Bytes};
-    use tronz_provider::{RootProvider, transport::mock::MockTransport, types::ConstantCallResult};
+    use tronz_provider::{
+        RootProvider, SolidityProvider,
+        transport::mock::{MockSolidityTransport, MockTransport},
+        types::ConstantCallResult,
+    };
 
     use super::*;
     use crate::{call::CallBuilder, error::ContractError};
@@ -89,10 +101,8 @@ mod tests {
         Address::from_evm_bytes([1u8; 20])
     }
 
-    fn make_builder(
-        provider: RootProvider<MockTransport>,
-    ) -> TronCallBuilder<RootProvider<MockTransport>, balanceOfCall> {
-        TronCallBuilder::new(CallBuilder::new(provider, addr(), Bytes::new()))
+    fn make_builder<P: ContractReadProvider>(provider: P) -> TronCallBuilder<P, balanceOfCall> {
+        TronCallBuilder::new(CallBuilder::new(provider, addr(), Bytes::new())).caller(addr())
     }
 
     fn canned(output: Vec<u8>) -> ConstantCallResult {
@@ -126,5 +136,41 @@ mod tests {
         provider.transport().push_ok("trigger_constant_contract", canned(vec![0xde, 0xad]));
         let err = make_builder(provider).call().await.unwrap_err();
         assert!(matches!(err, ContractError::Abi(_)), "expected Abi(_), got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn solidity_provider_reads_with_explicit_caller() {
+        let transport = MockSolidityTransport::new();
+        let mut out = [0u8; 32];
+        out[31] = 7;
+        transport.push_ok("trigger_constant_contract", canned(out.to_vec()));
+        let provider = SolidityProvider::new(transport);
+
+        let value = make_builder(provider).call().await.unwrap();
+        assert_eq!(value, U256::from(7u64));
+    }
+
+    #[tokio::test]
+    async fn solidity_provider_estimates_with_explicit_caller() {
+        let transport = MockSolidityTransport::new();
+        transport.push_ok("estimate_energy", 12_345_i64);
+        let provider = SolidityProvider::new(transport);
+
+        assert_eq!(make_builder(provider).estimate_energy().await.unwrap(), 12_345);
+    }
+
+    #[tokio::test]
+    async fn read_without_caller_falls_back_to_zero_address() {
+        let transport = MockSolidityTransport::new();
+        let mut out = [0u8; 32];
+        out[31] = 42;
+        transport.push_ok("trigger_constant_contract", canned(out.to_vec()));
+        let provider = SolidityProvider::new(transport);
+
+        let builder: TronCallBuilder<_, balanceOfCall> =
+            TronCallBuilder::new(CallBuilder::new(provider, addr(), Bytes::new()));
+
+        let value = builder.call().await.unwrap();
+        assert_eq!(value, U256::from(42u64));
     }
 }

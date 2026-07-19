@@ -4,7 +4,7 @@
 
 use tronz_contract::{SolCall as _, tron_sol};
 use tronz_primitives::{Address, Bytes, U256};
-use tronz_provider::TronProvider;
+use tronz_provider::{ContractReadProvider, TronProvider};
 
 tron_sol! {
     #[sol(rpc)]
@@ -18,6 +18,7 @@ tron_sol! {
         function transfer(address to, uint256 amount) external returns (bool);
         function approve(address spender, uint256 amount) external returns (bool);
         function transferFrom(address from, address to, uint256 amount) external returns (bool);
+        event Transfer(address indexed from, address indexed to, uint256 value);
     }
 }
 
@@ -53,6 +54,14 @@ async fn _erc20_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let _ = token.clone().at(addr);
     // generic entry point
     let _ = token.call_builder(&IERC20::balanceOfCall { owner: addr.into() }).call().await;
+}
+
+#[allow(dead_code, clippy::unused_async)]
+async fn _erc20_read_api<P: ContractReadProvider>(provider: P, addr: Address) {
+    let token = IERC20::new(addr, provider).caller(addr);
+    let _: U256 = token.balanceOf(addr).call().await.unwrap();
+    let _ = token.balanceOf(addr).caller(addr).estimate_energy().await;
+    let _ = token.Transfer_filter().query_block(1).await;
 }
 
 #[allow(dead_code)]

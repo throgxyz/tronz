@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use alloy_primitives::B256;
 use alloy_sol_types::SolEvent;
 use tronz_primitives::{Address, Log, TxId};
-use tronz_provider::{Error as ProviderError, TronProvider};
+use tronz_provider::{ContractReadProvider, Error as ProviderError};
 
 use crate::error::{ContractError, Result};
 
@@ -32,7 +32,7 @@ pub struct TronEventFilter<P, E> {
     _event: PhantomData<fn() -> E>,
 }
 
-impl<P: TronProvider, E: SolEvent> TronEventFilter<P, E> {
+impl<P: ContractReadProvider, E: SolEvent> TronEventFilter<P, E> {
     /// Create a new filter, optionally restricted to a specific contract address.
     pub fn new(provider: P, address: Option<Address>) -> Self {
         Self { provider, address, _event: PhantomData }
@@ -49,7 +49,7 @@ impl<P: TronProvider, E: SolEvent> TronEventFilter<P, E> {
     pub async fn query_tx(&self, tx_id: TxId) -> Result<Vec<E>> {
         let info = self
             .provider
-            .get_transaction_info(tx_id)
+            .transaction_info(tx_id)
             .await
             .map_err(ContractError::Provider)?
             .ok_or_else(|| {
@@ -62,7 +62,7 @@ impl<P: TronProvider, E: SolEvent> TronEventFilter<P, E> {
     pub async fn query_block(&self, block_num: i64) -> Result<Vec<E>> {
         let infos = self
             .provider
-            .get_transaction_info_by_block_num(block_num)
+            .transaction_infos_by_block(block_num)
             .await
             .map_err(ContractError::Provider)?;
         Ok(infos.iter().flat_map(|info| self.decode_logs(&info.logs)).collect())

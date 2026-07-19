@@ -4,7 +4,7 @@
 //! the Solidity type layer (`…Call` structs, events, errors, custom types,
 //! free-standing `struct`/`enum`/`type` definitions, …) and *additionally*
 //! generates a provider-bound `Instance` for every `contract`/`interface`
-//! carrying `#[sol(rpc)]`, wired to `tronz`'s `TronProvider`.
+//! carrying `#[sol(rpc)]`, wired to `tronz`'s `ContractReadProvider`.
 //!
 //! It also accepts a JSON ABI file path (or inline JSON) in the same
 //! `abigen`-style form that alloy's `sol!` supports:
@@ -30,7 +30,7 @@
 //!
 //! TRON-specific attributes:
 //!
-//! - `#[sol(rpc)]` — also generate a `TronProvider`-bound `Instance`.
+//! - `#[sol(rpc)]` — also generate a `ContractReadProvider`-bound `Instance`.
 //! - `#[sol(bytecode = "0x…")]` — embed creation bytecode and generate `deploy_builder` / `deploy`
 //!   helpers (requires `#[sol(rpc)]`).
 //! - `#[sol(deployed_bytecode = "0x…")]` — embed the runtime bytecode as a `DEPLOYED_BYTECODE`
@@ -54,7 +54,7 @@
 //!     }
 //! }
 //!
-//! let contract = IERC20::new(usdt_addr, provider);
+//! let contract = IERC20::new(usdt_addr, provider).caller(owner);
 //! let balance = contract.balanceOf(owner).call().await?;
 //! ```
 
@@ -361,6 +361,7 @@ impl TronSol {
         let alloy = quote!(#kpriv::alloy_sol_types);
         let aprim = quote!(#kpriv::alloy_primitives);
         let taddr = quote!(#kpriv::tronz_primitives::Address);
+        let read_provider_tr = quote!(#kpriv::tronz_provider::ContractReadProvider);
         let provider_tr = quote!(#kpriv::tronz_provider::TronProvider);
         let cinst = quote!(#kpriv::ContractInstance);
         let tcb = quote!(#kpriv::TronCallBuilder);
@@ -564,11 +565,11 @@ impl TronSol {
 
                 /// A provider-bound handle to this contract.
                 #[derive(::core::clone::Clone)]
-                pub struct Instance<P: #provider_tr> {
+                pub struct Instance<P: #read_provider_tr> {
                     inner: #cinst<P>,
                 }
 
-                impl<P: #provider_tr> ::core::fmt::Debug for Instance<P> {
+                impl<P: #read_provider_tr> ::core::fmt::Debug for Instance<P> {
                     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
                         f.debug_struct(::core::stringify!(#name))
                             .field("address", &self.inner.address())
@@ -577,11 +578,11 @@ impl TronSol {
                 }
 
                 /// Bind to the contract at `address` over `provider`.
-                pub fn new<P: #provider_tr>(address: #taddr, provider: P) -> Instance<P> {
+                pub fn new<P: #read_provider_tr>(address: #taddr, provider: P) -> Instance<P> {
                     Instance { inner: #cinst::new_raw(provider, address) }
                 }
 
-                impl<P: #provider_tr> Instance<P> {
+                impl<P: #read_provider_tr> Instance<P> {
                     /// The contract address.
                     #[inline]
                     pub fn address(&self) -> #taddr {
@@ -599,6 +600,18 @@ impl TronSol {
                     pub fn at(mut self, address: #taddr) -> Self {
                         self.set_address(address);
                         self
+                    }
+
+                    /// Set the default caller (`msg.sender`) for read-only calls.
+                    #[inline]
+                    pub fn caller(self, caller: #taddr) -> Self {
+                        Self { inner: self.inner.caller(caller) }
+                    }
+
+                    /// Set the default caller in place.
+                    #[inline]
+                    pub fn set_caller(&mut self, caller: #taddr) {
+                        self.inner.set_caller(caller);
                     }
 
                     /// Borrow the underlying provider.
@@ -619,7 +632,7 @@ impl TronSol {
                     #(#methods)*
                 }
 
-                impl<P: #provider_tr> Instance<P> {
+                impl<P: #read_provider_tr> Instance<P> {
                     /// Build an event filter for any [`SolEvent`] type — generic
                     /// entry point used by all per-event filter methods.
                     #[inline]

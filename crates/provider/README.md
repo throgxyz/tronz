@@ -37,6 +37,11 @@ println!("solidified block: {}", block.number);
 # Ok(()) }
 ```
 
+Both FullNode providers and `SolidityProvider` implement
+[`ContractReadProvider`], the shared capability used by contract calls, energy
+estimation, and event queries. State freshness follows the provider: FullNode
+reads latest available state, while SolidityNode reads irreversible state.
+
 ## Crate layout
 
 | Module | Description |

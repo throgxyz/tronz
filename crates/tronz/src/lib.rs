@@ -68,7 +68,7 @@ pub mod providers {
 
 #[doc(no_inline)]
 pub use tronz_provider::{
-    ProviderBuilder, SolidityProvider, SolidityProviderBuilder, TronProvider,
+    ContractReadProvider, ProviderBuilder, SolidityProvider, SolidityProviderBuilder, TronProvider,
 };
 
 /// Low-level gRPC transport and well-known endpoint constants.

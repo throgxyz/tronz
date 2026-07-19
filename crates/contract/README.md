@@ -22,7 +22,7 @@ Load a JSON ABI at runtime and call any function by name:
 use tronz_contract::{Interface, JsonAbi, instance::ContractExt};
 
 let abi: JsonAbi = serde_json::from_str(ABI_JSON).unwrap();
-let contract = provider.contract(address, abi.into());
+let contract = provider.contract(address, abi.into()).caller(account);
 
 // read-only call
 let values = contract.call("balanceOf", &[account.into()]).await?;
@@ -69,7 +69,7 @@ Use the typed wrappers for well-known standards:
 ```rust,ignore
 use tronz_contract::trc20::Trc20Ext;
 
-let token = provider.trc20(usdt_address);
+let token = provider.trc20(usdt_address).caller(my_address);
 println!("name    : {}", token.name().await?);
 println!("balance : {}", token.balance_of(my_address).await?);
 
@@ -83,9 +83,25 @@ ownership, transfers, approvals, and operators:
 ```rust,ignore
 use tronz_contract::trc721::Trc721Ext;
 
-let nft = provider.trc721(contract_address);
+let nft = provider.trc721(contract_address).caller(my_address);
 let owner = nft.owner_of(token_id).await?;
 ```
+
+### Reading solidified contract state
+
+The same contract bindings accept a read-only `SolidityProvider`. Set a caller
+when no signer-backed FullNode provider is attached so contracts that inspect
+`msg.sender` execute with the intended address:
+
+```rust,ignore
+use tronz_contract::trc20::Trc20Ext;
+
+let token = solidity_provider.trc20(usdt_address).caller(my_address);
+let balance = token.balance_of(my_address).await?;
+```
+
+Constant calls, energy estimation, and event queries are available over either
+provider. Sending and deploying still require a signer-backed `TronProvider`.
 
 ## Generating provider-bound bindings
 
@@ -103,7 +119,7 @@ tron_sol! {
     }
 }
 
-let token = IToken::new(contract_address, provider);
+let token = IToken::new(contract_address, provider).caller(my_address);
 let balance = token.balance_of(owner).call().await?;
 let transfers = token.Transfer_filter().query_block(block_number).await?;
 ```

@@ -158,7 +158,7 @@ impl Interface {
     /// Equivalent to `ContractInstance::new(address, provider, interface)`.
     pub fn connect<P>(self, address: Address, provider: P) -> ContractInstance<P>
     where
-        P: tronz_provider::TronProvider,
+        P: tronz_provider::ContractReadProvider,
     {
         ContractInstance::new(address, provider, self)
     }

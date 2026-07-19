@@ -4,18 +4,21 @@
 
 use std::time::Duration;
 
-use tronz_primitives::{Address, Trx};
+use tronz_primitives::{Address, Trx, TxId};
 use tronz_signer::TronSigner;
 
 use crate::{
     error::{Error, Result},
     fillers::{FeeLimitFiller, HasSigner, Identity, JoinFill, SignerFiller, TaposFiller, TxFiller},
-    provider::{PendingTransaction, RootProvider, TronProvider},
+    provider::{ContractReadProvider, PendingTransaction, RootProvider, TronProvider},
     transport::{
         TronTransport,
         grpc::{GrpcTransport, GrpcTransportConfig, RetryConfig},
     },
-    types::{ContractType, RawTransaction, SignedTransaction, TransactionRequest},
+    types::{
+        ConstantCallResult, ContractType, RawTransaction, SignedTransaction, TransactionInfo,
+        TransactionRequest, TriggerSmartContract,
+    },
 };
 
 /// Accumulates fillers and finally binds a transport to produce a
@@ -234,6 +237,34 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> crate::provider::priva
     for FilledProvider<T, F>
 {
 }
+impl<T: TronTransport, F: TxFiller + HasSigner + 'static>
+    crate::provider::private::ContractReadSealed for FilledProvider<T, F>
+{
+}
+
+impl<T: TronTransport, F: TxFiller + HasSigner + 'static> ContractReadProvider
+    for FilledProvider<T, F>
+{
+    fn default_caller(&self) -> Option<Address> {
+        self.filler.signer_address()
+    }
+
+    async fn call_contract(&self, params: TriggerSmartContract) -> Result<ConstantCallResult> {
+        self.inner.call_contract(params).await
+    }
+
+    async fn estimate_contract_energy(&self, params: TriggerSmartContract) -> Result<i64> {
+        self.inner.estimate_contract_energy(params).await
+    }
+
+    async fn transaction_info(&self, tx_id: TxId) -> Result<Option<TransactionInfo>> {
+        self.inner.transaction_info(tx_id).await
+    }
+
+    async fn transaction_infos_by_block(&self, block_num: i64) -> Result<Vec<TransactionInfo>> {
+        self.inner.transaction_infos_by_block(block_num).await
+    }
+}
 
 impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for FilledProvider<T, F> {
     type Transport = T;
@@ -261,11 +292,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for Fille
 
         let tx_id = raw.tx_id();
         let signed = SignedTransaction { raw, signatures: vec![sig] };
-        self.inner
-            .transport()
-            .broadcast_transaction(&signed)
-            .await
-            .map_err(|e| Error::from(e.into()))?;
+        self.inner.transport().broadcast_transaction(&signed).await.map_err(Error::transport)?;
 
         Ok(PendingTransaction::new(self.clone(), tx_id))
     }
@@ -361,7 +388,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> FilledProvider<T, F> {
             ContractType::MarketSellAsset(c) => transport.market_sell_asset(c).await,
             ContractType::MarketCancelOrder(c) => transport.market_cancel_order(c).await,
         };
-        let mut raw = raw_result.map_err(|e| Error::from(e.into()))?;
+        let mut raw = raw_result.map_err(Error::transport)?;
 
         // ── 3. Apply request-level overrides ────────────────────────────────
         raw.apply_request_fields(&req).map_err(Error::Transport)?;

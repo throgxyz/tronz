@@ -79,14 +79,11 @@ pub trait MarketApi: TronProvider + Sized {
 
 impl<P: TronProvider> MarketApi for P {
     async fn get_market_order_by_id(&self, order_id: B256) -> Result<Option<MarketOrderInfo>> {
-        self.transport().get_market_order_by_id(order_id).await.map_err(|e| Error::from(e.into()))
+        self.transport().get_market_order_by_id(order_id).await.map_err(Error::transport)
     }
 
     async fn get_market_order_by_account(&self, address: Address) -> Result<Vec<MarketOrderInfo>> {
-        self.transport()
-            .get_market_order_by_account(address)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_market_order_by_account(address).await.map_err(Error::transport)
     }
 
     async fn get_market_price_by_pair(
@@ -97,7 +94,7 @@ impl<P: TronProvider> MarketApi for P {
         self.transport()
             .get_market_price_by_pair(sell_token_id, buy_token_id)
             .await
-            .map_err(|e| Error::from(e.into()))
+            .map_err(Error::transport)
     }
 
     async fn get_market_order_list_by_pair(
@@ -108,11 +105,11 @@ impl<P: TronProvider> MarketApi for P {
         self.transport()
             .get_market_order_list_by_pair(sell_token_id, buy_token_id)
             .await
-            .map_err(|e| Error::from(e.into()))
+            .map_err(Error::transport)
     }
 
     async fn get_market_pair_list(&self) -> Result<Vec<MarketOrderPair>> {
-        self.transport().get_market_pair_list().await.map_err(|e| Error::from(e.into()))
+        self.transport().get_market_pair_list().await.map_err(Error::transport)
     }
 
     fn market_sell(&self) -> MarketSellBuilder<'_, Self> {

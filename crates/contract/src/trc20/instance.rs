@@ -2,7 +2,7 @@
 
 use alloy_sol_types::SolCall as _;
 use tronz_primitives::{Address, U256};
-use tronz_provider::{PendingTransaction, TronProvider};
+use tronz_provider::{ContractReadProvider, PendingTransaction, TronProvider};
 
 use crate::{
     error::{ContractError, Result},
@@ -23,9 +23,10 @@ pub type Trc20Error = ContractError;
 /// ```no_run
 /// # use tronz_contract::trc20::Trc20Ext;
 /// # use tronz_primitives::Address;
-/// # async fn run(provider: impl tronz_provider::TronProvider + Clone) {
+/// # async fn run(provider: impl tronz_provider::ContractReadProvider + Clone) {
 /// let contract: Address = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".parse().unwrap();
-/// let token = provider.trc20(contract);
+/// let caller: Address = "TXYJg94nXn8jDVVK4yg4B8yXWNR1pQxv6f".parse().unwrap();
+/// let token = provider.trc20(contract).caller(caller);
 /// let name = token.name().await.unwrap();
 /// # }
 /// ```
@@ -33,11 +34,11 @@ pub type Trc20Error = ContractError;
 /// Internally wraps a [`ContractInstance`] and encodes all calldata using the
 /// statically generated [`sol!`](alloy_sol_macro::sol) types — no JSON ABI required.
 #[derive(Clone)]
-pub struct Trc20Instance<P: TronProvider> {
+pub struct Trc20Instance<P: ContractReadProvider> {
     inner: ContractInstance<P>,
 }
 
-impl<P: TronProvider> Trc20Instance<P> {
+impl<P: ContractReadProvider> Trc20Instance<P> {
     /// Bind to the TRC20 contract at `address`.
     pub fn new(provider: P, address: Address) -> Self {
         Self { inner: ContractInstance::new_raw(provider, address) }
@@ -56,6 +57,11 @@ impl<P: TronProvider> Trc20Instance<P> {
     /// Return a new instance pointing at a different address.
     pub fn at(self, address: Address) -> Self {
         Self { inner: self.inner.at(address) }
+    }
+
+    /// Set the default caller (`msg.sender`) for read-only calls.
+    pub fn caller(self, caller: Address) -> Self {
+        Self { inner: self.inner.caller(caller) }
     }
 
     // ── reads ─────────────────────────────────────────────────────────────────
@@ -96,7 +102,9 @@ impl<P: TronProvider> Trc20Instance<P> {
         let out = self.inner.call_raw(encode_allowance(owner, spender)).call().await?;
         Ok(decode_uint256_return(&out)?)
     }
+}
 
+impl<P: TronProvider> Trc20Instance<P> {
     // ── writes ────────────────────────────────────────────────────────────────
 
     /// Transfer `amount` tokens from the signer's account to `to`.
@@ -130,12 +138,12 @@ impl<P: TronProvider> Trc20Instance<P> {
 
 // ── Extension trait ───────────────────────────────────────────────────────────
 
-/// Convenience method on any [`TronProvider`] for binding a TRC20 instance.
-pub trait Trc20Ext: TronProvider + Sized {
+/// Convenience method on any [`ContractReadProvider`] for binding a TRC20 instance.
+pub trait Trc20Ext: ContractReadProvider + Sized {
     /// Bind to the TRC20 contract at `address`.
     fn trc20(&self, address: Address) -> Trc20Instance<Self> {
         Trc20Instance::new(self.clone(), address)
     }
 }
 
-impl<P: TronProvider> Trc20Ext for P {}
+impl<P: ContractReadProvider> Trc20Ext for P {}

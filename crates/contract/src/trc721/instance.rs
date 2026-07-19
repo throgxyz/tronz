@@ -2,7 +2,7 @@
 
 use alloy_sol_types::SolCall as _;
 use tronz_primitives::{Address, U256};
-use tronz_provider::{PendingTransaction, TronProvider};
+use tronz_provider::{ContractReadProvider, PendingTransaction, TronProvider};
 
 use crate::{
     error::{ContractError, Result},
@@ -24,18 +24,19 @@ pub type Trc721Error = ContractError;
 /// ```no_run
 /// # use tronz_contract::trc721::Trc721Ext;
 /// # use tronz_primitives::Address;
-/// # async fn run(provider: impl tronz_provider::TronProvider + Clone) {
+/// # async fn run(provider: impl tronz_provider::ContractReadProvider + Clone) {
 /// let contract: Address = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf".parse().unwrap();
-/// let token = provider.trc721(contract);
+/// let caller: Address = "TXYJg94nXn8jDVVK4yg4B8yXWNR1pQxv6f".parse().unwrap();
+/// let token = provider.trc721(contract).caller(caller);
 /// let name = token.name().await.unwrap();
 /// # }
 /// ```
 #[derive(Clone)]
-pub struct Trc721Instance<P: TronProvider> {
+pub struct Trc721Instance<P: ContractReadProvider> {
     inner: ContractInstance<P>,
 }
 
-impl<P: TronProvider> Trc721Instance<P> {
+impl<P: ContractReadProvider> Trc721Instance<P> {
     /// Bind to the TRC721 contract at `address`.
     pub fn new(provider: P, address: Address) -> Self {
         Self { inner: ContractInstance::new_raw(provider, address) }
@@ -54,6 +55,11 @@ impl<P: TronProvider> Trc721Instance<P> {
     /// Return a new instance pointing at a different address.
     pub fn at(self, address: Address) -> Self {
         Self { inner: self.inner.at(address) }
+    }
+
+    /// Set the default caller (`msg.sender`) for read-only calls.
+    pub fn caller(self, caller: Address) -> Self {
+        Self { inner: self.inner.caller(caller) }
     }
 
     // ── reads ─────────────────────────────────────────────────────────────────
@@ -119,7 +125,9 @@ impl<P: TronProvider> Trc721Instance<P> {
             .await?;
         Ok(decode_bool_return(&out)?)
     }
+}
 
+impl<P: TronProvider> Trc721Instance<P> {
     // ── writes ────────────────────────────────────────────────────────────────
 
     /// Transfer `token_id` from `from` to `to`.
@@ -170,12 +178,12 @@ impl<P: TronProvider> Trc721Instance<P> {
 
 // ── Extension trait ───────────────────────────────────────────────────────────
 
-/// Convenience method on any [`TronProvider`] for binding a TRC721 instance.
-pub trait Trc721Ext: TronProvider + Sized {
+/// Convenience method on any [`ContractReadProvider`] for binding a TRC721 instance.
+pub trait Trc721Ext: ContractReadProvider + Sized {
     /// Bind to the TRC721 contract at `address`.
     fn trc721(&self, address: Address) -> Trc721Instance<Self> {
         Trc721Instance::new(self.clone(), address)
     }
 }
 
-impl<P: TronProvider> Trc721Ext for P {}
+impl<P: ContractReadProvider> Trc721Ext for P {}

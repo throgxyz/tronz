@@ -8,7 +8,7 @@ use tronz_primitives::{Address, TxId};
 use crate::{
     Result,
     error::ProviderError,
-    provider::pending::PendingTransactionError,
+    provider::{ContractReadProvider, pending::PendingTransactionError},
     transport::{
         SolidityTransport,
         grpc::{RetryConfig, SolidityGrpcTransport, SolidityGrpcTransportBuilder},
@@ -28,6 +28,26 @@ pub struct SolidityProvider<T: SolidityTransport = SolidityGrpcTransport> {
     inner: Arc<T>,
 }
 
+impl<T: SolidityTransport> crate::provider::private::ContractReadSealed for SolidityProvider<T> {}
+
+impl<T: SolidityTransport> ContractReadProvider for SolidityProvider<T> {
+    async fn call_contract(&self, params: TriggerSmartContract) -> Result<ConstantCallResult> {
+        SolidityProvider::trigger_constant_contract(self, params).await
+    }
+
+    async fn estimate_contract_energy(&self, params: TriggerSmartContract) -> Result<i64> {
+        SolidityProvider::estimate_energy(self, params).await
+    }
+
+    async fn transaction_info(&self, tx_id: TxId) -> Result<Option<TransactionInfo>> {
+        SolidityProvider::get_transaction_info(self, tx_id).await
+    }
+
+    async fn transaction_infos_by_block(&self, block_num: i64) -> Result<Vec<TransactionInfo>> {
+        SolidityProvider::get_transaction_info_by_block_num(self, block_num).await
+    }
+}
+
 impl<T: SolidityTransport> SolidityProvider<T> {
     /// Wrap an existing [`SolidityTransport`].
     pub fn new(transport: T) -> Self {
@@ -41,22 +61,22 @@ impl<T: SolidityTransport> SolidityProvider<T> {
 
     /// Fetch the latest solidified block.
     pub async fn get_now_block(&self) -> Result<BlockInfo> {
-        self.inner.get_now_block().await.map_err(|e| ProviderError::from(e.into()))
+        self.inner.get_now_block().await.map_err(ProviderError::transport)
     }
 
     /// Fetch a solidified block by height.
     pub async fn get_block_by_number(&self, num: i64) -> Result<BlockInfo> {
-        self.inner.get_block_by_number(num).await.map_err(|e| ProviderError::from(e.into()))
+        self.inner.get_block_by_number(num).await.map_err(ProviderError::transport)
     }
 
     /// Fetch solidified account state.
     pub async fn get_account(&self, address: Address) -> Result<AccountInfo> {
-        self.inner.get_account(address).await.map_err(|e| ProviderError::from(e.into()))
+        self.inner.get_account(address).await.map_err(ProviderError::transport)
     }
 
     /// Fetch a transaction by id from solidified state.
     pub async fn get_transaction(&self, tx_id: TxId) -> Result<SignedTransaction> {
-        self.inner.get_transaction_by_id(tx_id).await.map_err(|e| ProviderError::from(e.into()))
+        self.inner.get_transaction_by_id(tx_id).await.map_err(ProviderError::transport)
     }
 
     /// Fetch a transaction's receipt from solidified state.
@@ -64,7 +84,7 @@ impl<T: SolidityTransport> SolidityProvider<T> {
     /// Returns `None` until the transaction has solidified — this is the signal
     /// [`wait_for_transaction`](Self::wait_for_transaction) polls on.
     pub async fn get_transaction_info(&self, tx_id: TxId) -> Result<Option<TransactionInfo>> {
-        self.inner.get_transaction_info(tx_id).await.map_err(|e| ProviderError::from(e.into()))
+        self.inner.get_transaction_info(tx_id).await.map_err(ProviderError::transport)
     }
 
     /// Fetch all transaction receipts in a solidified block.
@@ -75,7 +95,7 @@ impl<T: SolidityTransport> SolidityProvider<T> {
         self.inner
             .get_transaction_info_by_block_num(block_num)
             .await
-            .map_err(|e| ProviderError::from(e.into()))
+            .map_err(ProviderError::transport)
     }
 
     /// Count transactions in a solidified block by block number.
@@ -83,7 +103,7 @@ impl<T: SolidityTransport> SolidityProvider<T> {
         self.inner
             .get_transaction_count_by_block_num(block_num)
             .await
-            .map_err(|e| ProviderError::from(e.into()))
+            .map_err(ProviderError::transport)
     }
 
     /// Execute a constant (read-only) contract call against solidified state.
@@ -91,15 +111,12 @@ impl<T: SolidityTransport> SolidityProvider<T> {
         &self,
         params: TriggerSmartContract,
     ) -> Result<ConstantCallResult> {
-        self.inner
-            .trigger_constant_contract(params)
-            .await
-            .map_err(|e| ProviderError::from(e.into()))
+        self.inner.trigger_constant_contract(params).await.map_err(ProviderError::transport)
     }
 
     /// Estimate the energy a contract call would consume against solidified state.
     pub async fn estimate_energy(&self, params: TriggerSmartContract) -> Result<i64> {
-        self.inner.estimate_energy(params).await.map_err(|e| ProviderError::from(e.into()))
+        self.inner.estimate_energy(params).await.map_err(ProviderError::transport)
     }
 
     /// Poll until `tx_id` has solidified, regardless of execution result.
@@ -253,6 +270,19 @@ mod tests {
 
     fn provider(mock: MockSolidityTransport) -> SolidityProvider<MockSolidityTransport> {
         SolidityProvider::new(mock)
+    }
+
+    #[tokio::test]
+    async fn contract_read_capability_dispatches_receipt_queries() {
+        let mock = MockSolidityTransport::new();
+        mock.push_ok::<Option<TransactionInfo>>(
+            "get_transaction_info",
+            Some(info(TxStatus::Success)),
+        );
+
+        let receipt =
+            ContractReadProvider::transaction_info(&provider(mock), TxId::ZERO).await.unwrap();
+        assert!(receipt.is_some_and(|info| info.is_success()));
     }
 
     #[tokio::test]

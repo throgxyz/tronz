@@ -131,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
     let usdt = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".parse()?;
     let holder = "THoldersAddress".parse()?;
 
-    let token = provider.trc20(usdt);
+    let token = provider.trc20(usdt).caller(holder);
     let balance = token.balance_of(holder).await?;
     let decimals = token.decimals().await?;
 

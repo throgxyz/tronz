@@ -2,8 +2,7 @@
 
 use tronz_primitives::{Address, Bytes, Trx};
 use tronz_provider::{
-    Error as ProviderError, PendingTransaction, TronProvider,
-    transport::TronTransport as _,
+    ContractReadProvider, Error as ProviderError, PendingTransaction, TronProvider,
     types::{ContractType, TransactionRequest, TriggerSmartContract},
 };
 
@@ -20,7 +19,7 @@ use crate::error::{ContractError, Result};
 /// use tronz_primitives::parse_trx;
 ///
 /// // Read-only simulation (trigger_constant_contract)
-/// let output = contract.call_raw(calldata).call().await?;
+/// let output = contract.call_raw(calldata).caller(caller).call().await?;
 ///
 /// // State-changing broadcast (trigger_smart_contract → sign → broadcast)
 /// let pending = contract.call_raw(calldata).send().await?;
@@ -39,17 +38,19 @@ use crate::error::{ContractError, Result};
 pub struct CallBuilder<P> {
     provider: P,
     address: Address,
+    caller: Option<Address>,
     data: Bytes,
     call_value: Trx,
     call_token_value: Trx,
     token_id: i64,
 }
 
-impl<P: TronProvider> CallBuilder<P> {
+impl<P: ContractReadProvider> CallBuilder<P> {
     pub(crate) fn new(provider: P, address: Address, data: Bytes) -> Self {
         Self {
             provider,
             address,
+            caller: None,
             data,
             call_value: Trx::ZERO,
             call_token_value: Trx::ZERO,
@@ -72,6 +73,23 @@ impl<P: TronProvider> CallBuilder<P> {
         self
     }
 
+    /// Set `msg.sender` for [`call`](Self::call) and
+    /// [`estimate_energy`](Self::estimate_energy) — the analogue of alloy's
+    /// `CallBuilder::from`. Does not affect the signer used by [`send`](Self::send).
+    ///
+    /// When unset, resolves to the provider's signer, else [`Address::ZERO`].
+    /// Set this explicitly for views that read `msg.sender`.
+    #[inline]
+    pub fn caller(mut self, caller: Address) -> Self {
+        self.caller = Some(caller);
+        self
+    }
+
+    /// Explicit caller, else the provider's signer, else the zero address.
+    fn resolved_caller(&self) -> Address {
+        self.caller.or_else(|| self.provider.default_caller()).unwrap_or(Address::ZERO)
+    }
+
     /// Estimate the energy this call would consume (`estimate_energy`).
     ///
     /// Mirrors [`estimate_gas`] in alloy: no state change, no signer required.
@@ -80,7 +98,7 @@ impl<P: TronProvider> CallBuilder<P> {
     /// [`estimate_gas`]: https://alloy.rs
     /// [`send`]: CallBuilder::send
     pub async fn estimate_energy(&self) -> Result<i64> {
-        let caller = self.provider.signer_address().unwrap_or(self.address);
+        let caller = self.resolved_caller();
         let params = TriggerSmartContract {
             owner_address: caller,
             contract_address: self.address,
@@ -89,7 +107,7 @@ impl<P: TronProvider> CallBuilder<P> {
             call_token_value: self.call_token_value,
             token_id: self.token_id,
         };
-        self.provider.estimate_energy(params).await.map_err(ContractError::Provider)
+        self.provider.estimate_contract_energy(params).await.map_err(ContractError::Provider)
     }
 
     /// Execute as a **constant call** (`trigger_constant_contract`).
@@ -97,7 +115,7 @@ impl<P: TronProvider> CallBuilder<P> {
     /// No state change, no energy consumed, no signer required.
     /// Returns the raw ABI-encoded output bytes.
     pub async fn call(self) -> Result<Bytes> {
-        let caller = self.provider.signer_address().unwrap_or(self.address);
+        let caller = self.resolved_caller();
         let params = TriggerSmartContract {
             owner_address: caller,
             contract_address: self.address,
@@ -106,18 +124,15 @@ impl<P: TronProvider> CallBuilder<P> {
             call_token_value: self.call_token_value,
             token_id: self.token_id,
         };
-        let result = self
-            .provider
-            .transport()
-            .trigger_constant_contract(params)
-            .await
-            .map_err(|e| ContractError::Provider(ProviderError::Transport(e.into())))?;
+        let result = self.provider.call_contract(params).await.map_err(ContractError::Provider)?;
         if result.revert_reason.is_some() {
             return Err(ContractError::Revert(result.output));
         }
         Ok(result.output)
     }
+}
 
+impl<P: TronProvider> CallBuilder<P> {
     /// Execute as a **state-changing call** (`trigger_smart_contract`).
     ///
     /// Requires a signer to be attached to the provider. The transaction is

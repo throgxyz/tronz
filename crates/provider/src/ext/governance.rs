@@ -69,7 +69,7 @@ pub trait GovernanceApi: TronProvider + Sized {
 
 impl<P: TronProvider> GovernanceApi for P {
     async fn list_proposals(&self) -> Result<Vec<ProposalInfo>> {
-        self.transport().list_proposals().await.map_err(|e| Error::from(e.into()))
+        self.transport().list_proposals().await.map_err(Error::transport)
     }
 
     async fn get_paginated_proposal_list(
@@ -77,14 +77,11 @@ impl<P: TronProvider> GovernanceApi for P {
         offset: i64,
         limit: i64,
     ) -> Result<Vec<ProposalInfo>> {
-        self.transport()
-            .get_paginated_proposal_list(offset, limit)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_paginated_proposal_list(offset, limit).await.map_err(Error::transport)
     }
 
     async fn get_proposal_by_id(&self, proposal_id: i64) -> Result<ProposalInfo> {
-        self.transport().get_proposal_by_id(proposal_id).await.map_err(|e| Error::from(e.into()))
+        self.transport().get_proposal_by_id(proposal_id).await.map_err(Error::transport)
     }
 
     fn submit_proposal(&self) -> SubmitProposalBuilder<'_, Self> {

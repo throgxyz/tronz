@@ -74,7 +74,7 @@ pub trait ExchangeApi: TronProvider + Sized {
 
 impl<P: TronProvider> ExchangeApi for P {
     async fn list_exchanges(&self) -> Result<Vec<ExchangeInfo>> {
-        self.transport().list_exchanges().await.map_err(|e| Error::from(e.into()))
+        self.transport().list_exchanges().await.map_err(Error::transport)
     }
 
     async fn get_paginated_exchange_list(
@@ -82,14 +82,11 @@ impl<P: TronProvider> ExchangeApi for P {
         offset: i64,
         limit: i64,
     ) -> Result<Vec<ExchangeInfo>> {
-        self.transport()
-            .get_paginated_exchange_list(offset, limit)
-            .await
-            .map_err(|e| Error::from(e.into()))
+        self.transport().get_paginated_exchange_list(offset, limit).await.map_err(Error::transport)
     }
 
     async fn get_exchange_by_id(&self, exchange_id: i64) -> Result<Option<ExchangeInfo>> {
-        self.transport().get_exchange_by_id(exchange_id).await.map_err(|e| Error::from(e.into()))
+        self.transport().get_exchange_by_id(exchange_id).await.map_err(Error::transport)
     }
 
     fn exchange_create(&self) -> ExchangeCreateBuilder<'_, Self> {

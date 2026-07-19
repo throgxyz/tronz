@@ -26,6 +26,13 @@ pub const EVM_ADDRESS_LEN: usize = 20;
 pub struct Address([u8; ADDRESS_LEN]);
 
 impl Address {
+    /// The zero address (`0x41` prefix followed by 20 zero bytes).
+    pub const ZERO: Self = {
+        let mut bytes = [0u8; ADDRESS_LEN];
+        bytes[0] = ADDRESS_PREFIX;
+        Self(bytes)
+    };
+
     /// Construct from the full 21-byte representation, validating the prefix.
     pub fn from_bytes(bytes: [u8; ADDRESS_LEN]) -> Result<Self, AddressError> {
         if bytes[0] != ADDRESS_PREFIX {

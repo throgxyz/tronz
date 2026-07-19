@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `PendingTransaction::await_solidified` / `await_solidified_success` (and
   their `*_with` variants) to bridge from a FullNode broadcast straight to
   solidification.
+- `ContractReadProvider`, a shared contract-call capability implemented by both
+  FullNode providers and `SolidityProvider`. `ContractInstance`, TRC20/TRC721
+  instances, `TronEventFilter`, and `tron_sol!` bindings can now read either
+  latest or solidified state without gaining write capabilities.
+- `.caller(address)` on contract instances and call builders for explicitly
+  setting `msg.sender` during constant calls and energy estimation.
 
 ### Changed
 
@@ -30,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tronz-provider`. The `tronz_provider::types::Log` re-export has been removed;
   import it from `tronz-primitives` (or the `tronz` umbrella) instead. The type,
   its fields, and the `Log::new` constructor are otherwise unchanged.
+- Read-only contract calls without a signer no longer use the contract address
+  as `msg.sender`. They now fall back to the zero address (most view functions
+  ignore the caller); supply `.caller(address)` when `msg.sender` matters.
 
 ### Fixed
 
