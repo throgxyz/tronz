@@ -11,18 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(provider)* add ContractReadProvider so SolidityProvider can drive contract reads
-- add SolidityNode provider support
-- *(provider)* add solidified stake/delegation queries to SolidityProvider
-- *(provider)* add GetPaginatedNowWitnessList and solidified witness queries
-
-### Other
-
-- add CatFee as a project sponsor
-- *(primitives)* move Log into tronz-primitives
-
-### Added
-
 - `SolidityProvider`: a read-only provider over a TRON SolidityNode
   (`protocol.WalletSolidity`) exposing solidified — irreversible — state. It has
   no signer, fillers, or broadcast, so mutating state through it is a

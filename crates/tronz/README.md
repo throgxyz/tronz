@@ -88,7 +88,7 @@ println!("solidified in block {}", receipt.block_number);
 # }
 ```
 
-For more examples, see the [`examples/`](https://github.com/throgxyz/tronz/tree/main/examples) directory.
+For more examples, see the [throgxyz/examples](https://github.com/throgxyz/examples) repository.
 
 ## Crates
 
