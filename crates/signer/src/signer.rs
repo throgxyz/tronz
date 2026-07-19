@@ -21,6 +21,27 @@ pub trait TronSigner: Clone + Send + Sync + 'static {
         &self,
         hash: B256,
     ) -> impl Future<Output = Result<RecoverableSignature, SignerError>> + Send;
+
+    /// Sign a plaintext message, TronWeb `signMessageV2`-compatible.
+    ///
+    /// The returned `v` is `0`/`1`; use `to_legacy_bytes` for TronWeb's `27`/`28`.
+    ///
+    /// ```
+    /// # use tronz_signer::{LocalSigner, TronSigner};
+    /// # use tronz_primitives::verify_message;
+    /// # async fn example(signer: LocalSigner) -> Result<(), Box<dyn std::error::Error>> {
+    /// let sig = signer.sign_message(b"hello world").await?;
+    /// assert!(verify_message(b"hello world", &sig, signer.address()));
+    /// let _tronweb_sig = sig.to_legacy_bytes();
+    /// # Ok(())
+    /// # }
+    /// ```
+    fn sign_message(
+        &self,
+        message: &[u8],
+    ) -> impl Future<Output = Result<RecoverableSignature, SignerError>> + Send {
+        self.sign_hash(tronz_primitives::hash_message(message))
+    }
 }
 
 /// Placeholder signer type for providers built without a signer attached.

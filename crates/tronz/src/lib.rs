@@ -7,7 +7,10 @@
 /* --------------------------------- Primitives --------------------------------- */
 
 #[doc(no_inline)]
-pub use primitives::{Address, ResourceCode, Trx, U256, format_trx, parse_trx};
+pub use primitives::{
+    Address, RecoverableSignature, ResourceCode, Trx, U256, format_trx, hash_message, parse_trx,
+    recover_message_address, verify_message,
+};
 /// Core TRON primitives: addresses, amounts, resource codes, signatures.
 #[doc(inline)]
 pub use tronz_primitives as primitives;

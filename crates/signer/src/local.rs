@@ -134,4 +134,25 @@ mod tests {
         assert!(LocalSigner::from_hex("zz").is_err());
         assert!(LocalSigner::from_hex("01").is_err());
     }
+
+    #[tokio::test]
+    async fn sign_message_round_trips() {
+        use tronz_primitives::{recover_message_address, verify_message};
+
+        let signer = LocalSigner::from_hex(KEY).unwrap();
+        let sig = signer.sign_message(b"hello world").await.unwrap();
+        assert_eq!(recover_message_address(b"hello world", &sig).unwrap(), signer.address());
+        assert!(verify_message(b"hello world", &sig, signer.address()));
+        assert!(matches!(sig.to_bytes()[64], 0 | 1));
+    }
+
+    #[tokio::test]
+    async fn sign_message_matches_tronweb_bytes() {
+        // TronWeb `signMessageV2("hello world")` with `KEY`, byte-for-byte.
+        const TRONWEB_SIG: &str = "0dc0b53d525e0103a6013061cf18e60cf158809149f2b8994a545af65a7004cb1eeaff560e801ab51b28df5d42549aa024c2aa7e9d34de1e01294b9afb5e6c7e1c";
+
+        let signer = LocalSigner::from_hex(KEY).unwrap();
+        let sig = signer.sign_message(b"hello world").await.unwrap();
+        assert_eq!(hex::encode(sig.to_legacy_bytes()), TRONWEB_SIG);
+    }
 }

@@ -2,9 +2,9 @@
 
 use core::fmt;
 
-use k256::ecdsa::{RecoveryId, Signature};
+use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 
-use crate::error::SignatureError;
+use crate::{Address, B256, error::SignatureError};
 
 /// Length of the serialized signature: `r(32) || s(32) || v(1)`.
 pub const SIGNATURE_LEN: usize = 65;
@@ -68,13 +68,33 @@ impl RecoverableSignature {
         self.v
     }
 
-    /// Serialize to the 65-byte `r || s || v` wire format.
+    /// Serialize to the 65-byte `r || s || v` wire form (`v` = `0`/`1`).
+    ///
+    /// TRON's native transaction encoding. For TronWeb/TronLink message
+    /// signatures (`v` = `27`/`28`) use [`to_legacy_bytes`](Self::to_legacy_bytes).
     pub fn to_bytes(&self) -> [u8; SIGNATURE_LEN] {
         let mut out = [0u8; SIGNATURE_LEN];
         out[..32].copy_from_slice(&self.r);
         out[32..64].copy_from_slice(&self.s);
         out[64] = self.v;
         out
+    }
+
+    /// Serialize to `r || s || v` using the legacy `27`/`28` recovery id.
+    ///
+    /// Matches TronWeb `signMessageV2` / TronLink output (ends in `1b`/`1c`).
+    /// The internal `v` stays `0`/`1`; only this encoding adds the `+27` offset.
+    pub fn to_legacy_bytes(&self) -> [u8; SIGNATURE_LEN] {
+        let mut out = self.to_bytes();
+        out[64] += 27;
+        out
+    }
+
+    /// Recover the TRON address that produced this signature over `prehash`.
+    pub fn recover_address_from_prehash(&self, prehash: B256) -> Result<Address, SignatureError> {
+        let (sig, recid) = self.split()?;
+        let vk = VerifyingKey::recover_from_prehash(prehash.as_slice(), &sig, recid)?;
+        Ok(Address::from_public_key(&vk))
     }
 
     /// Recover the non-recoverable [`Signature`] and [`RecoveryId`] components.
@@ -139,5 +159,32 @@ mod tests {
         let (sig2, recid2) = rec.split().unwrap();
         assert_eq!(sig, sig2);
         assert_eq!(recid.to_byte(), recid2.to_byte());
+    }
+
+    #[test]
+    fn recover_address_round_trips() {
+        use k256::ecdsa::signature::hazmat::PrehashSigner;
+
+        let signing = SigningKey::from_bytes(&[1u8; 32].into()).unwrap();
+        let expected = crate::Address::from_public_key(signing.verifying_key());
+        let prehash = crate::B256::repeat_byte(0x42);
+        let (sig, recid): (Signature, RecoveryId) =
+            signing.sign_prehash(prehash.as_slice()).unwrap();
+        let rec = RecoverableSignature::from_signature(&sig, recid);
+        assert_eq!(rec.recover_address_from_prehash(prehash).unwrap(), expected);
+    }
+
+    #[test]
+    fn to_bytes_stays_0_1_and_legacy_is_27_28() {
+        // Guard: transaction signing relies on to_bytes() staying 0/1.
+        for v in [0u8, 1] {
+            let mut bytes = [3u8; SIGNATURE_LEN];
+            bytes[64] = v;
+            let sig = RecoverableSignature::from_bytes(&bytes).unwrap();
+            assert!(matches!(sig.to_bytes()[64], 0 | 1));
+            assert!(matches!(sig.to_legacy_bytes()[64], 27 | 28));
+            assert_eq!(sig.to_bytes()[..64], sig.to_legacy_bytes()[..64]);
+            assert_eq!(RecoverableSignature::from_bytes(&sig.to_legacy_bytes()).unwrap(), sig);
+        }
     }
 }

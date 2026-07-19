@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- TronWeb `signMessageV2`-compatible personal message signing and verification —
+  `TronSigner::sign_message`, `hash_message`, `recover_message_address`, and
+  `verify_message` — using the TRON-prefixed message format documented as
+  TIP-191-compatible. `RecoverableSignature` also gains address recovery
+  (`recover_address_from_prehash`) and `27`/`28` legacy recovery-id encoding
+  (`to_legacy_bytes`) for TronWeb / TronLink interoperability. `to_bytes()`
+  (`0`/`1`, the native transaction encoding) is unchanged.
+
 ## [0.4.1](https://github.com/throgxyz/tronz/compare/v0.4.0...v0.4.1) - 2026-07-19
 
 ### Added
