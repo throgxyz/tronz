@@ -44,7 +44,11 @@ reads latest available state, while SolidityNode reads irreversible state.
 
 `SolidityProvider` also exposes solidified witness queries — `list_witnesses`
 and `get_paginated_now_witness_list(offset, limit)` (the latter returns SRs
-sorted by real-time vote count) — mirroring the FullNode `TronProvider` methods.
+sorted by real-time vote count) — plus solidified stake/delegation reads:
+`get_delegated_resource[_v1]`, `get_delegated_resource_index[_v1]`,
+`get_can_delegate_max`, `get_available_unfreeze_count`, and
+`get_can_withdraw_unfreeze_amount` — all mirroring the FullNode `TronProvider`
+methods.
 
 ## Crate layout
 

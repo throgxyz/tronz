@@ -1,6 +1,6 @@
 //! tonic-backed gRPC transport for `protocol.WalletSolidity`.
 
-use tronz_primitives::{Address, TxId};
+use tronz_primitives::{Address, ResourceCode, Trx, TxId};
 
 use super::{GrpcCore, GrpcTransportConfig, RetryConfig, codec, light_block};
 use crate::{
@@ -8,8 +8,8 @@ use crate::{
     proto::{self, EmptyMessage},
     transport::SolidityTransport,
     types::{
-        AccountInfo, BlockInfo, ConstantCallResult, SignedTransaction, TransactionInfo,
-        TriggerSmartContract, WitnessInfo,
+        AccountInfo, BlockInfo, ConstantCallResult, DelegatedResource, DelegatedResourceIndex,
+        SignedTransaction, TransactionInfo, TriggerSmartContract, WitnessInfo,
     },
 };
 
@@ -205,5 +205,83 @@ impl SolidityTransport for SolidityGrpcTransport {
         let req = proto::PaginatedMessage { offset, limit };
         let list = solidity_unary!(self, get_paginated_now_witness_list, req)?;
         Ok(list.witnesses.into_iter().filter_map(codec::witness_from_proto).collect())
+    }
+
+    async fn get_delegated_resource_v1(
+        &self,
+        from: Address,
+        to: Address,
+    ) -> Result<Vec<DelegatedResource>, Self::Error> {
+        let req = proto::DelegatedResourceMessage {
+            from_address: from.as_bytes().to_vec(),
+            to_address: to.as_bytes().to_vec(),
+        };
+        let list = solidity_unary!(self, get_delegated_resource, req)?;
+        list.delegated_resource.into_iter().map(codec::delegated_resource_from_proto).collect()
+    }
+
+    async fn get_delegated_resource_index_v1(
+        &self,
+        address: Address,
+    ) -> Result<DelegatedResourceIndex, Self::Error> {
+        let req = proto::BytesMessage { value: address.as_bytes().to_vec() };
+        let idx = solidity_unary!(self, get_delegated_resource_account_index, req)?;
+        codec::delegated_resource_index_from_proto(idx)
+    }
+
+    async fn get_delegated_resource(
+        &self,
+        from: Address,
+        to: Address,
+    ) -> Result<Vec<DelegatedResource>, Self::Error> {
+        let req = proto::DelegatedResourceMessage {
+            from_address: from.as_bytes().to_vec(),
+            to_address: to.as_bytes().to_vec(),
+        };
+        let list = solidity_unary!(self, get_delegated_resource_v2, req)?;
+        list.delegated_resource.into_iter().map(codec::delegated_resource_from_proto).collect()
+    }
+
+    async fn get_delegated_resource_index(
+        &self,
+        address: Address,
+    ) -> Result<DelegatedResourceIndex, Self::Error> {
+        let req = proto::BytesMessage { value: address.as_bytes().to_vec() };
+        let idx = solidity_unary!(self, get_delegated_resource_account_index_v2, req)?;
+        codec::delegated_resource_index_from_proto(idx)
+    }
+
+    async fn get_can_delegate_max(
+        &self,
+        address: Address,
+        resource: ResourceCode,
+    ) -> Result<Trx, Self::Error> {
+        let req = proto::CanDelegatedMaxSizeRequestMessage {
+            owner_address: address.as_bytes().to_vec(),
+            r#type: resource.as_i32(),
+        };
+        let res = solidity_unary!(self, get_can_delegated_max_size, req)?;
+        Ok(Trx::from_sun_unchecked(res.max_size))
+    }
+
+    async fn get_available_unfreeze_count(&self, address: Address) -> Result<i64, Self::Error> {
+        let req = proto::GetAvailableUnfreezeCountRequestMessage {
+            owner_address: address.as_bytes().to_vec(),
+        };
+        let res = solidity_unary!(self, get_available_unfreeze_count, req)?;
+        Ok(res.count)
+    }
+
+    async fn get_can_withdraw_unfreeze_amount(
+        &self,
+        address: Address,
+        timestamp_ms: i64,
+    ) -> Result<Trx, Self::Error> {
+        let req = proto::CanWithdrawUnfreezeAmountRequestMessage {
+            owner_address: address.as_bytes().to_vec(),
+            timestamp: timestamp_ms,
+        };
+        let res = solidity_unary!(self, get_can_withdraw_unfreeze_amount, req)?;
+        Ok(Trx::from_sun_unchecked(res.amount))
     }
 }

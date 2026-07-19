@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SRs sorted by real-time vote count. Also added `list_witnesses` to
   `SolidityProvider` for solidified SR lookups. The local `WalletSolidity`/`Wallet`
   protobuf definitions were synced with the new RPC.
+- Solidified stake/delegation queries on `SolidityProvider`, mirroring the
+  FullNode `TronProvider` methods: `get_delegated_resource[_v1]`,
+  `get_delegated_resource_index[_v1]`, `get_can_delegate_max`,
+  `get_available_unfreeze_count`, and `get_can_withdraw_unfreeze_amount`.
 
 ### Changed
 

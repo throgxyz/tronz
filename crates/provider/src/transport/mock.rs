@@ -303,6 +303,13 @@ impl crate::transport::SolidityTransport for MockSolidityTransport {
         fn estimate_energy(&self, params: TriggerSmartContract) -> i64;
         fn list_witnesses(&self) -> Vec<WitnessInfo>;
         fn get_paginated_now_witness_list(&self, offset: i64, limit: i64) -> Vec<WitnessInfo>;
+        fn get_delegated_resource_v1(&self, from: Address, to: Address) -> Vec<DelegatedResource>;
+        fn get_delegated_resource_index_v1(&self, address: Address) -> DelegatedResourceIndex;
+        fn get_delegated_resource(&self, from: Address, to: Address) -> Vec<DelegatedResource>;
+        fn get_delegated_resource_index(&self, address: Address) -> DelegatedResourceIndex;
+        fn get_can_delegate_max(&self, address: Address, resource: ResourceCode) -> Trx;
+        fn get_available_unfreeze_count(&self, address: Address) -> i64;
+        fn get_can_withdraw_unfreeze_amount(&self, address: Address, timestamp_ms: i64) -> Trx;
     }
 }
 

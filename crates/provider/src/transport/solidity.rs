@@ -2,11 +2,11 @@
 
 use core::future::Future;
 
-use tronz_primitives::{Address, TxId};
+use tronz_primitives::{Address, ResourceCode, Trx, TxId};
 
 use crate::types::{
-    AccountInfo, BlockInfo, ConstantCallResult, SignedTransaction, TransactionInfo,
-    TriggerSmartContract, WitnessInfo,
+    AccountInfo, BlockInfo, ConstantCallResult, DelegatedResource, DelegatedResourceIndex,
+    SignedTransaction, TransactionInfo, TriggerSmartContract, WitnessInfo,
 };
 
 /// A low-level transport for `protocol.WalletSolidity`.
@@ -82,4 +82,50 @@ pub trait SolidityTransport: Clone + Send + Sync + 'static + super::private::Sea
         offset: i64,
         limit: i64,
     ) -> impl Future<Output = Result<Vec<WitnessInfo>, Self::Error>> + Send;
+
+    /// Query delegations between two accounts from solidified state (Stake 1.0, legacy).
+    fn get_delegated_resource_v1(
+        &self,
+        from: Address,
+        to: Address,
+    ) -> impl Future<Output = Result<Vec<DelegatedResource>, Self::Error>> + Send;
+
+    /// Query the delegation index for an account from solidified state (Stake 1.0, legacy).
+    fn get_delegated_resource_index_v1(
+        &self,
+        address: Address,
+    ) -> impl Future<Output = Result<DelegatedResourceIndex, Self::Error>> + Send;
+
+    /// Query delegations between two accounts from solidified state (Stake 2.0).
+    fn get_delegated_resource(
+        &self,
+        from: Address,
+        to: Address,
+    ) -> impl Future<Output = Result<Vec<DelegatedResource>, Self::Error>> + Send;
+
+    /// Query the delegation index for an account from solidified state (Stake 2.0).
+    fn get_delegated_resource_index(
+        &self,
+        address: Address,
+    ) -> impl Future<Output = Result<DelegatedResourceIndex, Self::Error>> + Send;
+
+    /// Query the max amount still delegatable for a resource from solidified state.
+    fn get_can_delegate_max(
+        &self,
+        address: Address,
+        resource: ResourceCode,
+    ) -> impl Future<Output = Result<Trx, Self::Error>> + Send;
+
+    /// Query how many unfreeze operations are still available from solidified state.
+    fn get_available_unfreeze_count(
+        &self,
+        address: Address,
+    ) -> impl Future<Output = Result<i64, Self::Error>> + Send;
+
+    /// Query the amount withdrawable at a timestamp from solidified state.
+    fn get_can_withdraw_unfreeze_amount(
+        &self,
+        address: Address,
+        timestamp_ms: i64,
+    ) -> impl Future<Output = Result<Trx, Self::Error>> + Send;
 }

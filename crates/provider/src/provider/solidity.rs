@@ -3,7 +3,7 @@
 use core::time::Duration;
 use std::sync::Arc;
 
-use tronz_primitives::{Address, TxId};
+use tronz_primitives::{Address, ResourceCode, Trx, TxId};
 
 use crate::{
     Result,
@@ -14,8 +14,8 @@ use crate::{
         grpc::{RetryConfig, SolidityGrpcTransport, SolidityGrpcTransportBuilder},
     },
     types::{
-        AccountInfo, BlockInfo, ConstantCallResult, SignedTransaction, TransactionInfo,
-        TriggerSmartContract, WitnessInfo,
+        AccountInfo, BlockInfo, ConstantCallResult, DelegatedResource, DelegatedResourceIndex,
+        SignedTransaction, TransactionInfo, TriggerSmartContract, WitnessInfo,
     },
 };
 
@@ -132,6 +132,66 @@ impl<T: SolidityTransport> SolidityProvider<T> {
     ) -> Result<Vec<WitnessInfo>> {
         self.inner
             .get_paginated_now_witness_list(offset, limit)
+            .await
+            .map_err(ProviderError::transport)
+    }
+
+    /// Query delegations between two accounts from solidified state (Stake 1.0, legacy).
+    pub async fn get_delegated_resource_v1(
+        &self,
+        from: Address,
+        to: Address,
+    ) -> Result<Vec<DelegatedResource>> {
+        self.inner.get_delegated_resource_v1(from, to).await.map_err(ProviderError::transport)
+    }
+
+    /// Query the delegation index for an account from solidified state (Stake 1.0, legacy).
+    pub async fn get_delegated_resource_index_v1(
+        &self,
+        address: Address,
+    ) -> Result<DelegatedResourceIndex> {
+        self.inner.get_delegated_resource_index_v1(address).await.map_err(ProviderError::transport)
+    }
+
+    /// Query delegations between two accounts from solidified state (Stake 2.0).
+    pub async fn get_delegated_resource(
+        &self,
+        from: Address,
+        to: Address,
+    ) -> Result<Vec<DelegatedResource>> {
+        self.inner.get_delegated_resource(from, to).await.map_err(ProviderError::transport)
+    }
+
+    /// Query the delegation index for an account from solidified state (Stake 2.0).
+    pub async fn get_delegated_resource_index(
+        &self,
+        address: Address,
+    ) -> Result<DelegatedResourceIndex> {
+        self.inner.get_delegated_resource_index(address).await.map_err(ProviderError::transport)
+    }
+
+    /// Query the max amount still delegatable for a resource from solidified state.
+    pub async fn get_can_delegate_max(
+        &self,
+        address: Address,
+        resource: ResourceCode,
+    ) -> Result<Trx> {
+        self.inner.get_can_delegate_max(address, resource).await.map_err(ProviderError::transport)
+    }
+
+    /// Query how many unfreeze operations are still available from solidified state.
+    pub async fn get_available_unfreeze_count(&self, address: Address) -> Result<i64> {
+        self.inner.get_available_unfreeze_count(address).await.map_err(ProviderError::transport)
+    }
+
+    /// Query the amount withdrawable at a timestamp from solidified state.
+    pub async fn get_can_withdraw_unfreeze_amount(
+        &self,
+        address: Address,
+        timestamp_ms: i64,
+    ) -> Result<Trx> {
+        self.inner
+            .get_can_withdraw_unfreeze_amount(address, timestamp_ms)
             .await
             .map_err(ProviderError::transport)
     }
@@ -331,6 +391,50 @@ mod tests {
         let witnesses = provider(mock).get_paginated_now_witness_list(0, 10).await.unwrap();
         assert_eq!(witnesses.len(), 1);
         assert_eq!(witnesses[0].vote_count, 99);
+    }
+
+    fn delegation(bandwidth: i64, energy: i64) -> DelegatedResource {
+        DelegatedResource {
+            from: Address::ZERO,
+            to: Address::ZERO,
+            bandwidth_amount: Trx::from_sun_unchecked(bandwidth),
+            energy_amount: Trx::from_sun_unchecked(energy),
+            bandwidth_expire_time_ms: 0,
+            energy_expire_time_ms: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn get_delegated_resource_returns_solidified_delegations() {
+        let mock = MockSolidityTransport::new();
+        mock.push_ok::<Vec<DelegatedResource>>(
+            "get_delegated_resource",
+            vec![delegation(1_000_000, 2_000_000)],
+        );
+
+        let delegations =
+            provider(mock).get_delegated_resource(Address::ZERO, Address::ZERO).await.unwrap();
+        assert_eq!(delegations.len(), 1);
+        assert_eq!(delegations[0].energy_amount, Trx::from_sun_unchecked(2_000_000));
+    }
+
+    #[tokio::test]
+    async fn get_can_delegate_max_returns_amount() {
+        let mock = MockSolidityTransport::new();
+        mock.push_ok::<Trx>("get_can_delegate_max", Trx::from_sun_unchecked(5_000_000));
+
+        let max =
+            provider(mock).get_can_delegate_max(Address::ZERO, ResourceCode::Energy).await.unwrap();
+        assert_eq!(max, Trx::from_sun_unchecked(5_000_000));
+    }
+
+    #[tokio::test]
+    async fn get_available_unfreeze_count_returns_count() {
+        let mock = MockSolidityTransport::new();
+        mock.push_ok::<i64>("get_available_unfreeze_count", 3);
+
+        let count = provider(mock).get_available_unfreeze_count(Address::ZERO).await.unwrap();
+        assert_eq!(count, 3);
     }
 
     #[tokio::test]
