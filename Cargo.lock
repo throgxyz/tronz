@@ -3489,7 +3489,7 @@ dependencies = [
 
 [[package]]
 name = "tronz"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "tronz-abi",
  "tronz-contract",
@@ -3501,7 +3501,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-abi"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "alloy-json-abi",
  "serde",
@@ -3511,7 +3511,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-contract"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-json-abi",
@@ -3529,7 +3529,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-primitives"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "alloy-primitives",
  "bs58",
@@ -3541,7 +3541,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-provider"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "fastrand",
  "futures",
@@ -3575,7 +3575,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-signer"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aes",
  "coins-bip32",
@@ -3597,7 +3597,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-signer-aws"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aws-config",
  "aws-sdk-kms",
@@ -3613,7 +3613,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-sol-macro"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "alloy-json-abi",
  "proc-macro2",
