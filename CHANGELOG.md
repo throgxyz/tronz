@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/throgxyz/tronz/compare/v0.4.1...v0.4.2) - 2026-07-23
+
+### Added
+
+- *(signer)* add signMessageV2-compatible message signing
+
+### Other
+
+- fix examples link and tidy v0.4.1 changelog
+- add gRPC codec tests, fixture replay, and coverage CI
+
 ### Added
 
 - TronWeb `signMessageV2`-compatible personal message signing and verification —
