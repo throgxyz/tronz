@@ -64,7 +64,7 @@ Optional features:
 |---|---|
 | `signer-mnemonic` | BIP-39 mnemonic generation + BIP-44 HD derivation (`MnemonicBuilder`) |
 | `signer-keystore` | Web3 Secret Storage V3 encrypt/decrypt (`LocalSigner::encrypt_keystore`, `decrypt_keystore`) |
-| `signer-eip712` | TIP-712 typed-data signing (`TronSigner::sign_typed_data`) — TronWeb `signTypedData`-compatible |
+| `signer-tip712` | TIP-712 typed-data signing (`TronSigner::sign_typed_data`) — TronWeb `signTypedData`-compatible |
 | `signer-aws` | AWS KMS signer (`AwsSigner`) — the private key never leaves the HSM |
 | `provider-grpc` | gRPC transport without TLS — use for local or private nodes |
 

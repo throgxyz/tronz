@@ -10,6 +10,10 @@ license      = { workspace = true }
 repository   = { workspace = true }
 readme       = { workspace = true }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs", "-Zunstable-options", "--generate-link-to-definition", "--show-type-layout"]
+
 [package.metadata.release]
 # Create one workspace release tag; all other crates inherit `tag = false`.
 tag      = true
@@ -45,6 +49,6 @@ signer-mnemonic = ["tronz-signer/mnemonic"]
 # Web3 Secret Storage V3 keystore.
 signer-keystore = ["tronz-signer/keystore"]
 # TIP-712 typed-data signing.
-signer-eip712 = ["tronz-signer/eip712"]
+signer-tip712 = ["tronz-signer/tip712"]
 # AWS KMS signer (private key stays in the HSM).
 signer-aws = ["dep:tronz-signer-aws"]

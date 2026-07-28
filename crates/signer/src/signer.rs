@@ -1,8 +1,8 @@
 //! The [`TronSigner`] and [`TronSignerSync`] traits.
 
-#[cfg(feature = "eip712")]
+#[cfg(feature = "tip712")]
 use alloy_dyn_abi::TypedData;
-#[cfg(feature = "eip712")]
+#[cfg(feature = "tip712")]
 use alloy_sol_types::{Eip712Domain, SolStruct};
 use async_trait::async_trait;
 use auto_impl::auto_impl;
@@ -54,10 +54,10 @@ pub trait TronSigner {
     /// TIP-712 reuses EIP-712 encoding, so `address` members are the 20-byte EVM
     /// form of a TRON address; convert with `alloy_primitives::Address::from`.
     ///
-    /// Requires the `eip712` feature.
+    /// Requires the `tip712` feature.
     ///
     /// [TIP-712]: https://github.com/tronprotocol/tips/blob/master/tip-712.md
-    #[cfg(feature = "eip712")]
+    #[cfg(feature = "tip712")]
     #[inline]
     #[auto_impl(keep_default_for(&mut, Box))]
     async fn sign_typed_data<T: SolStruct + Send + Sync>(
@@ -76,10 +76,10 @@ pub trait TronSigner {
     /// Unlike [`sign_typed_data`](Self::sign_typed_data), this works through
     /// trait objects such as `Box<dyn TronSigner>`.
     ///
-    /// Requires the `eip712` feature.
+    /// Requires the `tip712` feature.
     ///
     /// [TIP-712]: https://github.com/tronprotocol/tips/blob/master/tip-712.md
-    #[cfg(feature = "eip712")]
+    #[cfg(feature = "tip712")]
     #[inline]
     async fn sign_dynamic_typed_data(
         &self,
@@ -110,10 +110,10 @@ pub trait TronSignerSync {
     /// Encode and sign structured data per [TIP-712], TronWeb
     /// `signTypedData`-compatible.
     ///
-    /// Requires the `eip712` feature.
+    /// Requires the `tip712` feature.
     ///
     /// [TIP-712]: https://github.com/tronprotocol/tips/blob/master/tip-712.md
-    #[cfg(feature = "eip712")]
+    #[cfg(feature = "tip712")]
     #[inline]
     #[auto_impl(keep_default_for(&, &mut, Box, Rc, Arc))]
     fn sign_typed_data_sync<T: SolStruct>(
@@ -132,10 +132,10 @@ pub trait TronSignerSync {
     /// Unlike [`sign_typed_data_sync`](Self::sign_typed_data_sync), this works
     /// through trait objects such as `Box<dyn TronSignerSync>`.
     ///
-    /// Requires the `eip712` feature.
+    /// Requires the `tip712` feature.
     ///
     /// [TIP-712]: https://github.com/tronprotocol/tips/blob/master/tip-712.md
-    #[cfg(feature = "eip712")]
+    #[cfg(feature = "tip712")]
     #[inline]
     fn sign_dynamic_typed_data_sync(
         &self,
@@ -162,8 +162,8 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "eip712"))]
-mod eip712_tests {
+#[cfg(all(test, feature = "tip712"))]
+mod tip712_tests {
     use alloy_primitives::{address, b256};
     use alloy_sol_types::{eip712_domain, sol};
 

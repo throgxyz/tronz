@@ -14,12 +14,12 @@ mod wallet;
 pub use wallet::{TronNetworkWallet, TronWallet};
 
 mod local;
-#[cfg(feature = "eip712")]
-#[cfg_attr(docsrs, doc(cfg(feature = "eip712")))]
+#[cfg(feature = "tip712")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tip712")))]
 #[doc(no_inline)]
 pub use alloy_dyn_abi::{self, TypedData};
-#[cfg(feature = "eip712")]
-#[cfg_attr(docsrs, doc(cfg(feature = "eip712")))]
+#[cfg(feature = "tip712")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tip712")))]
 #[doc(no_inline)]
 pub use alloy_sol_types::{self, Eip712Domain, SolStruct};
 pub use k256;

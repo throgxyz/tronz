@@ -10,9 +10,13 @@ license      = { workspace = true }
 repository   = { workspace = true }
 readme       = "README.md"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs", "-Zunstable-options", "--generate-link-to-definition", "--show-type-layout"]
+
 [features]
 ## TIP-712 typed-data signing through the `TronSigner` trait.
-eip712 = ["tronz-signer/eip712"]
+tip712 = ["tronz-signer/tip712"]
 
 [dependencies]
 tronz-primitives = { workspace = true }

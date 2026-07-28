@@ -10,6 +10,10 @@ license      = { workspace = true }
 repository   = { workspace = true }
 build        = "build.rs"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs", "-Zunstable-options", "--generate-link-to-definition", "--show-type-layout"]
+
 [dependencies]
 tronz-primitives = { workspace = true }
 tronz-abi        = { workspace = true }

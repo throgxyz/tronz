@@ -1,4 +1,3 @@
-// `SdkError` variants are inherently large; boxing every call site would hurt ergonomics.
 #![allow(clippy::result_large_err)]
 
 use async_trait::async_trait;
@@ -17,28 +16,28 @@ use tracing::{debug, instrument};
 use tronz_primitives::{Address, B256, RecoverableSignature};
 use tronz_signer::{SignerError, TronSigner};
 
-/// Errors produced by [`AwsSigner`].
+/// Errors thrown by [`AwsSigner`].
 #[derive(Debug, thiserror::Error)]
 pub enum AwsSignerError {
-    /// AWS KMS returned an error during `Sign`.
+    /// Thrown when the AWS KMS API returns a signing error.
     #[error(transparent)]
     Sign(#[from] SdkError<SignError>),
-    /// AWS KMS returned an error during `GetPublicKey`.
+    /// Thrown when the AWS KMS API returns an error.
     #[error(transparent)]
     GetPublicKey(#[from] SdkError<GetPublicKeyError>),
-    /// Failed to parse a k256 ECDSA signature or key.
+    /// [`ecdsa`] error.
     #[error(transparent)]
     K256(#[from] ecdsa::Error),
-    /// Failed to parse the DER-encoded SubjectPublicKeyInfo returned by KMS.
+    /// [`spki`] error.
     #[error(transparent)]
     Spki(#[from] spki::Error),
-    /// KMS response did not contain a public key.
+    /// Thrown when the AWS KMS API returns a response without a public key.
     #[error("public key not found in KMS response")]
     PublicKeyNotFound,
-    /// KMS response did not contain a signature.
+    /// Thrown when the AWS KMS API returns a response without a signature.
     #[error("signature not found in KMS response")]
     SignatureNotFound,
-    /// Neither recovery parity (0 or 1) produced the expected public key.
+    /// Failed to recover signature parity for the given digest and public key.
     #[error("failed to recover parity from KMS signature — key may not be secp256k1")]
     SignatureRecoveryFailed,
 }
@@ -49,10 +48,7 @@ impl From<AwsSignerError> for SignerError {
     }
 }
 
-/// A [`TronSigner`] backed by an AWS KMS secp256k1 key.
-///
-/// The private key never leaves the AWS HSM. The public key is fetched once on
-/// construction and cached; signing is delegated to the KMS `Sign` API.
+/// Amazon Web Services Key Management Service (AWS KMS) TRON signer.
 #[derive(Clone)]
 pub struct AwsSigner {
     kms: Client,
@@ -72,10 +68,9 @@ impl core::fmt::Debug for AwsSigner {
 }
 
 impl AwsSigner {
-    /// Create a new signer from an existing KMS [`Client`] and key ID.
+    /// Instantiate a new signer from an existing [`Client`] and key ID.
     ///
-    /// Calls `GetPublicKey` once to derive and cache the TRON address.
-    /// The key must be an `ECC_SECG_P256K1` asymmetric signing key.
+    /// Retrieves the public key from AWS and calculates the TRON address.
     #[instrument(skip(kms), err)]
     pub async fn new(kms: Client, key_id: String) -> Result<Self, AwsSignerError> {
         let resp = request_get_pubkey(&kms, key_id.clone()).await?;
@@ -85,31 +80,43 @@ impl AwsSigner {
         Ok(Self { kms, key_id, pubkey, address })
     }
 
-    /// The KMS key ID used by this signer.
+    /// Returns the KMS key ID used by this signer.
     pub fn key_id(&self) -> &str {
         &self.key_id
     }
 
-    /// Return the cached secp256k1 public key.
+    /// Returns the cached public key.
     pub fn verifying_key(&self) -> &VerifyingKey {
         &self.pubkey
     }
 
-    /// Fetch the public key for a given key ID from KMS.
+    /// Fetch the pubkey associated with a key ID.
     pub async fn get_pubkey_for_key(&self, key_id: String) -> Result<VerifyingKey, AwsSignerError> {
         request_get_pubkey(&self.kms, key_id).await.and_then(decode_pubkey)
     }
 
-    /// Fetch the public key for this signer's key ID from KMS.
+    /// Fetch the pubkey associated with this signer's key ID.
     pub async fn get_pubkey(&self) -> Result<VerifyingKey, AwsSignerError> {
         self.get_pubkey_for_key(self.key_id.clone()).await
     }
 
+    /// Sign a digest with the key associated with a key ID.
+    pub async fn sign_digest_with_key(
+        &self,
+        key_id: String,
+        digest: &B256,
+    ) -> Result<ecdsa::Signature, AwsSignerError> {
+        request_sign_digest(&self.kms, key_id, digest).await.and_then(decode_signature)
+    }
+
+    /// Sign a digest with this signer's key.
+    pub async fn sign_digest(&self, digest: &B256) -> Result<ecdsa::Signature, AwsSignerError> {
+        self.sign_digest_with_key(self.key_id.clone(), digest).await
+    }
+
     #[instrument(err, skip(hash), fields(hash = %hash))]
     async fn sign_hash_inner(&self, hash: B256) -> Result<RecoverableSignature, AwsSignerError> {
-        let sig = request_sign_digest(&self.kms, self.key_id.clone(), &hash)
-            .await
-            .and_then(decode_signature)?;
+        let sig = self.sign_digest(&hash).await?;
         sig_from_digest_bytes_trial_recovery(sig, &hash, &self.pubkey)
     }
 }
@@ -150,22 +157,21 @@ async fn request_sign_digest(
         .map_err(Into::into)
 }
 
-/// Decode a KMS `GetPublicKey` response (DER SubjectPublicKeyInfo) into a [`VerifyingKey`].
+/// Decode an AWS KMS Pubkey response.
 fn decode_pubkey(resp: GetPublicKeyOutput) -> Result<VerifyingKey, AwsSignerError> {
     let raw = resp.public_key.as_ref().ok_or(AwsSignerError::PublicKeyNotFound)?;
     let spki = spki::SubjectPublicKeyInfoRef::try_from(raw.as_ref())?;
     Ok(VerifyingKey::from_sec1_bytes(spki.subject_public_key.raw_bytes())?)
 }
 
-/// Decode a KMS `Sign` response and normalize `s` to low-S (required by TRON, as in EIP-2).
+/// Decode an AWS KMS Signature response.
 fn decode_signature(resp: SignOutput) -> Result<ecdsa::Signature, AwsSignerError> {
     let raw = resp.signature.as_ref().ok_or(AwsSignerError::SignatureNotFound)?;
     let sig = ecdsa::Signature::from_der(raw.as_ref())?;
     Ok(sig.normalize_s().unwrap_or(sig))
 }
 
-/// Recover the parity of a KMS signature by trial: KMS omits it, so try `v = 0`
-/// then `v = 1` and keep the one that recovers `pubkey`.
+/// Recover an rsig from a signature under a known key by trial/error.
 fn sig_from_digest_bytes_trial_recovery(
     sig: ecdsa::Signature,
     hash: &B256,
@@ -186,7 +192,7 @@ fn sig_from_digest_bytes_trial_recovery(
     Err(AwsSignerError::SignatureRecoveryFailed)
 }
 
-/// Whether `sig` over `hash` recovers to `expected`.
+/// Makes a trial recovery to check whether an rsig corresponds to a known [`VerifyingKey`].
 fn check_candidate(sig: &RecoverableSignature, hash: &B256, expected: &VerifyingKey) -> bool {
     sig.split()
         .ok()
@@ -199,8 +205,6 @@ fn check_candidate(sig: &RecoverableSignature, hash: &B256, expected: &Verifying
 mod tests {
     use super::*;
 
-    /// Live test — requires `AWS_KEY_ID` env var and valid AWS credentials.
-    /// Run with: `AWS_KEY_ID=<id> cargo test -p tronz-signer-aws -- --ignored`
     #[tokio::test]
     #[ignore]
     async fn live_sign_and_verify() {
@@ -215,7 +219,10 @@ mod tests {
 
         let hash = B256::repeat_byte(0xab);
         let sig = TronSigner::sign_hash(&signer, &hash).await.unwrap();
-        assert!(sig.v() == 0 || sig.v() == 1);
-        assert_eq!(sig.to_bytes().len(), 65);
+        assert_eq!(sig.recover_address_from_prehash(hash).unwrap(), signer.address());
+
+        let message = b"hello from AWS KMS";
+        let sig = signer.sign_message(message).await.unwrap();
+        assert!(tronz_primitives::verify_message(message, &sig, signer.address()));
     }
 }

@@ -9,9 +9,13 @@ rust-version = { workspace = true }
 license      = { workspace = true }
 repository   = { workspace = true }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs", "-Zunstable-options", "--generate-link-to-definition", "--show-type-layout"]
+
 [features]
 ## TIP-712 typed-data signing via `sign_typed_data` / `sign_dynamic_typed_data`.
-eip712 = ["dep:alloy-dyn-abi", "dep:alloy-sol-types"]
+tip712 = ["dep:alloy-dyn-abi", "dep:alloy-sol-types"]
 ## Random private key generation via `LocalSigner::random`.
 rand = ["dep:rand"]
 ## BIP-39 mnemonic + BIP-44 HD key derivation via `MnemonicBuilder`.
@@ -27,7 +31,7 @@ k256             = { workspace = true }
 hex              = { workspace = true }
 thiserror        = { workspace = true }
 
-# eip712 feature
+# tip712 feature
 alloy-dyn-abi   = { workspace = true, optional = true, features = ["eip712"] }
 alloy-sol-types = { workspace = true, optional = true }
 

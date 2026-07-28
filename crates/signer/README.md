@@ -46,7 +46,7 @@ let signatures = wallet.sign_hash_with_many(&[key_a, key_b], &tx_hash).await?;
 |---|---|
 | `mnemonic` | BIP-39 phrases and BIP-44 HD derivation through `MnemonicBuilder` |
 | `keystore` | Web3 Secret Storage V3 encryption and decryption through `LocalSigner` |
-| `eip712` | TIP-712 typed-data signing through `sign_typed_data` and `sign_dynamic_typed_data` |
+| `tip712` | TIP-712 typed-data signing through `sign_typed_data` and `sign_dynamic_typed_data` |
 
 AWS KMS signing is provided separately by
 [`tronz-signer-aws`](https://crates.io/crates/tronz-signer-aws).

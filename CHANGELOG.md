@@ -19,8 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generation, and synchronous signing APIs.
 - TronWeb-compatible `signMessageV2` personal-message signing, recovery, and
   verification.
-- TIP-712 typed-data signing behind the `eip712` feature (`signer-eip712` on the
+- TIP-712 typed-data signing behind the `tip712` feature (`signer-tip712` on the
   `tronz` facade).
+- `AwsSigner::sign_digest` and `sign_digest_with_key` for raw KMS digest signing,
+  plus an `aws_sdk_kms` re-export so callers need not pin the client crate
+  themselves.
 - PBKDF2-HMAC-SHA256 keystore decryption in addition to scrypt.
 - Alloy-style `ProviderBuilder::connect_grpc` and `connect_grpc_with_key`;
   `on_grpc` variants remain deprecated aliases.

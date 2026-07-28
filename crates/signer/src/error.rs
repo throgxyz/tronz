@@ -23,7 +23,7 @@ pub enum SignerError {
     Io(#[from] std::io::Error),
 
     /// A TIP-712 payload could not be encoded.
-    #[cfg(feature = "eip712")]
+    #[cfg(feature = "tip712")]
     #[error(transparent)]
     DynAbi(#[from] alloy_dyn_abi::Error),
 
