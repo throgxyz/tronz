@@ -1,6 +1,6 @@
 //! [`ProviderBuilder`] and the [`FilledProvider`] it produces.
 //!
-//! Mirrors alloy's `ProviderBuilder` + `JoinFill` pattern (see `DESIGN.md` §5.3).
+//! Mirrors alloy's `ProviderBuilder` + `JoinFill` pattern.
 
 use std::time::Duration;
 
@@ -26,6 +26,7 @@ use crate::{
 ///
 /// Transport tuning (`connect_timeout` / `request_timeout` / `retry`) is stored
 /// as `Option`s; `None` defers to [`GrpcTransportConfig`] defaults.
+#[derive(Debug)]
 pub struct ProviderBuilder<F> {
     filler: F,
     api_key: Option<String>,
@@ -35,9 +36,15 @@ pub struct ProviderBuilder<F> {
     endpoints: Vec<String>,
 }
 
-impl ProviderBuilder<Identity> {
-    /// Start with no fillers.
+impl ProviderBuilder<JoinFill<Identity, FeeLimitFiller>> {
+    /// Start with the recommended filler chain.
     pub fn new() -> Self {
+        ProviderBuilder::default().with_recommended_fillers()
+    }
+}
+
+impl Default for ProviderBuilder<Identity> {
+    fn default() -> Self {
         Self {
             filler: Identity,
             api_key: None,
@@ -46,12 +53,6 @@ impl ProviderBuilder<Identity> {
             retry: None,
             endpoints: Vec::new(),
         }
-    }
-}
-
-impl Default for ProviderBuilder<Identity> {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -65,7 +66,8 @@ impl<F: TxFiller> ProviderBuilder<F> {
     /// use tronz_provider::{ProviderBuilder, transport::grpc::TRONGRID_MAINNET};
     /// # async fn run() -> tronz_provider::Result<()> {
     /// let api_key: Option<String> = std::env::var("TRON_API_KEY").ok();
-    /// let provider = ProviderBuilder::new().maybe_api_key(api_key).on_grpc(TRONGRID_MAINNET).await?;
+    /// let provider =
+    ///     ProviderBuilder::new().maybe_api_key(api_key).connect_grpc(TRONGRID_MAINNET).await?;
     /// # Ok(()) }
     /// ```
     pub fn maybe_api_key(mut self, key: Option<impl Into<String>>) -> Self {
@@ -96,8 +98,12 @@ impl<F: TxFiller> ProviderBuilder<F> {
     /// These join the `uri` passed to [`on_grpc`](Self::on_grpc); with two or
     /// more total endpoints the channel load-balances and fails over across
     /// them (see [`GrpcTransportConfig::endpoints`]).
-    pub fn with_endpoints(mut self, endpoints: Vec<String>) -> Self {
-        self.endpoints = endpoints;
+    pub fn with_endpoints<I, S>(mut self, endpoints: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.endpoints = endpoints.into_iter().map(Into::into).collect();
         self
     }
 
@@ -163,7 +169,10 @@ impl<F: TxFiller> ProviderBuilder<F> {
     /// `uri` examples:
     /// - `"https://grpc.trongrid.io:443"` (TronGrid mainnet, TLS)
     /// - `"http://127.0.0.1:50051"` (local node, plain HTTP/2)
-    pub async fn on_grpc(self, uri: impl AsRef<str>) -> Result<FilledProvider<GrpcTransport, F>> {
+    pub async fn connect_grpc(
+        self,
+        uri: impl AsRef<str>,
+    ) -> Result<FilledProvider<GrpcTransport, F>> {
         let mut cfg = GrpcTransportConfig {
             api_key: self.api_key,
             endpoints: self.endpoints,
@@ -185,27 +194,43 @@ impl<F: TxFiller> ProviderBuilder<F> {
 
     /// Connect with an explicit TronGrid API key.
     ///
-    /// Equivalent to `.maybe_api_key(Some(key)).on_grpc(uri)`.
-    pub async fn on_grpc_with_key(
+    /// Equivalent to `.maybe_api_key(Some(key)).connect_grpc(uri)`.
+    pub async fn connect_grpc_with_key(
         self,
         uri: impl AsRef<str>,
         api_key: impl Into<String>,
     ) -> Result<FilledProvider<GrpcTransport, F>> {
-        self.maybe_api_key(Some(api_key)).on_grpc(uri).await
+        self.maybe_api_key(Some(api_key)).connect_grpc(uri).await
     }
 
-    /// Alias for [`on_grpc`](Self::on_grpc).
+    /// Alias for [`connect_grpc`](Self::connect_grpc).
     pub async fn connect(self, uri: impl AsRef<str>) -> Result<FilledProvider<GrpcTransport, F>> {
-        self.on_grpc(uri).await
+        self.connect_grpc(uri).await
     }
 
-    /// Alias for [`on_grpc_with_key`](Self::on_grpc_with_key).
+    /// Alias for [`connect_grpc_with_key`](Self::connect_grpc_with_key).
     pub async fn connect_with_key(
         self,
         uri: impl AsRef<str>,
         api_key: impl Into<String>,
     ) -> Result<FilledProvider<GrpcTransport, F>> {
-        self.on_grpc_with_key(uri, api_key).await
+        self.connect_grpc_with_key(uri, api_key).await
+    }
+
+    /// Deprecated alias for [`connect_grpc`](Self::connect_grpc).
+    #[deprecated(note = "use `connect_grpc` instead")]
+    pub async fn on_grpc(self, uri: impl AsRef<str>) -> Result<FilledProvider<GrpcTransport, F>> {
+        self.connect_grpc(uri).await
+    }
+
+    /// Deprecated alias for [`connect_grpc_with_key`](Self::connect_grpc_with_key).
+    #[deprecated(note = "use `connect_grpc_with_key` instead")]
+    pub async fn on_grpc_with_key(
+        self,
+        uri: impl AsRef<str>,
+        api_key: impl Into<String>,
+    ) -> Result<FilledProvider<GrpcTransport, F>> {
+        self.connect_grpc_with_key(uri, api_key).await
     }
 }
 
@@ -317,7 +342,7 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> FilledProvider<T, F> {
     /// # use tronz_provider::types::{SignedTransaction, TransactionRequest};
     /// # use tronz_signer::{LocalSigner, TronSigner};
     /// # async fn run() -> tronz_provider::Result<()> {
-    /// # let provider = ProviderBuilder::new().with_recommended_fillers().on_grpc(TRONGRID_MAINNET).await?;
+    /// # let provider = ProviderBuilder::new().connect_grpc(TRONGRID_MAINNET).await?;
     /// # let req = TransactionRequest::default();
     /// # let signer_a = LocalSigner::from_hex(
     /// #     "0000000000000000000000000000000000000000000000000000000000000001",
@@ -412,7 +437,7 @@ mod tests {
         // No get_now_block response is queued. The mock would panic if the
         // recommended chain still contained TaposFiller.
         let provider = RootProvider::new(MockTransport::new());
-        let builder = ProviderBuilder::new().with_recommended_fillers();
+        let builder = ProviderBuilder::new();
         let address = Address::from_evm_bytes([1; 20]);
         let request = TransactionRequest {
             contract: Some(ContractType::TriggerSmartContract(TriggerSmartContract {

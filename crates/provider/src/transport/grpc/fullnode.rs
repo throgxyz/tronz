@@ -68,8 +68,12 @@ impl GrpcTransportBuilder {
     ///
     /// These join the primary `uri` passed to [`connect`](Self::connect); two or
     /// more total endpoints switch the channel to load balancing.
-    pub fn with_endpoints(mut self, endpoints: Vec<String>) -> Self {
-        self.config.endpoints = endpoints;
+    pub fn with_endpoints<I, S>(mut self, endpoints: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.config.endpoints = endpoints.into_iter().map(Into::into).collect();
         self
     }
 

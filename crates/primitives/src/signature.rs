@@ -1,6 +1,6 @@
 //! Recoverable secp256k1 signature in TRON's `r || s || v` wire form.
 
-use core::fmt;
+use core::{fmt, str::FromStr};
 
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
 
@@ -108,6 +108,49 @@ impl RecoverableSignature {
     }
 }
 
+impl TryFrom<&[u8]> for RecoverableSignature {
+    type Error = SignatureError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl From<RecoverableSignature> for [u8; SIGNATURE_LEN] {
+    fn from(signature: RecoverableSignature) -> Self {
+        signature.to_bytes()
+    }
+}
+
+impl From<&RecoverableSignature> for [u8; SIGNATURE_LEN] {
+    fn from(signature: &RecoverableSignature) -> Self {
+        signature.to_bytes()
+    }
+}
+
+impl FromStr for RecoverableSignature {
+    type Err = SignatureError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = hex::decode(s.strip_prefix("0x").unwrap_or(s))?;
+        Self::from_bytes(&bytes)
+    }
+}
+
+impl From<(Signature, RecoveryId)> for RecoverableSignature {
+    fn from((signature, recovery_id): (Signature, RecoveryId)) -> Self {
+        Self::from_signature(&signature, recovery_id)
+    }
+}
+
+impl TryFrom<RecoverableSignature> for (Signature, RecoveryId) {
+    type Error = SignatureError;
+
+    fn try_from(signature: RecoverableSignature) -> Result<Self, Self::Error> {
+        signature.split()
+    }
+}
+
 impl fmt::Debug for RecoverableSignature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "RecoverableSignature(0x{})", hex::encode(self.to_bytes()))
@@ -186,5 +229,31 @@ mod tests {
             assert_eq!(sig.to_bytes()[..64], sig.to_legacy_bytes()[..64]);
             assert_eq!(RecoverableSignature::from_bytes(&sig.to_legacy_bytes()).unwrap(), sig);
         }
+    }
+
+    #[test]
+    fn standard_byte_and_string_conversions() {
+        let mut bytes = [3u8; SIGNATURE_LEN];
+        bytes[64] = 1;
+        let signature = RecoverableSignature::try_from(bytes.as_slice()).unwrap();
+
+        assert_eq!(<[u8; SIGNATURE_LEN]>::from(signature), bytes);
+        assert_eq!(<[u8; SIGNATURE_LEN]>::from(&signature), bytes);
+        assert_eq!(hex::encode(bytes).parse::<RecoverableSignature>().unwrap(), signature);
+        assert_eq!(
+            format!("0x{}", hex::encode(bytes)).parse::<RecoverableSignature>().unwrap(),
+            signature
+        );
+    }
+
+    #[test]
+    fn k256_tuple_conversions() {
+        let signing = SigningKey::from_bytes(&[1u8; 32].into()).unwrap();
+        let tuple: (Signature, RecoveryId) = signing.sign_prehash(&[9u8; 32]).unwrap();
+        let recoverable = RecoverableSignature::from(tuple);
+        let roundtrip: (Signature, RecoveryId) = recoverable.try_into().unwrap();
+
+        assert_eq!(roundtrip.0, tuple.0);
+        assert_eq!(roundtrip.1, tuple.1);
     }
 }

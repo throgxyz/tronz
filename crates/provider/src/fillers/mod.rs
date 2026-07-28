@@ -1,7 +1,7 @@
 //! Transaction fillers — composable units that populate a
 //! [`TransactionRequest`] before signing.
 //!
-//! Modeled on alloy's `TxFiller` / `JoinFill` pattern (see `DESIGN.md` §5.3).
+//! Modeled on alloy's `TxFiller` / `JoinFill` pattern.
 
 use core::future::Future;
 use std::{

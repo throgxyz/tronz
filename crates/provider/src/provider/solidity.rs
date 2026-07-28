@@ -294,7 +294,11 @@ impl SolidityProviderBuilder {
     }
 
     /// Add equivalent SolidityNode endpoints for client-side failover.
-    pub fn with_endpoints(mut self, endpoints: Vec<String>) -> Self {
+    pub fn with_endpoints<I, S>(mut self, endpoints: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
         self.inner = self.inner.with_endpoints(endpoints);
         self
     }

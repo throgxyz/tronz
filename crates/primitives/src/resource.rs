@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::UnknownResourceCode;
+
 /// The kind of network resource obtained by staking TRX.
 ///
 /// Discriminants match the protobuf `ResourceCode` enum so the value can be
@@ -34,6 +36,20 @@ impl ResourceCode {
     }
 }
 
+impl From<ResourceCode> for i32 {
+    fn from(resource: ResourceCode) -> Self {
+        resource.as_i32()
+    }
+}
+
+impl TryFrom<i32> for ResourceCode {
+    type Error = UnknownResourceCode;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        Self::from_i32(value).ok_or(UnknownResourceCode(value))
+    }
+}
+
 impl Default for ResourceCode {
     /// Energy is the most commonly staked-for resource and matches the default
     /// used by the staking builders.
@@ -54,5 +70,8 @@ mod tests {
         assert_eq!(ResourceCode::from_i32(1), Some(ResourceCode::Energy));
         assert_eq!(ResourceCode::from_i32(9), None);
         assert_eq!(ResourceCode::default(), ResourceCode::Energy);
+        assert_eq!(i32::from(ResourceCode::TronPower), 2);
+        assert_eq!(ResourceCode::try_from(2).unwrap(), ResourceCode::TronPower);
+        assert!(ResourceCode::try_from(9).is_err());
     }
 }

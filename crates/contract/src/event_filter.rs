@@ -77,9 +77,9 @@ impl<P: ContractReadProvider, E: SolEvent> TronEventFilter<P, E> {
                 // both conditions must hold: emitter address (if filtered) and
                 // topic0 matching the event signature hash
                 self.address.is_none_or(|a| log.address == a)
-                    && log.topics.first().copied() == Some(sig)
+                    && log.topics().first().copied() == Some(sig)
             })
-            .filter_map(|log| E::decode_raw_log(log.topics.iter().copied(), &log.data).ok())
+            .filter_map(|log| E::decode_raw_log(log.topics().iter().copied(), &log.data).ok())
             .collect()
     }
 }
@@ -123,6 +123,7 @@ mod tests {
             vec![Transfer::SIGNATURE_HASH, B256::from(t1), B256::from(t2)],
             data.to_vec(),
         )
+        .unwrap()
     }
 
     #[test]
@@ -152,14 +153,14 @@ mod tests {
     fn wrong_topic0_is_skipped() {
         let filter = make_filter(None);
         let mut log = transfer_log(addr(1), addr(2), addr(3), 42);
-        log.topics[0] = B256::ZERO;
+        log.topics_mut()[0] = B256::ZERO;
         assert!(filter.decode_logs(&[log]).is_empty());
     }
 
     #[test]
     fn no_topics_is_skipped() {
         let filter = make_filter(None);
-        let log = Log::new(addr(1), vec![], vec![]);
+        let log = Log::new(addr(1), vec![], vec![]).unwrap();
         assert!(filter.decode_logs(&[log]).is_empty());
     }
 
@@ -167,7 +168,7 @@ mod tests {
     fn missing_indexed_topic_silently_skipped() {
         // topic0 matches but from/to topics are absent — decode_raw_log fails.
         let filter = make_filter(None);
-        let log = Log::new(addr(1), vec![Transfer::SIGNATURE_HASH], [0u8; 32].to_vec());
+        let log = Log::new(addr(1), vec![Transfer::SIGNATURE_HASH], [0u8; 32].to_vec()).unwrap();
         assert!(filter.decode_logs(&[log]).is_empty());
     }
 }

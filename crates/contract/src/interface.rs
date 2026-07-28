@@ -127,10 +127,10 @@ impl Interface {
     /// Returns [`ContractError::UnknownEvent`] if no matching event is found in
     /// the ABI.
     pub fn decode_log(&self, log: &Log) -> Result<(String, DecodedEvent)> {
-        let topic0 = log.topics.first().copied().unwrap_or_default();
+        let topic0 = log.topics().first().copied().unwrap_or_default();
         let event = self.get_event_by_topic(&topic0)?;
         let name = event.name.clone();
-        let decoded = event.decode_log_parts(log.topics.iter().copied(), &log.data)?;
+        let decoded = event.decode_log_parts(log.topics().iter().copied(), &log.data)?;
         Ok((name, decoded))
     }
 
@@ -143,7 +143,7 @@ impl Interface {
         logs: &'a [Log],
     ) -> impl Iterator<Item = Result<(String, DecodedEvent)>> + 'a {
         logs.iter().filter_map(move |log| {
-            let topic0 = log.topics.first().copied()?;
+            let topic0 = log.topics().first().copied()?;
             if !self.events.contains_key(&topic0) {
                 return None;
             }

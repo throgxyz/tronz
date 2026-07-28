@@ -25,6 +25,7 @@ use crate::{
 ///
 /// [`tron_sol!`]: tronz_sol_macro::tron_sol
 #[must_use = "a TronCallBuilder does nothing until `.call()` or `.send()` is awaited"]
+#[derive(Debug)]
 pub struct TronCallBuilder<P, C> {
     inner: CallBuilder<P>,
     _call: PhantomData<fn() -> C>,

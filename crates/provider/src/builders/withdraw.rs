@@ -13,6 +13,7 @@ use crate::{
 };
 
 /// Claim TRX from expired unfreeze windows.
+#[derive(Debug)]
 pub struct WithdrawExpireBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -44,6 +45,7 @@ impl<'a, P: TronProvider> WithdrawExpireBuilder<'a, P> {
 }
 
 /// Cancel all in-progress unfreeze operations.
+#[derive(Debug)]
 pub struct CancelAllUnfreezeBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

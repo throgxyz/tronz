@@ -12,6 +12,7 @@ use crate::{
 /// Claim accumulated block/vote rewards (`WithdrawBalance`).
 ///
 /// Note: TRON allows this at most once per 24h per account.
+#[derive(Debug)]
 pub struct WithdrawBalanceBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

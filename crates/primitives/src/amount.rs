@@ -24,6 +24,9 @@ pub const SUN_PER_TRX: i64 = 1_000_000;
 /// User-facing constructors enforce non-negative amounts. Negative values remain
 /// representable only so malformed protobuf or serialized data can be inspected
 /// and round-tripped without panicking; arithmetic operations reject them.
+///
+/// Parses from and displays as a decimal TRX string with six fractional digits;
+/// see [`parse_trx`] and [`format_trx`].
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Trx(i64);
@@ -32,13 +35,10 @@ impl Trx {
     /// Zero TRX.
     pub const ZERO: Trx = Trx(0);
 
-    /// Construct directly from a sun value without validation.
+    /// Construct from a sun value without rejecting negatives.
     ///
-    /// This bypasses the non-negative amount invariant. It exists for protobuf
-    /// round-tripping and malformed on-chain data handling; do not use it for
-    /// user input, balances, transfers, or contract calls. Prefer
-    /// [`Trx::from_sun`] for raw user-facing input.
-    #[doc(hidden)]
+    /// For protobuf round-tripping and malformed on-chain data only; prefer
+    /// [`Trx::from_sun`] for user input, balances, transfers, and contract calls.
     pub const fn from_sun_unchecked(sun: i64) -> Self {
         Self(sun)
     }
@@ -75,25 +75,6 @@ impl Trx {
     }
 }
 
-/// Parse a decimal TRX string (e.g. `"1.5"` or `"100"`) into sun.
-///
-/// The accepted syntax mirrors alloy's `parse_units` with 6 decimal places:
-/// leading decimal points and `_` separators are accepted, an empty string is
-/// zero, and fractional digits beyond sun precision are truncated. Negative
-/// values remain invalid because native TRX amounts are non-negative.
-///
-/// # Examples
-///
-/// ```
-/// use tronz_primitives::Trx;
-///
-/// assert_eq!("1".parse::<Trx>().unwrap().as_sun(), 1_000_000);
-/// assert_eq!("1.5".parse::<Trx>().unwrap().as_sun(), 1_500_000);
-/// assert_eq!(".5".parse::<Trx>().unwrap().as_sun(), 500_000);
-/// assert_eq!("0.000001".parse::<Trx>().unwrap().as_sun(), 1);
-/// assert_eq!("1.0000009".parse::<Trx>().unwrap().as_sun(), 1_000_000);
-/// assert!("-1".parse::<Trx>().is_err());
-/// ```
 impl FromStr for Trx {
     type Err = AmountError;
 
@@ -140,16 +121,26 @@ impl FromStr for Trx {
     }
 }
 
-/// Parse a decimal TRX string into a [`Trx`] amount.
+/// Parse a decimal TRX string (e.g. `"1.5"` or `"100"`) into a [`Trx`] amount.
 ///
 /// Free-function alias for [`str::parse::<Trx>()`](Trx::from_str), mirroring
 /// alloy's [`parse_ether`](https://docs.rs/alloy-primitives/latest/alloy_primitives/utils/fn.parse_ether.html)
 /// for callers who prefer that style.
 ///
+/// The accepted syntax mirrors alloy's `parse_units` with 6 decimal places:
+/// leading decimal points and `_` separators are accepted, an empty string is
+/// zero, and fractional digits beyond sun precision are truncated. Negative
+/// values remain invalid because native TRX amounts are non-negative.
+///
 /// ```
-/// use tronz_primitives::parse_trx;
+/// use tronz_primitives::{Trx, parse_trx};
 ///
 /// assert_eq!(parse_trx("1.5").unwrap().as_sun(), 1_500_000);
+/// assert_eq!(parse_trx(".5").unwrap().as_sun(), 500_000);
+/// assert_eq!(parse_trx("0.000001").unwrap().as_sun(), 1);
+/// assert_eq!(parse_trx("1.0000009").unwrap().as_sun(), 1_000_000);
+/// assert_eq!("1".parse::<Trx>().unwrap().as_sun(), 1_000_000);
+/// assert!(parse_trx("-1").is_err());
 /// ```
 pub fn parse_trx(s: &str) -> Result<Trx, AmountError> {
     s.parse()
@@ -159,12 +150,14 @@ pub fn parse_trx(s: &str) -> Result<Trx, AmountError> {
 ///
 /// Free-function alias for [`Trx`]'s [`Display`](fmt::Display), mirroring alloy's
 /// [`format_ether`](https://docs.rs/alloy-primitives/latest/alloy_primitives/utils/fn.format_ether.html).
+/// The conversion is exact — no `f64` is involved — matching `format_units`.
 ///
 /// ```
 /// use tronz_primitives::{Trx, format_trx};
 ///
-/// let amount = Trx::from_sun(1_500_000).unwrap();
-/// assert_eq!(format_trx(amount), "1.500000");
+/// assert_eq!(format_trx(Trx::from_sun(1_500_000).unwrap()), "1.500000");
+/// assert_eq!(format_trx(Trx::from_sun(1).unwrap()), "0.000001");
+/// assert_eq!("100".parse::<Trx>().unwrap().to_string(), "100.000000");
 /// ```
 pub fn format_trx(amount: Trx) -> String {
     amount.to_string()
@@ -193,17 +186,6 @@ impl Sub for Trx {
     }
 }
 
-/// Formats the amount as a fixed-precision decimal TRX string, exactly (no
-/// `f64`), mirroring alloy's `format_units` behavior.
-///
-/// ```
-/// use tronz_primitives::Trx;
-///
-/// assert_eq!(Trx::from_sun(1_500_000).unwrap().to_string(), "1.500000");
-/// assert_eq!("100".parse::<Trx>().unwrap().to_string(), "100.000000");
-/// assert_eq!(Trx::from_sun(1).unwrap().to_string(), "0.000001");
-/// assert_eq!("1.5".parse::<Trx>().unwrap().to_string(), "1.500000");
-/// ```
 impl fmt::Display for Trx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let abs = self.0.unsigned_abs();

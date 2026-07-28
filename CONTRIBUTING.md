@@ -38,7 +38,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/). Examples
 ## Pull requests
 
 - One logical change per PR.
-- Add or update tests for any new behaviour.
+- Add or update tests for any new behavior.
 - Update `CHANGELOG.md` under `[Unreleased]` with a brief description.
 - PRs are squash-merged; the PR title becomes the commit message.
 
@@ -61,4 +61,4 @@ One-time repository setup:
 ## License
 
 By contributing, you agree that your contributions will be dual-licensed under
-[MIT](./LICENSE-MIT) and [Apache-2.0](./LICENSE-APACHE), matching the project licence.
+[MIT](./LICENSE-MIT) and [Apache-2.0](./LICENSE-APACHE), matching the project license.

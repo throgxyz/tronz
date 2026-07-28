@@ -6,19 +6,20 @@ An idiomatic, async-first Rust SDK for TRON — inspired by [alloy](https://gith
 
 ## Installation
 
-Add the `tronz` crate with the `full` feature flag:
+Add the `tronz` crate:
 
 ```sh
-cargo add tronz --features full
+cargo add tronz
 ```
 
 Or in your `Cargo.toml`:
 
 ```toml
-tronz = { version = "0.4", features = ["full"] }
+tronz = "0.4"
 ```
 
-A full list of available features can be found in the
+The default features include the TLS-enabled gRPC provider, contract bindings,
+and local signing. A full list of available features can be found in the
 [`tronz` crate's `Cargo.toml`](https://github.com/throgxyz/tronz/blob/main/crates/tronz/Cargo.toml).
 
 ## Examples
@@ -29,7 +30,7 @@ A full list of available features can be found in the
 use tronz::{ProviderBuilder, TronProvider, TRONGRID_MAINNET};
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let provider = ProviderBuilder::new().on_grpc(TRONGRID_MAINNET).await?;
+let provider = ProviderBuilder::new().connect_grpc(TRONGRID_MAINNET).await?;
 
 let block = provider.get_now_block().await?;
 println!("Latest block: {} ({}ms)", block.number, block.timestamp);
@@ -47,9 +48,8 @@ let signer = LocalSigner::from_hex("PRIVATE_KEY_HEX").expect("valid key");
 let from = signer.address();
 
 let provider = ProviderBuilder::new()
-    .with_recommended_fillers()
     .with_signer(signer)
-    .on_grpc(TRONGRID_NILE)
+    .connect_grpc(TRONGRID_NILE)
     .await?;
 
 let pending = provider

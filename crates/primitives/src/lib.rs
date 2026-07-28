@@ -16,7 +16,7 @@ pub use address::{ADDRESS_LEN, ADDRESS_PREFIX, Address, EVM_ADDRESS_LEN};
 /// Types re-used directly from `alloy-primitives`.
 pub use alloy_primitives::{B256, Bytes, U256, keccak256};
 pub use amount::{SUN_PER_TRX, Trx, format_trx, parse_trx};
-pub use error::{AddressError, AmountError, SignatureError};
+pub use error::{AddressError, AmountError, SignatureError, UnknownResourceCode};
 pub use log::Log;
 pub use message::{TRON_MESSAGE_PREFIX, hash_message, recover_message_address, verify_message};
 pub use resource::ResourceCode;

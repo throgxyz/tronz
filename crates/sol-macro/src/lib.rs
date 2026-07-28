@@ -371,7 +371,7 @@ impl TronSol {
 
         // Split the contract body into callable functions, constructor, and events.
         // Public state variables are converted to getter functions via
-        // `ItemFunction::from_variable_definition`, matching alloy's behaviour.
+        // `ItemFunction::from_variable_definition`, matching alloy's behavior.
         let mut functions: Vec<ItemFunction> = Vec::new();
         let mut constructor: Option<ItemFunction> = None;
         let mut events: Vec<ItemEvent> = Vec::new();

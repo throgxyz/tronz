@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Alloy-style `ProviderBuilder::connect_grpc` and `connect_grpc_with_key`
+  connection methods. The former `on_grpc` and `on_grpc_with_key` names remain
+  available as deprecated aliases.
+- `Debug` implementations for public provider and contract builders.
+- Standard byte and cryptographic conversion traits for `Address` and
+  `RecoverableSignature`, plus `Log` value traits and topic-count validation
+  through `Log::is_valid`.
+- `TryFrom<i32> for ResourceCode`, mirroring the existing
+  `From<ResourceCode> for i32`. Unknown discriminants yield the new
+  `UnknownResourceCode` error.
+
 - TronWeb `signMessageV2`-compatible personal message signing and verification —
   `TronSigner::sign_message`, `hash_message`, `recover_message_address`, and
   `verify_message` — using the TRON-prefixed message format documented as
@@ -16,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`recover_address_from_prehash`) and `27`/`28` legacy recovery-id encoding
   (`to_legacy_bytes`) for TronWeb / TronLink interoperability. `to_bytes()`
   (`0`/`1`, the native transaction encoding) is unchanged.
+
+### Changed
+
+- `ProviderBuilder::new()` now installs the recommended filler chain, matching
+  Alloy. Use `ProviderBuilder::default()` to start with no fillers.
+- Endpoint builder methods now accept any `IntoIterator` whose items implement
+  `Into<String>`, rather than requiring a pre-built `Vec<String>`.
+- **Breaking:** `Log::topics` is now private, so the four-topic EVM limit cannot
+  be broken after construction. `Log::new` validates and returns `Option<Self>`;
+  use `Log::new_unchecked` to preserve a malformed node response verbatim. Read
+  topics through `Log::topics()` and edit them in place through
+  `Log::topics_mut()`.
 
 ## [0.4.1](https://github.com/throgxyz/tronz/compare/v0.4.0...v0.4.1) - 2026-07-19
 

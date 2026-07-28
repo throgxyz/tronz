@@ -40,7 +40,7 @@ use {
 /// the ABI decoding fails.
 #[cfg(feature = "provider")]
 pub fn decode_log<E: SolEvent>(log: &Log) -> Result<E> {
-    E::decode_raw_log(log.topics.iter().copied(), &log.data).map_err(Into::into)
+    E::decode_raw_log(log.topics().iter().copied(), &log.data).map_err(Into::into)
 }
 
 /// Return `true` if `log` could be an instance of `E`.
@@ -52,7 +52,7 @@ pub fn log_matches<E: SolEvent>(log: &Log) -> bool {
     if E::ANONYMOUS {
         return true;
     }
-    log.topics.first().is_some_and(|t| *t == E::SIGNATURE_HASH)
+    log.topics().first().is_some_and(|t| *t == E::SIGNATURE_HASH)
 }
 
 /// Return an iterator that yields only the logs matching `E`, decoded.
@@ -70,5 +70,5 @@ pub fn decode_logs<'a, E: SolEvent + 'a>(logs: &'a [Log]) -> impl Iterator<Item 
 #[cfg(feature = "provider")]
 pub fn topic0_set(logs: &[Log]) -> impl Iterator<Item = B256> + '_ {
     let mut seen = std::collections::HashSet::new();
-    logs.iter().filter_map(move |log| log.topics.first().copied().filter(|t| seen.insert(*t)))
+    logs.iter().filter_map(move |log| log.topics().first().copied().filter(|t| seen.insert(*t)))
 }

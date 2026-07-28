@@ -99,6 +99,7 @@ impl<P: TronProvider> WitnessApi for P {
 /// The applicant must have at least 9,999 TRX to cover the SR deposit.
 ///
 /// Created by [`WitnessApi::become_witness`].
+#[derive(Debug)]
 pub struct BecomeWitnessBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -151,6 +152,7 @@ impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
 /// Builds an update-SR-URL transaction.
 ///
 /// Created by [`WitnessApi::update_witness`].
+#[derive(Debug)]
 pub struct UpdateWitnessBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -203,6 +205,7 @@ impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
 /// Builds a change-brokerage-ratio transaction.
 ///
 /// Created by [`WitnessApi::update_brokerage`].
+#[derive(Debug)]
 pub struct UpdateBrokerageBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

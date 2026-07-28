@@ -16,7 +16,7 @@ use tronz_provider::{ProviderBuilder, TronProvider};
 use tronz_provider::transport::grpc::TRONGRID_MAINNET;
 
 # async fn run() -> tronz_provider::Result<()> {
-let provider = ProviderBuilder::new().on_grpc(TRONGRID_MAINNET).await?;
+let provider = ProviderBuilder::new().connect_grpc(TRONGRID_MAINNET).await?;
 let block = provider.get_now_block().await?;
 println!("latest block: {}", block.number);
 # Ok(()) }

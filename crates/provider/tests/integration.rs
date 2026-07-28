@@ -46,7 +46,10 @@ const NILE_BOGUS_TOKEN_ID: &str = "9999999999";
 
 /// Build a plain read-only provider connected to Nile.
 async fn read_provider() -> impl TronProvider {
-    ProviderBuilder::new().on_grpc(TRONGRID_NILE).await.expect("failed to connect to Nile testnet")
+    ProviderBuilder::new()
+        .connect_grpc(TRONGRID_NILE)
+        .await
+        .expect("failed to connect to Nile testnet")
 }
 
 /// Connect to Nile's SolidityNode.
@@ -267,9 +270,8 @@ async fn test_trx_transfer_and_receipt() {
         }
     };
     let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
         .with_signer(signer)
-        .on_grpc(TRONGRID_NILE)
+        .connect_grpc(TRONGRID_NILE)
         .await
         .expect("connect failed");
 

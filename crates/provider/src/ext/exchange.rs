@@ -111,6 +111,7 @@ impl<P: TronProvider> ExchangeApi for P {
 /// Builds a transaction that creates a new TRC10 exchange pair.
 ///
 /// Created by [`ExchangeApi::exchange_create`].
+#[derive(Debug)]
 pub struct ExchangeCreateBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -201,6 +202,7 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
 /// Builds a liquidity injection transaction.
 ///
 /// Created by [`ExchangeApi::exchange_inject`].
+#[derive(Debug)]
 pub struct ExchangeInjectBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -271,6 +273,7 @@ impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
 /// Builds a liquidity withdrawal transaction.
 ///
 /// Created by [`ExchangeApi::exchange_withdraw`].
+#[derive(Debug)]
 pub struct ExchangeWithdrawBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -341,6 +344,7 @@ impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
 /// Builds a swap (trade) transaction on an exchange pair.
 ///
 /// Created by [`ExchangeApi::exchange_trade`].
+#[derive(Debug)]
 pub struct ExchangeTradeBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

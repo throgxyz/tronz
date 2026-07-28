@@ -18,6 +18,7 @@ use crate::{
 /// done once per account.
 ///
 /// Created by [`TronProvider::set_account_id`].
+#[derive(Debug)]
 pub struct SetAccountIdBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -71,6 +72,7 @@ impl<'a, P: TronProvider> SetAccountIdBuilder<'a, P> {
 /// owner can call this.
 ///
 /// Created by [`TronProvider::clear_contract_abi`].
+#[derive(Debug)]
 pub struct ClearContractAbiBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -125,6 +127,7 @@ impl<'a, P: TronProvider> ClearContractAbiBuilder<'a, P> {
 /// origin. Only the contract owner can call this.
 ///
 /// Created by [`TronProvider::update_contract_setting`].
+#[derive(Debug)]
 pub struct UpdateContractSettingBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -196,6 +199,7 @@ impl<'a, P: TronProvider> UpdateContractSettingBuilder<'a, P> {
 /// contract owner can call this.
 ///
 /// Created by [`TronProvider::update_contract_energy_limit`].
+#[derive(Debug)]
 pub struct UpdateContractEnergyLimitBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

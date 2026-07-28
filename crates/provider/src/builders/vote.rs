@@ -28,6 +28,7 @@ use crate::{
 /// ```
 ///
 /// Created by [`TronProvider::vote_witness`].
+#[derive(Debug)]
 pub struct VoteBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

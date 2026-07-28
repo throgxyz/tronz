@@ -278,7 +278,9 @@ pub(super) fn transaction_info_from_proto(
         .log
         .into_iter()
         .map(|l| {
-            Ok(Log::new(
+            // Preserve the node's response verbatim, even if it exceeds the
+            // four-topic EVM limit; callers can check `Log::is_valid`.
+            Ok(Log::new_unchecked(
                 log_addr(l.address)?,
                 l.topics.into_iter().map(b256).collect(),
                 Bytes::from(l.data),
@@ -989,7 +991,7 @@ mod tests {
         assert_eq!(decoded.contract_address, Some(contract_address));
         assert_eq!(decoded.logs.len(), 1);
         assert_eq!(decoded.logs[0].address, log_address);
-        assert_eq!(decoded.logs[0].topics, vec![topic]);
+        assert_eq!(decoded.logs[0].topics(), [topic]);
         assert_eq!(decoded.logs[0].data.as_ref(), &[5, 6, 7]);
         assert_eq!(decoded.revert_reason.as_deref(), Some("execution reverted"));
     }

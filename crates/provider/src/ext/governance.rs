@@ -102,6 +102,7 @@ impl<P: TronProvider> GovernanceApi for P {
 /// Builds a governance proposal transaction.
 ///
 /// Created by [`GovernanceApi::submit_proposal`].
+#[derive(Debug)]
 pub struct SubmitProposalBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -164,6 +165,7 @@ impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
 /// Builds an approve/disapprove proposal transaction.
 ///
 /// Created by [`GovernanceApi::approve_proposal`].
+#[derive(Debug)]
 pub struct ApproveProposalBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -226,6 +228,7 @@ impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
 /// Builds a cancel-proposal transaction.
 ///
 /// Created by [`GovernanceApi::cancel_proposal`].
+#[derive(Debug)]
 pub struct CancelProposalBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

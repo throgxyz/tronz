@@ -76,8 +76,9 @@ impl Address {
         Self::from_slice(&decoded)
     }
 
-    /// Parse a hex address string (with or without `0x` / `41` semantics is
-    /// preserved: the bytes must already include the `0x41` prefix).
+    /// Parse a hex address string with an optional `0x` prefix.
+    ///
+    /// The encoded bytes must include the TRON `0x41` address prefix.
     pub fn from_hex(s: &str) -> Result<Self, AddressError> {
         let s = s.strip_prefix("0x").unwrap_or(s);
         let bytes = hex::decode(s)?;
@@ -103,6 +104,46 @@ impl Address {
     /// Encode as a lowercase hex string including the `0x41` prefix (no `0x`).
     pub fn to_hex(&self) -> String {
         hex::encode(self.0)
+    }
+}
+
+impl TryFrom<[u8; ADDRESS_LEN]> for Address {
+    type Error = AddressError;
+
+    fn try_from(bytes: [u8; ADDRESS_LEN]) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl TryFrom<&[u8]> for Address {
+    type Error = AddressError;
+
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_slice(bytes)
+    }
+}
+
+impl From<Address> for [u8; ADDRESS_LEN] {
+    fn from(address: Address) -> Self {
+        address.0
+    }
+}
+
+impl From<&Address> for [u8; ADDRESS_LEN] {
+    fn from(address: &Address) -> Self {
+        address.0
+    }
+}
+
+impl AsRef<[u8]> for Address {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl Default for Address {
+    fn default() -> Self {
+        Self::ZERO
     }
 }
 
@@ -212,5 +253,17 @@ mod tests {
         let a = Address::from_hex(HEX).unwrap();
         assert_eq!(a.as_evm_bytes().len(), 20);
         assert_eq!(&a.as_bytes()[1..], a.as_evm_bytes());
+    }
+
+    #[test]
+    fn standard_byte_conversions() {
+        let address = Address::from_hex(HEX).unwrap();
+        let bytes: [u8; ADDRESS_LEN] = address.into();
+
+        assert_eq!(Address::try_from(bytes).unwrap(), address);
+        assert_eq!(Address::try_from(bytes.as_slice()).unwrap(), address);
+        assert_eq!(<[u8; ADDRESS_LEN]>::from(&address), bytes);
+        assert_eq!(address.as_ref(), bytes.as_slice());
+        assert_eq!(Address::default(), Address::ZERO);
     }
 }

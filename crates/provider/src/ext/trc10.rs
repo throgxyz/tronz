@@ -182,6 +182,7 @@ impl<P: TronProvider> Trc10Api for P {
 /// Builds a TRC10 token transfer.
 ///
 /// Created by [`Trc10Api::transfer_trc10`].
+#[derive(Debug)]
 pub struct TransferTrc10Builder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -252,6 +253,7 @@ impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
 /// Builds a TRC10 token issuance transaction.
 ///
 /// Created by [`Trc10Api::issue_trc10`].
+#[derive(Debug)]
 pub struct IssueTrc10Builder<'a, P> {
     provider: &'a P,
     owner: Option<tronz_primitives::Address>,
@@ -418,6 +420,7 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
 /// Builds a TRC10 ICO participation transaction.
 ///
 /// Created by [`Trc10Api::participate_trc10`].
+#[derive(Debug)]
 pub struct ParticipateTrc10Builder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -488,6 +491,7 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
 /// Builds an unfreeze-asset transaction (releases frozen TRC10 supply).
 ///
 /// Created by [`Trc10Api::unfreeze_trc10`].
+#[derive(Debug)]
 pub struct UnfreezeTrc10Builder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -531,6 +535,7 @@ impl<'a, P: TronProvider> UnfreezeTrc10Builder<'a, P> {
 /// Builds a TRC10 token metadata update transaction.
 ///
 /// Created by [`Trc10Api::update_trc10`].
+#[derive(Debug)]
 pub struct UpdateTrc10Builder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

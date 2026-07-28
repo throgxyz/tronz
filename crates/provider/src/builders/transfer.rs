@@ -10,6 +10,7 @@ use crate::{
 };
 
 /// Builds a TRX transfer (`send_trx`).
+#[derive(Debug)]
 pub struct TransferBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

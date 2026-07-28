@@ -12,6 +12,7 @@ use crate::{
 };
 
 /// Delegate staked energy or bandwidth to another account.
+#[derive(Debug)]
 pub struct DelegateBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -85,6 +86,7 @@ impl<'a, P: TronProvider> DelegateBuilder<'a, P> {
 }
 
 /// Reclaim resources previously delegated to another account.
+#[derive(Debug)]
 pub struct UndelegateBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

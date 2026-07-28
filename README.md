@@ -77,7 +77,7 @@ use tronz::{ProviderBuilder, TronProvider, TRONGRID_MAINNET};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let provider = ProviderBuilder::new()
-        .on_grpc(TRONGRID_MAINNET)
+        .connect_grpc(TRONGRID_MAINNET)
         .await?;
 
     let block = provider.get_now_block().await?;
@@ -97,9 +97,8 @@ async fn main() -> anyhow::Result<()> {
     let to = "TRecipientAddress".parse()?;
 
     let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
         .with_signer(signer)
-        .on_grpc(TRONGRID_NILE)
+        .connect_grpc(TRONGRID_NILE)
         .await?;
 
     let pending = provider
@@ -124,7 +123,7 @@ use tronz::contract::Trc20Ext as _;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let provider = ProviderBuilder::new()
-        .on_grpc(TRONGRID_MAINNET)
+        .connect_grpc(TRONGRID_MAINNET)
         .await?;
 
     // USDT on mainnet
@@ -151,9 +150,8 @@ async fn main() -> anyhow::Result<()> {
     let receiver = "TReceiverAddress".parse()?;
 
     let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
         .with_signer(signer)
-        .on_grpc(TRONGRID_NILE)
+        .connect_grpc(TRONGRID_NILE)
         .await?;
 
     // Freeze 100 TRX for energy
@@ -240,7 +238,7 @@ use tronz::providers::ext::GovernanceApi as _;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let provider = ProviderBuilder::new()
-        .on_grpc(TRONGRID_MAINNET)
+        .connect_grpc(TRONGRID_MAINNET)
         .await?;
 
     let proposals = provider.list_proposals().await?;
@@ -262,7 +260,7 @@ use tronz::{ProviderBuilder, TronProvider, TRONGRID_MAINNET};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let provider = ProviderBuilder::new()
-        .on_grpc(TRONGRID_MAINNET)
+        .connect_grpc(TRONGRID_MAINNET)
         .await?;
 
     let mut witnesses = provider.list_witnesses().await?;

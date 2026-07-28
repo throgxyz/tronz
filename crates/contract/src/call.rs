@@ -35,6 +35,7 @@ use crate::error::{ContractError, Result};
 /// [`ContractInstance::call_raw`]: crate::instance::ContractInstance::call_raw
 /// [`ContractInstance::function`]: crate::instance::ContractInstance::function
 /// [`ContractInstance::function_from_selector`]: crate::instance::ContractInstance::function_from_selector
+#[derive(Debug)]
 pub struct CallBuilder<P> {
     provider: P,
     address: Address,

@@ -15,6 +15,7 @@ use crate::{
 /// This transaction creates the account in one step.
 ///
 /// Created by [`TronProvider::create_account`].
+#[derive(Debug)]
 pub struct CreateAccountBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -68,6 +69,7 @@ impl<'a, P: TronProvider> CreateAccountBuilder<'a, P> {
 /// Account names on TRON are not unique and can be changed freely.
 ///
 /// Created by [`TronProvider::update_account_name`].
+#[derive(Debug)]
 pub struct UpdateAccountBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

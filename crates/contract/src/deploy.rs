@@ -44,6 +44,7 @@ use crate::error::{ContractError, Result};
 /// A builder for deploying a TRON smart contract.
 ///
 /// Created by [`ContractExt::deploy`](crate::instance::ContractExt::deploy).
+#[derive(Debug)]
 pub struct DeployBuilder<P> {
     provider: P,
     bytecode: Bytes,
@@ -55,6 +56,7 @@ pub struct DeployBuilder<P> {
     name: String,
 }
 
+#[derive(Debug)]
 enum DeploymentAbi {
     Json(JsonAbi),
     Tron(TronAbi),

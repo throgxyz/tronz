@@ -10,6 +10,7 @@ use crate::{
 };
 
 /// Update an account's owner/witness/active permissions (multisig).
+#[derive(Debug)]
 pub struct AccountPermissionUpdateBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

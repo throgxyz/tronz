@@ -18,6 +18,7 @@ use crate::{
 /// the builder defaults to `3` automatically.
 /// Set `receiver` to delegate the obtained resource to another account in one
 /// step (inline delegation).
+#[derive(Debug)]
 pub struct FreezeV1Builder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -97,6 +98,7 @@ impl<'a, P: TronProvider> FreezeV1Builder<'a, P> {
 /// **Important**: if the original freeze used `.receiver(addr)` (inline delegation),
 /// you must call `.receiver(addr)` here with the same address, or the node will
 /// reject the transaction.
+#[derive(Debug)]
 pub struct UnfreezeV1Builder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -145,6 +147,7 @@ impl<'a, P: TronProvider> UnfreezeV1Builder<'a, P> {
 }
 
 /// Stake TRX to obtain energy or bandwidth (`FreezeBalanceV2`).
+#[derive(Debug)]
 pub struct FreezeBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -194,6 +197,7 @@ impl<'a, P: TronProvider> FreezeBuilder<'a, P> {
 }
 
 /// Unstake TRX (`UnfreezeBalanceV2`); subject to the network unbonding delay.
+#[derive(Debug)]
 pub struct UnfreezeBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

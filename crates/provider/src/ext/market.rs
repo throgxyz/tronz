@@ -126,6 +126,7 @@ impl<P: TronProvider> MarketApi for P {
 /// Builds a limit sell order on the order-book DEX.
 ///
 /// Created by [`MarketApi::market_sell`].
+#[derive(Debug)]
 pub struct MarketSellBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,
@@ -215,6 +216,7 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
 /// Builds a market-order cancellation transaction.
 ///
 /// Created by [`MarketApi::market_cancel`].
+#[derive(Debug)]
 pub struct MarketCancelBuilder<'a, P> {
     provider: &'a P,
     owner: Option<Address>,

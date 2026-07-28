@@ -39,6 +39,15 @@ pub enum AmountError {
     ParseError(String),
 }
 
+/// Error produced when a protobuf discriminant does not name a known
+/// [`ResourceCode`](crate::ResourceCode).
+#[derive(thiserror::Error, Debug)]
+#[error("unknown resource code discriminant: {0}")]
+pub struct UnknownResourceCode(
+    /// The discriminant that did not match a known resource.
+    pub i32,
+);
+
 /// Errors produced when constructing a [`RecoverableSignature`](crate::RecoverableSignature).
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
@@ -50,6 +59,10 @@ pub enum SignatureError {
     /// The recovery id byte was not `0` or `1` (after normalising `27`/`28`).
     #[error("invalid recovery id: {0}")]
     BadRecoveryId(u8),
+
+    /// Hexadecimal signature decoding failed.
+    #[error("hex decode failed: {0}")]
+    Hex(#[from] hex::FromHexError),
 
     /// The underlying ECDSA library rejected the signature scalars.
     #[error("ecdsa error: {0}")]
