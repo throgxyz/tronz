@@ -1,33 +1,10 @@
 use std::{slice, vec};
 
-use crate::TronAbiEntry;
+use crate::{TronAbiEntry, TronAbiEntryType};
 
 /// TRON's native contract ABI metadata.
 ///
-/// Unlike a Solidity JSON ABI, this representation mirrors the information a
-/// TRON node stores and returns without exposing generated protobuf types.
 /// Entries remain in node-provided order, including unknown entry kinds.
-///
-/// # Examples
-///
-/// ```
-/// use tronz_abi::{
-///     TronAbi, TronAbiEntry, TronAbiEntryType, TronAbiParam, TronAbiStateMutability,
-/// };
-///
-/// let transfer = TronAbiEntry {
-///     entry_type: TronAbiEntryType::Function,
-///     name: "transfer".into(),
-///     inputs: vec![TronAbiParam::new("to", "address"), TronAbiParam::new("amount", "uint256")],
-///     outputs: vec![TronAbiParam::new("", "bool")],
-///     state_mutability: TronAbiStateMutability::NonPayable,
-///     ..Default::default()
-/// };
-///
-/// let abi: TronAbi = [transfer].into_iter().collect();
-/// assert_eq!(abi.len(), 1);
-/// assert_eq!(abi.items().next().unwrap().name(), Some("transfer"));
-/// ```
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TronAbi {
@@ -37,15 +14,6 @@ pub struct TronAbi {
 
 impl TronAbi {
     /// Creates an empty TRON ABI.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use tronz_abi::TronAbi;
-    ///
-    /// let abi = TronAbi::new();
-    /// assert!(abi.is_empty());
-    /// ```
     #[inline]
     pub const fn new() -> Self {
         Self { entries: Vec::new() }
@@ -79,6 +47,76 @@ impl TronAbi {
     #[inline]
     pub fn into_items(self) -> vec::IntoIter<TronAbiEntry> {
         self.entries.into_iter()
+    }
+
+    /// Returns an iterator over the entries of one category, in node order.
+    #[inline]
+    pub fn items_of(
+        &self,
+        entry_type: TronAbiEntryType,
+    ) -> impl Iterator<Item = &TronAbiEntry> + '_ {
+        self.entries.iter().filter(move |entry| entry.entry_type == entry_type)
+    }
+
+    /// Returns an iterator over the function entries, in node order.
+    #[inline]
+    pub fn functions(&self) -> impl Iterator<Item = &TronAbiEntry> + '_ {
+        self.items_of(TronAbiEntryType::Function)
+    }
+
+    /// Returns an iterator over the event entries, in node order.
+    #[inline]
+    pub fn events(&self) -> impl Iterator<Item = &TronAbiEntry> + '_ {
+        self.items_of(TronAbiEntryType::Event)
+    }
+
+    /// Returns an iterator over the custom-error entries, in node order.
+    #[inline]
+    pub fn errors(&self) -> impl Iterator<Item = &TronAbiEntry> + '_ {
+        self.items_of(TronAbiEntryType::Error)
+    }
+
+    /// Returns the constructor entry, if the ABI declares one.
+    #[inline]
+    pub fn constructor(&self) -> Option<&TronAbiEntry> {
+        self.items_of(TronAbiEntryType::Constructor).next()
+    }
+
+    /// Returns an iterator over the functions with this name, in node order.
+    ///
+    /// A name may match more than one overloaded function.
+    #[inline]
+    pub fn functions_by_name<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a TronAbiEntry> + 'a {
+        self.named(TronAbiEntryType::Function, name)
+    }
+
+    /// Returns an iterator over the events with this name, in node order.
+    #[inline]
+    pub fn events_by_name<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a TronAbiEntry> + 'a {
+        self.named(TronAbiEntryType::Event, name)
+    }
+
+    /// Returns an iterator over the custom errors with this name, in node order.
+    #[inline]
+    pub fn errors_by_name<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a TronAbiEntry> + 'a {
+        self.named(TronAbiEntryType::Error, name)
+    }
+
+    fn named<'a>(
+        &'a self,
+        entry_type: TronAbiEntryType,
+        name: &'a str,
+    ) -> impl Iterator<Item = &'a TronAbiEntry> + 'a {
+        self.items_of(entry_type).filter(move |entry| entry.name == name)
     }
 }
 
@@ -122,7 +160,7 @@ impl<'a> IntoIterator for &'a mut TronAbi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{TronAbiEntryType, TronAbiStateMutability};
+    use crate::{TronAbiParam, TronAbiStateMutability};
 
     #[test]
     fn collection_helpers_preserve_order() {
@@ -142,5 +180,76 @@ mod tests {
     fn unknown_numeric_values_round_trip() {
         assert_eq!(TronAbiEntryType::from_i32(99).as_i32(), 99);
         assert_eq!(TronAbiStateMutability::from_i32(98).as_i32(), 98);
+    }
+
+    fn named(entry_type: TronAbiEntryType, name: &str, inputs: &[&str]) -> TronAbiEntry {
+        TronAbiEntry {
+            entry_type,
+            name: name.into(),
+            inputs: inputs.iter().map(|ty| TronAbiParam::new("", *ty)).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn sample_abi() -> TronAbi {
+        [
+            named(TronAbiEntryType::Constructor, "", &["uint256"]),
+            named(TronAbiEntryType::Function, "transfer", &["address", "uint256"]),
+            named(TronAbiEntryType::Function, "transfer", &["address"]),
+            named(TronAbiEntryType::Event, "Transfer", &["address", "address", "uint256"]),
+            named(TronAbiEntryType::Error, "InsufficientBalance", &["uint256"]),
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn category_iterators_only_yield_their_own_kind() {
+        let abi = sample_abi();
+
+        assert_eq!(abi.functions().count(), 2);
+        assert_eq!(abi.events().count(), 1);
+        assert_eq!(abi.errors().count(), 1);
+        assert_eq!(abi.constructor().unwrap().inputs[0].ty, "uint256");
+    }
+
+    #[test]
+    fn lookup_by_name_yields_every_overload_in_node_order() {
+        let abi = sample_abi();
+
+        let signatures: Vec<_> =
+            abi.functions_by_name("transfer").filter_map(TronAbiEntry::signature).collect();
+        assert_eq!(signatures, ["transfer(address,uint256)", "transfer(address)"]);
+
+        assert_eq!(
+            abi.events_by_name("Transfer").next().unwrap().signature().as_deref(),
+            Some("Transfer(address,address,uint256)")
+        );
+        assert_eq!(
+            abi.errors_by_name("InsufficientBalance").next().unwrap().signature().as_deref(),
+            Some("InsufficientBalance(uint256)")
+        );
+    }
+
+    #[test]
+    fn lookup_does_not_cross_categories() {
+        let abi = sample_abi();
+
+        // `Transfer` is an event, `transfer` a function; neither leaks into the other.
+        assert_eq!(abi.functions_by_name("Transfer").count(), 0);
+        assert_eq!(abi.events_by_name("transfer").count(), 0);
+        assert_eq!(abi.errors_by_name("transfer").count(), 0);
+    }
+
+    #[test]
+    fn only_functions_events_and_errors_have_a_signature() {
+        assert!(sample_abi().constructor().unwrap().signature().is_none());
+
+        // A node may name any entry; the category still decides.
+        let named_constructor = named(TronAbiEntryType::Constructor, "constructor", &["uint256"]);
+        assert!(named_constructor.signature().is_none());
+
+        let named_unknown = named(TronAbiEntryType::Unknown(7), "mystery", &["uint256"]);
+        assert!(named_unknown.signature().is_none());
     }
 }

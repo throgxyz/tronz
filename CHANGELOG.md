@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AwsSigner::sign_digest` and `sign_digest_with_key` for raw KMS digest signing,
   plus an `aws_sdk_kms` re-export so callers need not pin the client crate
   themselves.
+- `TronAbi` lookup helpers — `items_of`, `functions`, `events`, `errors`,
+  `constructor`, and the overload-aware `functions_by_name`, `events_by_name`,
+  and `errors_by_name` — plus `TronAbiEntry::signature` for canonical
+  signatures such as `transfer(address,uint256)`.
 - PBKDF2-HMAC-SHA256 keystore decryption in addition to scrypt.
 - Alloy-style `ProviderBuilder::connect_grpc` and `connect_grpc_with_key`;
   `on_grpc` variants remain deprecated aliases.

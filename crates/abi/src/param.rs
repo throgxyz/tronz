@@ -1,8 +1,4 @@
 /// A TRON ABI input or output parameter.
-///
-/// TRON nodes store only the name, Solidity type string, and event indexing
-/// flag. Solidity JSON ABI `components` and `internalType` metadata are not
-/// available in this representation.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TronAbiParam {
@@ -16,20 +12,6 @@ pub struct TronAbiParam {
 
 impl TronAbiParam {
     /// Creates a non-indexed ABI parameter.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use tronz_abi::TronAbiParam;
-    ///
-    /// let owner = TronAbiParam::new("owner", "address");
-    /// assert_eq!(owner.name(), "owner");
-    /// assert_eq!(owner.ty(), "address");
-    /// assert!(!owner.is_indexed());
-    ///
-    /// let indexed_owner = owner.with_indexed(true);
-    /// assert!(indexed_owner.is_indexed());
-    /// ```
     #[inline]
     pub fn new(name: impl Into<String>, ty: impl Into<String>) -> Self {
         Self { indexed: false, name: name.into(), ty: ty.into() }

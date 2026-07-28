@@ -3,10 +3,10 @@
 #[non_exhaustive]
 pub enum TronAbiConversionError {
     /// An ABI parameter contains an invalid Solidity type.
-    #[error("invalid ABI type `{0}")]
+    #[error("invalid ABI type `{0}`")]
     InvalidType(String),
     /// An ABI item or parameter contains an invalid Solidity identifier.
-    #[error("invalid ABI identifier `{0}")]
+    #[error("invalid ABI identifier `{0}`")]
     InvalidName(String),
     /// A TRON ABI entry type cannot be represented as a JSON ABI item.
     #[error("unknown TRON ABI entry type {0}")]

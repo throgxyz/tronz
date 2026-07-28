@@ -16,11 +16,13 @@ rustdoc-args = ["--cfg", "docsrs", "-Zunstable-options", "--generate-link-to-def
 [dependencies]
 alloy-json-abi = { workspace = true, optional = true }
 serde          = { workspace = true, optional = true }
-thiserror      = { workspace = true }
+thiserror      = { workspace = true, optional = true }
 
 [features]
 default = []
-alloy = ["dep:alloy-json-abi"]
+## Conversion to and from Alloy's `JsonAbi`, plus `TronAbiConversionError`.
+alloy = ["dep:alloy-json-abi", "dep:thiserror"]
+## Serialization of the native TRON ABI data model.
 serde = ["dep:serde"]
 
 [dev-dependencies]

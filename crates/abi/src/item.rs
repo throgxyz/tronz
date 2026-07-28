@@ -50,6 +50,32 @@ impl TronAbiEntry {
     pub fn outputs(&self) -> &[TronAbiParam] {
         &self.outputs
     }
+
+    /// Returns the canonical signature, such as `transfer(address,uint256)`.
+    ///
+    /// Returns `None` for constructors, fallback, receive, and unknown entries.
+    /// Input types are used as stored by the node.
+    pub fn signature(&self) -> Option<String> {
+        if !matches!(
+            self.entry_type,
+            TronAbiEntryType::Function | TronAbiEntryType::Event | TronAbiEntryType::Error
+        ) {
+            return None;
+        }
+
+        let name = self.name()?;
+        let mut signature = String::with_capacity(name.len() + 2);
+        signature.push_str(name);
+        signature.push('(');
+        for (index, input) in self.inputs.iter().enumerate() {
+            if index > 0 {
+                signature.push(',');
+            }
+            signature.push_str(&input.ty);
+        }
+        signature.push(')');
+        Some(signature)
+    }
 }
 
 /// A TRON ABI entry category.
