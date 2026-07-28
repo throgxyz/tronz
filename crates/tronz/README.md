@@ -19,7 +19,9 @@ tronz = "0.4"
 ```
 
 The default features include the TLS-enabled gRPC provider, contract bindings,
-and local signing. A full list of available features can be found in the
+and local signing. The `full` feature adds mnemonic, keystore, and TIP-712
+signing on top; `signer-aws` stays opt-in because it needs an AWS account. A
+full list can be found in the
 [`tronz` crate's `Cargo.toml`](https://github.com/throgxyz/tronz/blob/main/crates/tronz/Cargo.toml).
 
 ## Examples
@@ -86,6 +88,34 @@ let receipt = solidity.wait_for_success(tx_id).await?;
 println!("solidified in block {}", receipt.block_number);
 # Ok(())
 # }
+```
+
+### Type-safe contract bindings
+
+`tron_sol!` turns a Solidity interface into typed call and event builders. The
+generated code resolves everything through this crate, so no Alloy dependency
+has to be added alongside it.
+
+```rust,no_run
+use tronz::{ProviderBuilder, TRONGRID_MAINNET, primitives::Address};
+
+tronz::tron_sol! {
+    #[sol(rpc)]
+    interface IERC20 {
+        function balanceOf(address owner) external view returns (uint256);
+    }
+}
+
+async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    let provider = ProviderBuilder::new().connect_grpc(TRONGRID_MAINNET).await?;
+    let usdt: Address = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t".parse()?;
+
+    let token = IERC20::new(usdt, provider);
+    let balance = token.balanceOf(usdt).call().await?;
+    println!("balance: {balance}");
+    Ok(())
+}
+# fn main() {}
 ```
 
 For more examples, see the [throgxyz/examples](https://github.com/throgxyz/examples) repository.

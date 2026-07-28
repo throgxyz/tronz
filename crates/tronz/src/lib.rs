@@ -33,6 +33,10 @@ pub use tronz_abi::{
 pub mod signers {
     #[doc(inline)]
     pub use tronz_signer::*;
+    /// AWS KMS signer — keeps the private key inside the AWS HSM.
+    #[cfg(feature = "signer-aws")]
+    #[doc(inline)]
+    pub use tronz_signer_aws as aws;
 }
 
 #[cfg(feature = "signer-keystore")]
@@ -46,10 +50,6 @@ pub use tronz_signer::MnemonicBuilder;
 pub use tronz_signer::coins_bip39;
 #[doc(no_inline)]
 pub use tronz_signer::{LocalSigner, TronNetworkWallet, TronSigner, TronSignerSync, TronWallet};
-/// AWS KMS signer — keeps the private key inside the AWS HSM.
-#[cfg(feature = "signer-aws")]
-#[doc(inline)]
-pub use tronz_signer_aws as signer_aws;
 #[cfg(feature = "signer-aws")]
 #[doc(no_inline)]
 pub use tronz_signer_aws::AwsSigner;
@@ -85,4 +85,4 @@ pub mod contract {
 
 #[cfg(feature = "contract")]
 #[doc(no_inline)]
-pub use tronz_contract::JsonAbi;
+pub use tronz_contract::{JsonAbi, tron_sol};

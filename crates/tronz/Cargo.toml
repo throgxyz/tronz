@@ -35,7 +35,8 @@ tokio  = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [features]
 default = ["provider-grpc-tls", "contract", "signer-local"]
-full    = ["default"]
+# Everything that needs no external service or hardware: `signer-aws` stays opt-in.
+full = ["default", "signer-mnemonic", "signer-keystore", "signer-tip712"]
 
 # Transport backends (forwarded to tronz-provider).
 provider-grpc-tls = ["tronz-provider/grpc-tls"]

@@ -62,6 +62,7 @@ Optional features:
 
 | Feature | Adds |
 |---|---|
+| `full` | Everything below except `signer-aws`, which needs an AWS account |
 | `signer-mnemonic` | BIP-39 mnemonic generation + BIP-44 HD derivation (`MnemonicBuilder`) |
 | `signer-keystore` | Web3 Secret Storage V3 encrypt/decrypt (`LocalSigner::encrypt_keystore`, `decrypt_keystore`) |
 | `signer-tip712` | TIP-712 typed-data signing (`TronSigner::sign_typed_data`) — TronWeb `signTypedData`-compatible |

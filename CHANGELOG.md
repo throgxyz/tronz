@@ -9,58 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `TronNetworkWallet` and `TronWallet`, an Alloy-style wallet layer supporting
-  multiple credentials and custom key routing.
-- Multisig support across all transaction, contract-call, and deployment
-  builders via `.permission_id(id)`, `.build()`, and `.into_request()`.
-  `sign_hash_with_many`, permission lookup, and local threshold helpers complete
-  the unsigned-build/sign/broadcast flow.
-- `TronSignerSync` and expanded `LocalSigner` construction, conversion, random
-  generation, and synchronous signing APIs.
-- TronWeb-compatible `signMessageV2` personal-message signing, recovery, and
-  verification.
-- TIP-712 typed-data signing behind the `tip712` feature (`signer-tip712` on the
-  `tronz` facade).
-- `AwsSigner::sign_digest` and `sign_digest_with_key` for raw KMS digest signing,
-  plus an `aws_sdk_kms` re-export so callers need not pin the client crate
-  themselves.
-- `TronAbi` lookup helpers — `items_of`, `functions`, `events`, `errors`,
-  `constructor`, and the overload-aware `functions_by_name`, `events_by_name`,
-  and `errors_by_name` — plus `TronAbiEntry::signature` for canonical
-  signatures such as `transfer(address,uint256)`.
-- PBKDF2-HMAC-SHA256 keystore decryption in addition to scrypt.
-- Alloy-style `ProviderBuilder::connect_grpc` and `connect_grpc_with_key`;
-  `on_grpc` variants remain deprecated aliases.
-- Additional standard conversions and validation for `Address`,
-  `RecoverableSignature`, `Log`, and `ResourceCode`, plus `Debug`
-  implementations for public provider and contract builders.
+- `TronNetworkWallet` and `TronWallet`: multi-credential wallets with key routing.
+- Multisig on every builder: `.permission_id(id)` and `.build()` beside `.send()`.
+- `TronNetworkWallet::sign_hash_with_many` and `Permission` weight helpers.
+- `TronSignerSync`, plus more `LocalSigner` constructors and conversions.
+- TronWeb-compatible `signMessageV2` signing, recovery, and verification.
+- TIP-712 typed data behind `tip712` (`signer-tip712` on the facade).
+- `AwsSigner::sign_digest`, `sign_digest_with_key`, and an `aws_sdk_kms` re-export.
+- `tronz::tron_sol!` at the facade root, matching `alloy::sol!`.
+- `TronAbi` lookups (`functions`, `functions_by_name`, …) and `TronAbiEntry::signature`.
+- PBKDF2-HMAC-SHA256 keystore decryption.
+- `ProviderBuilder::connect_grpc` and `connect_grpc_with_key`.
+- More conversions for `Address`, `RecoverableSignature`, `Log`, and `ResourceCode`.
 
 ### Fixed
 
-- Keystore decryption now rejects invalid `dklen` values instead of panicking or
-  allocating from untrusted input.
+- Keystore decryption rejects an invalid `dklen` instead of panicking.
 
 ### Changed (Breaking)
 
-- `TronSigner` adopts the Alloy-style async signer API:
-  `sign_hash` takes `&B256`, dynamic dispatch uses `#[auto_impl(&mut, Box)]`,
-  and provider ownership moves to `TronWallet`.
-- `SignerFiller<S>` is replaced by generic `WalletFiller<W>`;
-  `ProviderBuilder::wallet` accepts any `TronNetworkWallet`, while `with_signer`
-  remains the single-signer convenience.
-- Contract `caller` now controls both simulated `msg.sender` and
-  the owner of sent/built transactions; deployments gain the equivalent `from`.
-- Keystore `kdfparams` is now the `KdfparamsType` enum, supporting
-  both scrypt and PBKDF2 parameters.
-- `Log::topics` is private and `Log::new` validates the EVM
-  four-topic limit; use `topics()`, `topics_mut()`, or `new_unchecked`.
+- `TronSigner::sign_hash` takes `&B256`; provider signing moves to `TronWallet`.
+- `SignerFiller<S>` becomes `WalletFiller<W>` over any `TronNetworkWallet`.
+- Contract `caller` also sets the owner of sent transactions; deploys gain `from`.
+- Keystore `kdfparams` is the `KdfparamsType` enum (scrypt and PBKDF2).
+- `Log::topics` is private; `Log::new` validates the four-topic limit.
+- `tronz::signer_aws` moves to `tronz::signers::aws`.
+- `TronAbiConversionError` requires `tronz-abi/alloy`.
 
 ### Changed
 
-- `ProviderBuilder::new()` now installs the recommended filler chain, matching
-  Alloy. Use `ProviderBuilder::default()` to start with no fillers.
-- Endpoint builder methods now accept any `IntoIterator` whose items implement
-  `Into<String>`, rather than requiring a pre-built `Vec<String>`.
+- `ProviderBuilder::new()` installs the recommended fillers; `default()` installs none.
+- The facade's `full` feature now adds mnemonic, keystore, and TIP-712.
+- Endpoint methods accept any `IntoIterator<Item: Into<String>>`.
+- `on_grpc` and `on_grpc_with_key` are deprecated aliases for `connect_grpc*`.
 
 ## [0.4.1](https://github.com/throgxyz/tronz/compare/v0.4.0...v0.4.1) - 2026-07-19
 
