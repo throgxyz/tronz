@@ -24,7 +24,6 @@ use tronz_provider::{
         grpc::{TRONGRID_NILE, TRONGRID_NILE_SOLIDITY},
     },
 };
-use tronz_signer::TronSigner as _;
 
 // ── Well-known Nile fixtures ──────────────────────────────────────────────────
 

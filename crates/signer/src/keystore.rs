@@ -73,10 +73,10 @@ pub struct CryptoJson {
     pub ciphertext: String,
     /// Cipher-specific parameters.
     pub cipherparams: CipherparamsJson,
-    /// Key-derivation function name — always `"scrypt"`.
+    /// Key-derivation function name: `"scrypt"` (written) or `"pbkdf2"` (read).
     pub kdf: String,
     /// KDF-specific parameters.
-    pub kdfparams: KdfparamsJson,
+    pub kdfparams: KdfparamsType,
     /// Hex-encoded keccak256(derivedKey[16..32] ‖ ciphertext).
     pub mac: String,
 }
@@ -88,19 +88,53 @@ pub struct CipherparamsJson {
     pub iv: String,
 }
 
-/// `kdfparams` sub-object (scrypt-specific fields).
+/// `kdfparams` sub-object. Its shape depends on the sibling `kdf` field.
+///
+/// tronz always writes [`Scrypt`](Self::Scrypt), but reads either so that
+/// keystores produced by wallets that default to PBKDF2 can be imported.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KdfparamsJson {
-    /// CPU/memory cost parameter N (must be a power of two, e.g. 262144).
-    pub n: u64,
-    /// Block size parameter r.
-    pub r: u32,
-    /// Parallelisation parameter p.
-    pub p: u32,
-    /// Derived-key length in bytes (always 32).
-    pub dklen: u32,
-    /// Hex-encoded 32-byte random salt.
-    pub salt: String,
+#[serde(untagged)]
+pub enum KdfparamsType {
+    /// PBKDF2 parameters (read-only support).
+    Pbkdf2 {
+        /// Iteration count.
+        c: u32,
+        /// Derived-key length in bytes (always 32).
+        dklen: u32,
+        /// Pseudo-random function — only `"hmac-sha256"` is supported.
+        prf: String,
+        /// Hex-encoded random salt.
+        salt: String,
+    },
+    /// Scrypt parameters.
+    Scrypt {
+        /// CPU/memory cost parameter N (must be a power of two, e.g. 262144).
+        n: u64,
+        /// Block size parameter r.
+        r: u32,
+        /// Parallelisation parameter p.
+        p: u32,
+        /// Derived-key length in bytes (always 32).
+        dklen: u32,
+        /// Hex-encoded 32-byte random salt.
+        salt: String,
+    },
+}
+
+impl KdfparamsType {
+    /// The declared derived-key length, common to both KDFs.
+    pub const fn dklen(&self) -> u32 {
+        match self {
+            Self::Pbkdf2 { dklen, .. } | Self::Scrypt { dklen, .. } => *dklen,
+        }
+    }
+
+    /// The hex-encoded salt, common to both KDFs.
+    pub fn salt(&self) -> &str {
+        match self {
+            Self::Pbkdf2 { salt, .. } | Self::Scrypt { salt, .. } => salt,
+        }
+    }
 }
 
 // ─── KeystoreError ────────────────────────────────────────────────────────────
@@ -118,6 +152,9 @@ pub enum KeystoreError {
     /// The keystore uses a KDF tronz does not support.
     #[error("unsupported KDF: {0}")]
     UnsupportedKdf(String),
+    /// The keystore uses a PBKDF2 pseudo-random function tronz does not support.
+    #[error("unsupported PBKDF2 prf: {0}")]
+    UnsupportedPrf(String),
     /// A required field has the wrong length or format.
     #[error("invalid keystore field: {0}")]
     InvalidField(&'static str),
@@ -179,33 +216,17 @@ pub fn decrypt(ks: &KeystoreFile, password: &str) -> Result<[u8; 32], SignerErro
     if ks.crypto.cipher != "aes-128-ctr" {
         return Err(KeystoreError::UnsupportedCipher(ks.crypto.cipher.clone()).into());
     }
-    if ks.crypto.kdf != "scrypt" {
-        return Err(KeystoreError::UnsupportedKdf(ks.crypto.kdf.clone()).into());
-    }
-
-    let kp = &ks.crypto.kdfparams;
-
     // ── Parse hex fields ──────────────────────────────────────────────────────
-    let salt = hex::decode(&kp.salt)?;
     let iv_bytes = hex::decode(&ks.crypto.cipherparams.iv)?;
     let iv: [u8; 16] =
         iv_bytes.try_into().map_err(|_| KeystoreError::InvalidField("iv must be 16 bytes"))?;
     let mut ciphertext = hex::decode(&ks.crypto.ciphertext)?;
     let stored_mac = hex::decode(&ks.crypto.mac)?;
 
-    // ── Derive key via scrypt ─────────────────────────────────────────────────
-    let n = kp.n;
-    if n == 0 || n & (n - 1) != 0 {
-        return Err(KeystoreError::InvalidScryptN(n).into());
-    }
-    let log_n = n.trailing_zeros() as u8;
-    let params =
-        scrypt::Params::new(log_n, kp.r, kp.p).map_err(|e| KeystoreError::Scrypt(e.to_string()))?;
-    let mut derived_key = vec![0u8; kp.dklen as usize];
-    scrypt::scrypt(password.as_bytes(), &salt, &params, &mut derived_key)
-        .map_err(|e| KeystoreError::Scrypt(e.to_string()))?;
+    // ── Derive key ────────────────────────────────────────────────────────────
+    let derived_key = derive_key(&ks.crypto.kdf, &ks.crypto.kdfparams, password)?;
 
-    // ── Verify MAC: keccak256(derivedKey[16..] || ciphertext) ─────────────────
+    // ── Verify MAC: keccak256(derivedKey[16..32] || ciphertext) ───────────────
     let computed_mac = Keccak256::new()
         .chain_update(&derived_key[16..])
         .chain_update(ciphertext.as_slice())
@@ -222,6 +243,48 @@ pub fn decrypt(ks: &KeystoreFile, password: &str) -> Result<[u8; 32], SignerErro
     ciphertext
         .try_into()
         .map_err(|_| KeystoreError::InvalidField("ciphertext must be 32 bytes").into())
+}
+
+/// Stretch `password` into the 32-byte key that guards the MAC and the AES key.
+fn derive_key(
+    kdf: &str,
+    params: &KdfparamsType,
+    password: &str,
+) -> Result<[u8; DK_LEN], SignerError> {
+    // The MAC and cipher keys are carved out of a 32-byte derived key, so any
+    // other length would slice out of bounds.
+    if params.dklen() as usize != DK_LEN {
+        return Err(KeystoreError::InvalidField("dklen must be 32").into());
+    }
+    let salt = hex::decode(params.salt())?;
+    let mut derived_key = [0u8; DK_LEN];
+
+    match (kdf, params) {
+        ("scrypt", KdfparamsType::Scrypt { n, r, p, .. }) => {
+            if *n == 0 || n & (n - 1) != 0 {
+                return Err(KeystoreError::InvalidScryptN(*n).into());
+            }
+            let params = scrypt::Params::new(n.trailing_zeros() as u8, *r, *p)
+                .map_err(|e| KeystoreError::Scrypt(e.to_string()))?;
+            scrypt::scrypt(password.as_bytes(), &salt, &params, &mut derived_key)
+                .map_err(|e| KeystoreError::Scrypt(e.to_string()))?;
+        }
+        ("pbkdf2", KdfparamsType::Pbkdf2 { c, prf, .. }) => {
+            if prf != "hmac-sha256" {
+                return Err(KeystoreError::UnsupportedPrf(prf.clone()).into());
+            }
+            if *c == 0 {
+                return Err(KeystoreError::InvalidField("pbkdf2 c must be non-zero").into());
+            }
+            pbkdf2::pbkdf2_hmac::<sha2::Sha256>(password.as_bytes(), &salt, *c, &mut derived_key);
+        }
+        ("scrypt" | "pbkdf2", _) => {
+            return Err(KeystoreError::InvalidField("kdfparams do not match kdf").into());
+        }
+        (other, _) => return Err(KeystoreError::UnsupportedKdf(other.to_string()).into()),
+    }
+
+    Ok(derived_key)
 }
 
 // ─── Internal encrypt implementation ─────────────────────────────────────────
@@ -264,7 +327,7 @@ fn encrypt_inner(
             ciphertext: hex::encode(ciphertext),
             cipherparams: CipherparamsJson { iv: hex::encode(iv) },
             kdf: "scrypt".into(),
-            kdfparams: KdfparamsJson {
+            kdfparams: KdfparamsType::Scrypt {
                 n: 1u64 << log_n,
                 r,
                 p,
@@ -283,7 +346,7 @@ fn encrypt_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{LocalSigner, TronSigner};
+    use crate::LocalSigner;
 
     // Light scrypt params for fast tests (N=2^12=4096).
     const TEST_LOG_N: u8 = 12;
@@ -351,7 +414,7 @@ mod tests {
         let ks2 = encrypt_light(&key, ADDR, "pw");
         // Different random salt/IV → different ciphertext and MAC.
         assert_ne!(ks1.crypto.ciphertext, ks2.crypto.ciphertext);
-        assert_ne!(ks1.crypto.kdfparams.salt, ks2.crypto.kdfparams.salt);
+        assert_ne!(ks1.crypto.kdfparams.salt(), ks2.crypto.kdfparams.salt());
         assert_ne!(ks1.id, ks2.id);
     }
 
@@ -379,9 +442,79 @@ mod tests {
     fn rejects_unsupported_kdf() {
         let key = test_key();
         let mut ks = encrypt_light(&key, ADDR, "pw");
-        ks.crypto.kdf = "pbkdf2".into();
+        ks.crypto.kdf = "argon2id".into();
         let err = decrypt(&ks, "pw").unwrap_err();
         assert!(err.to_string().contains("KDF"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_kdf_params_mismatch() {
+        let key = test_key();
+        let mut ks = encrypt_light(&key, ADDR, "pw");
+        // Scrypt params under a pbkdf2 label.
+        ks.crypto.kdf = "pbkdf2".into();
+        let err = decrypt(&ks, "pw").unwrap_err();
+        assert!(err.to_string().contains("kdfparams do not match"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_dklen_other_than_32() {
+        let key = test_key();
+        // A dklen between 10 and 15 used to slice past the end of the derived
+        // key and panic; anything but 32 must be a clean error.
+        for dklen in [0u32, 8, 12, 15, 31, 33, u32::MAX] {
+            let mut ks = encrypt_light(&key, ADDR, "pw");
+            let KdfparamsType::Scrypt { n, r, p, salt, .. } = ks.crypto.kdfparams.clone() else {
+                unreachable!("encrypt always writes scrypt params")
+            };
+            ks.crypto.kdfparams = KdfparamsType::Scrypt { n, r, p, dklen, salt };
+            let err = decrypt(&ks, "pw").unwrap_err();
+            assert!(err.to_string().contains("dklen"), "dklen={dklen}, got: {err}");
+        }
+    }
+
+    // ── PBKDF2 import ──────────────────────────────────────────────────────────
+
+    /// Golden vector from the Web3 Secret Storage V3 test suite, re-addressed to
+    /// TRON. Password is `testpassword`.
+    const PBKDF2_JSON: &str = r#"{
+        "address": "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+        "crypto": {
+            "cipher": "aes-128-ctr",
+            "ciphertext": "5318b4d5bcd28de64ee5559e671353e16f075ecae9f99c7a79a38af5f869aa46",
+            "cipherparams": { "iv": "6087dab2f9fdbbfaddc31a909735c1e6" },
+            "kdf": "pbkdf2",
+            "kdfparams": {
+                "c": 262144,
+                "dklen": 32,
+                "prf": "hmac-sha256",
+                "salt": "ae3cd4e7013836a3df6bd7241b12db061dbe2c6785853cce422d148a624ce0bd"
+            },
+            "mac": "517ead924a9d0dc3124507e3393d175ce3ff7c1e96529c6c555ce9e51205e9b2"
+        },
+        "id": "3198bc9c-6672-5ab3-d995-4942343ae5b6",
+        "version": 3
+    }"#;
+
+    #[test]
+    fn decrypts_pbkdf2_keystore() {
+        let ks: KeystoreFile = serde_json::from_str(PBKDF2_JSON).unwrap();
+        let key = decrypt(&ks, "testpassword").unwrap();
+        assert_eq!(
+            hex::encode(key),
+            "7a28b5ba57c53603b0b07b56bba752f7784bf506fa95edc395f5cf6c7514fe9d"
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_pbkdf2_prf() {
+        let mut ks: KeystoreFile = serde_json::from_str(PBKDF2_JSON).unwrap();
+        let KdfparamsType::Pbkdf2 { c, dklen, salt, .. } = ks.crypto.kdfparams.clone() else {
+            unreachable!("fixture uses pbkdf2 params")
+        };
+        ks.crypto.kdfparams = KdfparamsType::Pbkdf2 { c, dklen, prf: "hmac-sha512".into(), salt };
+        let err = decrypt(&ks, "testpassword").unwrap_err();
+        assert!(err.to_string().contains("prf"), "got: {err}");
     }
 
     #[test]

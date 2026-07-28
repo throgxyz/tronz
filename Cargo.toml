@@ -51,6 +51,7 @@ coins-bip39 = { version = "0.13", default-features = false, features = ["english
 
 # keystore
 scrypt = { version = "0.12", default-features = false }
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
 aes    = { version = "0.9",  default-features = false }
 ctr    = { version = "0.10", default-features = false }
 uuid   = { version = "1",    default-features = false, features = ["v4"] }
@@ -62,8 +63,10 @@ tonic       = { version = "0.14", default-features = false, features = ["transpo
 tonic-prost = { version = "0.14" }
 
 # async
-tokio   = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
-futures = { version = "0.3" }
+async-trait = { version = "0.1" }
+auto_impl   = { version = "1.2" }
+tokio       = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
+futures     = { version = "0.3" }
 
 # serde
 serde      = { version = "1", features = ["derive"] }

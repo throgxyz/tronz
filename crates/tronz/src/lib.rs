@@ -1,10 +1,13 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
+// Compile workspace README examples only when their required features are enabled.
+#![cfg_attr(
+    all(doctest, feature = "signer-mnemonic", feature = "signer-keystore"),
+    doc = include_str!("../../../README.md")
+)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
-
-/* --------------------------------- Primitives --------------------------------- */
 
 #[doc(no_inline)]
 pub use primitives::{
@@ -14,8 +17,6 @@ pub use primitives::{
 /// Core TRON primitives: addresses, amounts, resource codes, signatures.
 #[doc(inline)]
 pub use tronz_primitives as primitives;
-
-/* ------------------------------------ ABI ------------------------------------- */
 
 /// Native TRON smart-contract ABI metadata types.
 pub mod abi {
@@ -28,11 +29,7 @@ pub use tronz_abi::{
     TronAbi, TronAbiEntry, TronAbiEntryType, TronAbiParam, TronAbiStateMutability,
 };
 
-/* ---------------------------------- Signers ----------------------------------- */
-
-/// TRON signer abstraction and local key implementation.
-///
-/// See [`tronz_signer`] for more details.
+/// TRON signers, wallets, and local key implementations.
 pub mod signers {
     #[doc(inline)]
     pub use tronz_signer::*;
@@ -48,10 +45,8 @@ pub use tronz_signer::MnemonicBuilder;
 #[doc(no_inline)]
 pub use tronz_signer::coins_bip39;
 #[doc(no_inline)]
-pub use tronz_signer::{LocalSigner, TronSigner};
+pub use tronz_signer::{LocalSigner, TronNetworkWallet, TronSigner, TronSignerSync, TronWallet};
 /// AWS KMS signer — keeps the private key inside the AWS HSM.
-///
-/// See [`tronz_signer_aws`] for more details.
 #[cfg(feature = "signer-aws")]
 #[doc(inline)]
 pub use tronz_signer_aws as signer_aws;
@@ -59,11 +54,7 @@ pub use tronz_signer_aws as signer_aws;
 #[doc(no_inline)]
 pub use tronz_signer_aws::AwsSigner;
 
-/* --------------------------------- Providers ---------------------------------- */
-
 /// Interface with a TRON node.
-///
-/// See [`tronz_provider`] for more details.
 pub mod providers {
     #[doc(inline)]
     pub use tronz_provider::*;
@@ -75,9 +66,6 @@ pub use tronz_provider::{
 };
 
 /// Low-level gRPC transport and well-known endpoint constants.
-///
-/// You will likely not need to use this module directly;
-/// see the [`providers`] module for high-level provider usage.
 pub mod transports {
     #[doc(inline)]
     pub use tronz_provider::transport::*;
@@ -87,8 +75,6 @@ pub mod transports {
 pub use tronz_provider::transport::grpc::{
     TRONGRID_MAINNET, TRONGRID_MAINNET_SOLIDITY, TRONGRID_NILE, TRONGRID_NILE_SOLIDITY,
 };
-
-/* --------------------------------- Contracts ---------------------------------- */
 
 /// TRC20 / TRC721 contract bindings and provider-bound instances.
 #[cfg(feature = "contract")]

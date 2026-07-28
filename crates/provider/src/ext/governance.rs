@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use tronz_primitives::{Address, Bytes};
 
 use crate::{
-    builders::resolve_owner,
+    builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
     transport::TronTransport as _,
@@ -105,6 +105,7 @@ impl<P: TronProvider> GovernanceApi for P {
 #[derive(Debug)]
 pub struct SubmitProposalBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     parameters: HashMap<i64, i64>,
     memo: Option<Bytes>,
@@ -112,7 +113,7 @@ pub struct SubmitProposalBuilder<'a, P> {
 
 impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, parameters: HashMap::new(), memo: None }
+        Self { provider, permission_id: None, owner: None, parameters: HashMap::new(), memo: None }
     }
 
     /// Override the proposer address (defaults to the provider's signer).
@@ -141,23 +142,25 @@ impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         if self.parameters.is_empty() {
             return Err(Error::missing_field("parameters"));
         }
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ProposalCreate(ProposalCreateContract {
                 owner_address: owner,
                 parameters: self.parameters,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── ApproveProposalBuilder ────────────────────────────────────────────────────
@@ -168,6 +171,7 @@ impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
 #[derive(Debug)]
 pub struct ApproveProposalBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     proposal_id: Option<i64>,
     is_add_approval: bool,
@@ -176,7 +180,14 @@ pub struct ApproveProposalBuilder<'a, P> {
 
 impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, proposal_id: None, is_add_approval: true, memo: None }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            proposal_id: None,
+            is_add_approval: true,
+            memo: None,
+        }
     }
 
     /// Override the voter address (defaults to the provider's signer).
@@ -205,22 +216,24 @@ impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let proposal_id = self.proposal_id.ok_or(Error::missing_field("proposal_id"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ProposalApprove(ProposalApproveContract {
                 owner_address: owner,
                 proposal_id,
                 is_add_approval: self.is_add_approval,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── CancelProposalBuilder ─────────────────────────────────────────────────────
@@ -231,6 +244,7 @@ impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
 #[derive(Debug)]
 pub struct CancelProposalBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     proposal_id: Option<i64>,
     memo: Option<Bytes>,
@@ -238,7 +252,7 @@ pub struct CancelProposalBuilder<'a, P> {
 
 impl<'a, P: TronProvider> CancelProposalBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, proposal_id: None, memo: None }
+        Self { provider, permission_id: None, owner: None, proposal_id: None, memo: None }
     }
 
     /// Override the proposer address (defaults to the provider's signer).
@@ -259,19 +273,21 @@ impl<'a, P: TronProvider> CancelProposalBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let proposal_id = self.proposal_id.ok_or(Error::missing_field("proposal_id"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ProposalDelete(ProposalDeleteContract {
                 owner_address: owner,
                 proposal_id,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }

@@ -2,7 +2,7 @@
 
 use tronz_primitives::{Address, ResourceCode, Trx};
 
-use super::resolve_owner;
+use super::{builder_exits, resolve_owner};
 use crate::{
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
@@ -15,6 +15,7 @@ use crate::{
 #[derive(Debug)]
 pub struct DelegateBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     to: Option<Address>,
     amount: Option<Trx>,
@@ -27,6 +28,7 @@ impl<'a, P: TronProvider> DelegateBuilder<'a, P> {
     pub fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             to: None,
             amount: None,
@@ -65,13 +67,13 @@ impl<'a, P: TronProvider> DelegateBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let to = self.to.ok_or(Error::missing_field("to"))?;
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::DelegateResource(DelegateResourceContract {
                 owner_address: owner,
                 resource: self.resource,
@@ -79,16 +81,19 @@ impl<'a, P: TronProvider> DelegateBuilder<'a, P> {
                 receiver_address: to,
                 lock_period: self.lock_period,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 /// Reclaim resources previously delegated to another account.
 #[derive(Debug)]
 pub struct UndelegateBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     receiver: Option<Address>,
     amount: Option<Trx>,
@@ -98,7 +103,14 @@ pub struct UndelegateBuilder<'a, P> {
 impl<'a, P: TronProvider> UndelegateBuilder<'a, P> {
     /// Start a new undelegate builder (defaults to reclaiming energy).
     pub fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, receiver: None, amount: None, resource: ResourceCode::Energy }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            receiver: None,
+            amount: None,
+            resource: ResourceCode::Energy,
+        }
     }
 
     /// Override the delegator account.
@@ -125,21 +137,23 @@ impl<'a, P: TronProvider> UndelegateBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let receiver = self.receiver.ok_or(Error::missing_field("receiver"))?;
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UnDelegateResource(UnDelegateResourceContract {
                 owner_address: owner,
                 resource: self.resource,
                 balance: amount,
                 receiver_address: receiver,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }

@@ -10,9 +10,14 @@ license      = { workspace = true }
 repository   = { workspace = true }
 readme       = "README.md"
 
+[features]
+## TIP-712 typed-data signing through the `TronSigner` trait.
+eip712 = ["tronz-signer/eip712"]
+
 [dependencies]
 tronz-primitives = { workspace = true }
 tronz-signer     = { workspace = true }
+async-trait      = { workspace = true }
 
 aws-sdk-kms = { workspace = true }
 k256        = { workspace = true }

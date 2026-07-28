@@ -22,7 +22,7 @@ let client = aws_sdk_kms::Client::new(&config);
 let signer = AwsSigner::new(client, "your-key-id".to_string()).await?;
 println!("address: {}", signer.address());
 
-let signature = signer.sign_hash(tx_hash).await?;
+let signature = signer.sign_hash(&tx_hash).await?;
 ```
 
 ## KMS key requirements

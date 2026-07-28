@@ -2,7 +2,7 @@
 
 use tronz_primitives::{Address, Bytes};
 
-use super::resolve_owner;
+use super::{builder_exits, resolve_owner};
 use crate::{
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
@@ -21,6 +21,7 @@ use crate::{
 #[derive(Debug)]
 pub struct SetAccountIdBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     account_id: Option<String>,
     memo: Option<Bytes>,
@@ -28,7 +29,7 @@ pub struct SetAccountIdBuilder<'a, P> {
 
 impl<'a, P: TronProvider> SetAccountIdBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, account_id: None, memo: None }
+        Self { provider, permission_id: None, owner: None, account_id: None, memo: None }
     }
 
     /// Override the account address (defaults to the provider's signer).
@@ -49,21 +50,23 @@ impl<'a, P: TronProvider> SetAccountIdBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let account_id = self.account_id.ok_or(Error::missing_field("account_id"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::SetAccountId(SetAccountIdContract {
                 owner_address: owner,
                 account_id,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 /// Builds a clear-contract-ABI transaction.
@@ -75,6 +78,7 @@ impl<'a, P: TronProvider> SetAccountIdBuilder<'a, P> {
 #[derive(Debug)]
 pub struct ClearContractAbiBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     contract_address: Option<Address>,
     memo: Option<Bytes>,
@@ -82,7 +86,7 @@ pub struct ClearContractAbiBuilder<'a, P> {
 
 impl<'a, P: TronProvider> ClearContractAbiBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, contract_address: None, memo: None }
+        Self { provider, permission_id: None, owner: None, contract_address: None, memo: None }
     }
 
     /// Override the contract owner address (defaults to the provider's signer).
@@ -103,22 +107,24 @@ impl<'a, P: TronProvider> ClearContractAbiBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let contract_address =
             self.contract_address.ok_or(Error::missing_field("contract_address"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ClearContractAbi(ClearContractAbiContract {
                 owner_address: owner,
                 contract_address,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 /// Builds an update-setting transaction.
@@ -130,6 +136,7 @@ impl<'a, P: TronProvider> ClearContractAbiBuilder<'a, P> {
 #[derive(Debug)]
 pub struct UpdateContractSettingBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     contract_address: Option<Address>,
     consume_user_resource_percent: Option<i64>,
@@ -140,6 +147,7 @@ impl<'a, P: TronProvider> UpdateContractSettingBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             contract_address: None,
             consume_user_resource_percent: None,
@@ -171,8 +179,8 @@ impl<'a, P: TronProvider> UpdateContractSettingBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let contract_address =
             self.contract_address.ok_or(Error::missing_field("contract_address"))?;
@@ -180,17 +188,19 @@ impl<'a, P: TronProvider> UpdateContractSettingBuilder<'a, P> {
             .consume_user_resource_percent
             .ok_or(Error::missing_field("consume_user_resource_percent"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UpdateSetting(UpdateSettingContract {
                 owner_address: owner,
                 contract_address,
                 consume_user_resource_percent,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 /// Builds an update-energy-limit transaction.
@@ -202,6 +212,7 @@ impl<'a, P: TronProvider> UpdateContractSettingBuilder<'a, P> {
 #[derive(Debug)]
 pub struct UpdateContractEnergyLimitBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     contract_address: Option<Address>,
     origin_energy_limit: Option<i64>,
@@ -212,6 +223,7 @@ impl<'a, P: TronProvider> UpdateContractEnergyLimitBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             contract_address: None,
             origin_energy_limit: None,
@@ -243,23 +255,25 @@ impl<'a, P: TronProvider> UpdateContractEnergyLimitBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let contract_address =
             self.contract_address.ok_or(Error::missing_field("contract_address"))?;
         let origin_energy_limit =
             self.origin_energy_limit.ok_or(Error::missing_field("origin_energy_limit"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UpdateEnergyLimit(UpdateEnergyLimitContract {
                 owner_address: owner,
                 contract_address,
                 origin_energy_limit,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }

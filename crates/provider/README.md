@@ -37,6 +37,60 @@ println!("solidified block: {}", block.number);
 # Ok(()) }
 ```
 
+### Multisig
+
+Every transaction builder has a `.build()` exit next to `.send()`, which stops
+at the unsigned transaction so more than one key can sign it. Add
+`.permission_id(id)` when the signing keys belong to an active permission rather
+than to the account's owner permission.
+
+```rust,no_run
+use tronz_provider::{ProviderBuilder, TronProvider};
+use tronz_provider::transport::grpc::TRONGRID_MAINNET;
+use tronz_provider::types::SignedTransaction;
+use tronz_signer::{LocalSigner, TronNetworkWallet, TronWallet};
+
+# async fn run(
+#     key_a: &str,
+#     key_b: &str,
+#     multisig_account: tronz_primitives::Address,
+#     to: tronz_primitives::Address,
+# ) -> tronz_provider::Result<()> {
+let a = LocalSigner::from_hex(key_a).unwrap();
+let b = LocalSigner::from_hex(key_b).unwrap();
+let mut wallet = TronWallet::new(a.clone());
+wallet.register_signer(b.clone());
+
+let provider =
+    ProviderBuilder::new().wallet(wallet.clone()).connect_grpc(TRONGRID_MAINNET).await?;
+
+let raw = provider
+    .send_trx()
+    .from(multisig_account)
+    .to(to)
+    .amount("100".parse().unwrap())
+    .permission_id(2)
+    .build()
+    .await?;
+
+let keys = [a.address(), b.address()];
+let signatures = wallet.sign_hash_with_many(&keys, &raw.tx_id()).await.unwrap();
+let signed = SignedTransaction { raw, signatures };
+
+// Confirm the signatures reach the threshold before spending bandwidth on them.
+let weight = provider.get_transaction_sign_weight(&signed).await?;
+if weight.current_weight >= weight.required_weight {
+    provider.broadcast(signed).await?;
+}
+# Ok(()) }
+```
+
+The wallet collects signatures but does not decide which keys are needed — it
+cannot see the account's permissions. To choose them, and to check the threshold
+without a round-trip, ask the permission itself:
+`Permission::is_satisfied_by` and `weight_of_all` do the same arithmetic locally
+that `get_transaction_sign_weight` does on the node.
+
 Both FullNode providers and `SolidityProvider` implement
 [`ContractReadProvider`], the shared capability used by contract calls, energy
 estimation, and event queries. State freshness follows the provider: FullNode
@@ -56,7 +110,7 @@ methods.
 |--------|-------------|
 | [`types`] | Public TRON domain model (accounts, blocks, transactions, contracts) |
 | [`transport`] | [`TronTransport`] / [`SolidityTransport`] traits and gRPC implementations |
-| [`fillers`] | Composable transaction fillers (TAPOS, fee limit, signer) |
+| [`fillers`] | Composable transaction fillers (TAPOS, fee limit, wallet) |
 | [`builders`] | Typed per-operation builders (`TransferBuilder`, `FreezeBuilder`, …) |
 
 ## Fixture replay tests

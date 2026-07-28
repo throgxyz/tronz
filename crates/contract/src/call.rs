@@ -3,7 +3,7 @@
 use tronz_primitives::{Address, Bytes, Trx};
 use tronz_provider::{
     ContractReadProvider, Error as ProviderError, PendingTransaction, TronProvider,
-    types::{ContractType, TransactionRequest, TriggerSmartContract},
+    types::{ContractType, RawTransaction, TransactionRequest, TriggerSmartContract},
 };
 
 use crate::error::{ContractError, Result};
@@ -44,6 +44,7 @@ pub struct CallBuilder<P> {
     call_value: Trx,
     call_token_value: Trx,
     token_id: i64,
+    permission_id: Option<i32>,
 }
 
 impl<P: ContractReadProvider> CallBuilder<P> {
@@ -56,6 +57,7 @@ impl<P: ContractReadProvider> CallBuilder<P> {
             call_value: Trx::ZERO,
             call_token_value: Trx::ZERO,
             token_id: 0,
+            permission_id: None,
         }
     }
 
@@ -74,12 +76,7 @@ impl<P: ContractReadProvider> CallBuilder<P> {
         self
     }
 
-    /// Set `msg.sender` for [`call`](Self::call) and
-    /// [`estimate_energy`](Self::estimate_energy) — the analogue of alloy's
-    /// `CallBuilder::from`. Does not affect the signer used by [`send`](Self::send).
-    ///
-    /// When unset, resolves to the provider's signer, else [`Address::ZERO`].
-    /// Set this explicitly for views that read `msg.sender`.
+    /// Set the caller for reads and the owner for writes.
     #[inline]
     pub fn caller(mut self, caller: Address) -> Self {
         self.caller = Some(caller);
@@ -134,26 +131,47 @@ impl<P: ContractReadProvider> CallBuilder<P> {
 }
 
 impl<P: TronProvider> CallBuilder<P> {
-    /// Execute as a **state-changing call** (`trigger_smart_contract`).
-    ///
-    /// Requires a signer to be attached to the provider. The transaction is
-    /// filled (TAPOS, fee-limit), signed, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
-        let caller = self
-            .provider
-            .signer_address()
+    /// Set the transaction permission id.
+    #[inline]
+    pub fn permission_id(mut self, id: i32) -> Self {
+        self.permission_id = Some(id);
+        self
+    }
+
+    /// The write request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
+        let owner = self
+            .caller
+            .or_else(|| self.provider.signer_address())
             .ok_or_else(ProviderError::no_signer)
             .map_err(ContractError::Provider)?;
-        let req = TransactionRequest::default().with_contract(ContractType::TriggerSmartContract(
-            TriggerSmartContract {
-                owner_address: caller,
+
+        Ok(TransactionRequest {
+            contract: Some(ContractType::TriggerSmartContract(TriggerSmartContract {
+                owner_address: owner,
                 contract_address: self.address,
                 call_value: self.call_value,
                 data: self.data,
                 call_token_value: self.call_token_value,
                 token_id: self.token_id,
-            },
-        ));
-        Ok(self.provider.send_transaction(req).await?)
+            })),
+            permission_id: self.permission_id,
+            ..Default::default()
+        })
+    }
+
+    /// Execute as a **state-changing call** (`trigger_smart_contract`).
+    ///
+    /// Requires a signer to be attached to the provider. The transaction is
+    /// filled (TAPOS, fee-limit), signed, and broadcast.
+    pub async fn send(self) -> Result<PendingTransaction<P>> {
+        let provider = self.provider.clone();
+        Ok(provider.send_transaction(self.into_request()?).await?)
+    }
+
+    /// Build without signing or broadcasting.
+    pub async fn build(self) -> Result<RawTransaction> {
+        let provider = self.provider.clone();
+        Ok(provider.build_transaction(self.into_request()?).await?)
     }
 }

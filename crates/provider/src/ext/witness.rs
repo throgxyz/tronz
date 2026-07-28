@@ -5,7 +5,7 @@
 use tronz_primitives::{Address, Bytes};
 
 use crate::{
-    builders::resolve_owner,
+    builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
     transport::TronTransport as _,
@@ -102,6 +102,7 @@ impl<P: TronProvider> WitnessApi for P {
 #[derive(Debug)]
 pub struct BecomeWitnessBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     url: Option<String>,
     memo: Option<Bytes>,
@@ -109,7 +110,7 @@ pub struct BecomeWitnessBuilder<'a, P> {
 
 impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, url: None, memo: None }
+        Self { provider, permission_id: None, owner: None, url: None, memo: None }
     }
 
     /// Override the applicant address (defaults to the provider's signer).
@@ -130,21 +131,23 @@ impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let url = self.url.ok_or(Error::missing_field("url"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::CreateWitness(CreateWitnessContract {
                 owner_address: owner,
                 url,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── UpdateWitnessBuilder ──────────────────────────────────────────────────────
@@ -155,6 +158,7 @@ impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
 #[derive(Debug)]
 pub struct UpdateWitnessBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     update_url: Option<String>,
     memo: Option<Bytes>,
@@ -162,7 +166,7 @@ pub struct UpdateWitnessBuilder<'a, P> {
 
 impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, update_url: None, memo: None }
+        Self { provider, permission_id: None, owner: None, update_url: None, memo: None }
     }
 
     /// Override the SR address (defaults to the provider's signer).
@@ -183,21 +187,23 @@ impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let update_url = self.update_url.ok_or(Error::missing_field("url"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UpdateWitness(UpdateWitnessContract {
                 owner_address: owner,
                 update_url,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── UpdateBrokerageBuilder ────────────────────────────────────────────────────
@@ -208,6 +214,7 @@ impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
 #[derive(Debug)]
 pub struct UpdateBrokerageBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     brokerage: Option<i32>,
     memo: Option<Bytes>,
@@ -215,7 +222,7 @@ pub struct UpdateBrokerageBuilder<'a, P> {
 
 impl<'a, P: TronProvider> UpdateBrokerageBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, brokerage: None, memo: None }
+        Self { provider, permission_id: None, owner: None, brokerage: None, memo: None }
     }
 
     /// Override the SR address (defaults to the provider's signer).
@@ -239,19 +246,21 @@ impl<'a, P: TronProvider> UpdateBrokerageBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let brokerage = self.brokerage.ok_or(Error::missing_field("brokerage"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UpdateBrokerage(UpdateBrokerageContract {
                 owner_address: owner,
                 brokerage,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }

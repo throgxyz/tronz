@@ -18,13 +18,14 @@ pub enum SignerError {
     #[error("hex decode failed: {0}")]
     Hex(#[from] hex::FromHexError),
 
-    /// The signer has no associated address (e.g. [`NoSigner`](crate::NoSigner)).
-    #[error("signer has no address")]
-    NoAddress,
-
     /// I/O error (e.g. writing a mnemonic phrase to disk or a keystore file).
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// A TIP-712 payload could not be encoded.
+    #[cfg(feature = "eip712")]
+    #[error(transparent)]
+    DynAbi(#[from] alloy_dyn_abi::Error),
 
     /// Keystore-specific error (wrong password, unsupported algorithm, etc.).
     #[cfg(feature = "keystore")]

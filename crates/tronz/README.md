@@ -41,7 +41,7 @@ println!("Latest block: {} ({}ms)", block.number, block.timestamp);
 ### Sending TRX
 
 ```rust,no_run
-use tronz::{LocalSigner, ProviderBuilder, TronProvider, TronSigner, TRONGRID_NILE, parse_trx};
+use tronz::{LocalSigner, ProviderBuilder, TronProvider, TRONGRID_NILE, parse_trx};
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let signer = LocalSigner::from_hex("PRIVATE_KEY_HEX").expect("valid key");
@@ -97,7 +97,7 @@ For more examples, see the [throgxyz/examples](https://github.com/throgxyz/examp
 | [`tronz`] | Meta-crate re-exporting all sub-crates |
 | [`tronz-abi`] | Native TRON ABI metadata and optional Alloy JSON ABI conversion |
 | [`tronz-primitives`] | `Address`, `Trx`, `ResourceCode`, signatures |
-| [`tronz-signer`] | `TronSigner` trait and `LocalSigner` implementation |
+| [`tronz-signer`] | `TronSigner`, `TronSignerSync`, `TronNetworkWallet`, `TronWallet`, and `LocalSigner` |
 | [`tronz-provider`] | FullNode and SolidityNode transports/providers, fillers, and domain types |
 | [`tronz-contract`] | TRC20 / TRC721 bindings, deployment, calls, and event filters |
 | [`tronz-sol-macro`] | `tron_sol!` procedural macro for provider-bound contract bindings |

@@ -1,9 +1,18 @@
 //! Per-operation, typed transaction builders.
 //!
 //! Each builder exposes only the fields relevant to its operation and resolves
-//! the sender from the provider's signer by default. Calling `.send()` builds a
-//! [`TransactionRequest`](crate::types::TransactionRequest) and hands it to
-//! [`TronProvider::send_transaction`].
+//! the owner address from the provider's signer by default. Every builder ends in one
+//! of three exits, all of which go through a
+//! [`TransactionRequest`](crate::types::TransactionRequest):
+//!
+//! - `.send()` fills, signs, and broadcasts, via [`TronProvider::send_transaction`].
+//! - `.build()` stops at the unsigned transaction, via [`TronProvider::build_transaction`] — the
+//!   entry point for multisig, where several keys must sign before [`TronProvider::broadcast`].
+//! - `.into_request()` stops before any network call, for callers that want to adjust fields the
+//!   builders do not expose.
+//!
+//! Builders authorized by an active permission rather than by the account's own
+//! owner permission additionally set `.permission_id(id)`.
 
 pub mod account;
 pub mod contract;
@@ -34,7 +43,46 @@ pub(crate) fn resolve_owner<P: TronProvider>(
     owner.or_else(|| provider.signer_address()).ok_or(Error::no_signer())
 }
 
+/// Generates the exits every transaction builder shares — the `permission_id`
+/// setter plus `build` and `send` — on top of the builder's own
+/// `into_request`.
+macro_rules! builder_exits {
+    () => {
+        /// Authorize through an active permission instead of the owner
+        /// permission.
+        ///
+        /// `0` is the owner permission and `2` upwards are the active ones, as
+        /// configured through
+        /// [`AccountPermissionUpdateBuilder`](crate::builders::AccountPermissionUpdateBuilder).
+        /// Set this when the signing keys belong to an active permission rather
+        /// than to the owner itself.
+        pub fn permission_id(mut self, id: i32) -> Self {
+            self.permission_id = Some(id);
+            self
+        }
+
+        /// Ask the node to build the transaction, without signing or
+        /// broadcasting it.
+        ///
+        /// Use this when the authorizing permission needs more than one
+        /// signature: sign
+        /// [`RawTransaction::tx_id`](crate::types::RawTransaction::tx_id) with
+        /// every required key, then submit through
+        /// [`TronProvider::broadcast`](crate::TronProvider::broadcast).
+        pub async fn build(self) -> Result<crate::types::RawTransaction> {
+            let provider = self.provider;
+            provider.build_transaction(self.into_request()?).await
+        }
+
+        /// Build, sign, and broadcast.
+        pub async fn send(self) -> Result<PendingTransaction<P>> {
+            let provider = self.provider;
+            provider.send_transaction(self.into_request()?).await
+        }
+    };
+}
 pub use account::{CreateAccountBuilder, UpdateAccountBuilder};
+pub(crate) use builder_exits;
 pub use contract::{
     ClearContractAbiBuilder, SetAccountIdBuilder, UpdateContractEnergyLimitBuilder,
     UpdateContractSettingBuilder,

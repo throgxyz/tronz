@@ -5,11 +5,11 @@
 use std::time::Duration;
 
 use tronz_primitives::{Address, Trx, TxId};
-use tronz_signer::TronSigner;
+use tronz_signer::{TronNetworkWallet, TronSigner, TronWallet};
 
 use crate::{
     error::{Error, Result},
-    fillers::{FeeLimitFiller, HasSigner, Identity, JoinFill, SignerFiller, TaposFiller, TxFiller},
+    fillers::{FeeLimitFiller, HasSigner, Identity, JoinFill, TaposFiller, TxFiller, WalletFiller},
     provider::{ContractReadProvider, PendingTransaction, RootProvider, TronProvider},
     transport::{
         TronTransport,
@@ -147,20 +147,44 @@ impl<F: TxFiller> ProviderBuilder<F> {
         }
     }
 
-    /// Attach a signer so `.send()` operations work.
-    pub fn with_signer<S: TronSigner>(
+    /// Add a wallet so `.send()` operations work.
+    ///
+    /// Accepts any [`TronNetworkWallet`] implementation.
+    ///
+    /// ```no_run
+    /// # use tronz_provider::{ProviderBuilder, transport::grpc::TRONGRID_MAINNET};
+    /// # use tronz_signer::{LocalSigner, TronWallet};
+    /// # async fn run(key_a: &str, key_b: &str) -> tronz_provider::Result<()> {
+    /// let mut wallet = TronWallet::new(LocalSigner::from_hex(key_a).unwrap());
+    /// wallet.register_signer(LocalSigner::from_hex(key_b).unwrap());
+    ///
+    /// let provider = ProviderBuilder::new().wallet(wallet).connect_grpc(TRONGRID_MAINNET).await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn wallet<W: TronNetworkWallet>(
         self,
-        signer: S,
-    ) -> ProviderBuilder<JoinFill<F, SignerFiller<S>>> {
+        wallet: W,
+    ) -> ProviderBuilder<JoinFill<F, WalletFiller<W>>> {
         let Self { filler, api_key, connect_timeout, request_timeout, retry, endpoints } = self;
         ProviderBuilder {
-            filler: JoinFill::new(filler, SignerFiller::new(signer)),
+            filler: JoinFill::new(filler, WalletFiller::new(wallet)),
             api_key,
             connect_timeout,
             request_timeout,
             retry,
             endpoints,
         }
+    }
+
+    /// Attach a single signer so `.send()` operations work.
+    ///
+    /// The signer is moved into a cloneable [`TronWallet`] owned by the
+    /// provider. The signer itself does not need to implement [`Clone`].
+    pub fn with_signer<S>(self, signer: S) -> ProviderBuilder<JoinFill<F, WalletFiller<TronWallet>>>
+    where
+        S: TronSigner + Send + Sync + 'static,
+    {
+        self.wallet(TronWallet::new(signer))
     }
 
     /// Connect to a TRON gRPC node, applying any API key set via
@@ -305,12 +329,17 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for Fille
     // ── send_transaction ─────────────────────────────────────────────────────
 
     async fn send_transaction(&self, req: TransactionRequest) -> Result<PendingTransaction<Self>> {
-        // Build (run configured fillers + node round-trip), then sign & broadcast.
+        let key = req
+            .contract
+            .as_ref()
+            .map(ContractType::owner_address)
+            .filter(|owner| *owner != Address::ZERO);
+
         let raw = self.build_transaction(req).await?;
 
         let sig = self
             .filler
-            .sign(raw.tx_id())
+            .sign_with(key, raw.tx_id())
             .await
             .ok_or(Error::no_signer())?
             .map_err(Error::local_usage)?;
@@ -322,115 +351,36 @@ impl<T: TronTransport, F: TxFiller + HasSigner + 'static> TronProvider for Fille
         Ok(PendingTransaction::new(self.clone(), tx_id))
     }
 
-    // `broadcast` uses the `TronProvider` trait default implementation.
-}
-
-impl<T: TronTransport, F: TxFiller + HasSigner + 'static> FilledProvider<T, F> {
-    /// Run all fillers and build the node-side transaction **without signing or
-    /// broadcasting it**.
-    ///
-    /// Returns the unsigned [`RawTransaction`]. Sign it once (single-sig) or
-    /// collect multiple signatures (multisig) and submit via
-    /// [`TronProvider::broadcast`]. For the common single-signer case prefer
-    /// [`TronProvider::send_transaction`], which fills, signs, and broadcasts in
-    /// one step.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use tronz_provider::{ProviderBuilder, TronProvider, transport::grpc::TRONGRID_MAINNET};
-    /// # use tronz_provider::types::{SignedTransaction, TransactionRequest};
-    /// # use tronz_signer::{LocalSigner, TronSigner};
-    /// # async fn run() -> tronz_provider::Result<()> {
-    /// # let provider = ProviderBuilder::new().connect_grpc(TRONGRID_MAINNET).await?;
-    /// # let req = TransactionRequest::default();
-    /// # let signer_a = LocalSigner::from_hex(
-    /// #     "0000000000000000000000000000000000000000000000000000000000000001",
-    /// # ).unwrap();
-    /// # let signer_b = LocalSigner::from_hex(
-    /// #     "0000000000000000000000000000000000000000000000000000000000000002",
-    /// # ).unwrap();
-    /// let raw = provider.build_transaction(req).await?;
-    ///
-    /// let sig1 = signer_a.sign_hash(raw.tx_id()).await.unwrap();
-    /// let sig2 = signer_b.sign_hash(raw.tx_id()).await.unwrap();
-    ///
-    /// let signed = SignedTransaction { raw, signatures: vec![sig1, sig2] };
-    /// provider.broadcast(signed).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn build_transaction(&self, req: TransactionRequest) -> Result<RawTransaction> {
-        // ── 1. Fill (sync then async) ────────────────────────────────────────
+    /// Runs the configured fillers before building the transaction.
+    async fn build_transaction(&self, req: TransactionRequest) -> Result<RawTransaction> {
         let filler = self.filler.clone();
         let mut req = req;
         filler.fill_sync(&mut req);
         let mut req = filler.fill(req, self).await?;
         filler.fill_sync(&mut req); // second sync pass after async fill
 
-        // ── 2. Route contract → transport build call ─────────────────────────
-        let contract = req.contract.take().ok_or(Error::missing_field("contract"))?;
-        let transport = self.inner.transport();
-
-        let raw_result = match contract {
-            ContractType::Transfer(c) => transport.transfer_trx(c).await,
-            ContractType::TriggerSmartContract(c) => transport.trigger_smart_contract(c).await,
-            ContractType::FreezeBalanceV1(c) => transport.freeze_balance_v1(c).await,
-            ContractType::UnfreezeBalanceV1(c) => transport.unfreeze_balance_v1(c).await,
-            ContractType::FreezeBalanceV2(c) => transport.freeze_balance_v2(c).await,
-            ContractType::UnfreezeBalanceV2(c) => transport.unfreeze_balance_v2(c).await,
-            ContractType::DelegateResource(c) => transport.delegate_resource(c).await,
-            ContractType::UnDelegateResource(c) => transport.undelegate_resource(c).await,
-            ContractType::WithdrawExpireUnfreeze(c) => transport.withdraw_expire_unfreeze(c).await,
-            ContractType::CancelAllUnfreezeV2(c) => transport.cancel_all_unfreeze_v2(c).await,
-            ContractType::WithdrawBalance(c) => transport.withdraw_balance(c).await,
-            ContractType::AccountPermissionUpdate(c) => {
-                transport.account_permission_update(c).await
-            }
-            ContractType::CreateSmartContract(c) => transport.create_smart_contract(c).await,
-            ContractType::AssetIssue(c) => transport.create_asset_issue(c).await,
-            ContractType::TransferAsset(c) => transport.transfer_asset(c).await,
-            ContractType::ParticipateAssetIssue(c) => transport.participate_asset_issue(c).await,
-            ContractType::UnfreezeAsset(c) => transport.unfreeze_asset(c).await,
-            ContractType::UpdateAsset(c) => transport.update_asset(c).await,
-            ContractType::CreateAccount(c) => transport.create_account(c).await,
-            ContractType::VoteWitness(c) => transport.vote_witness_account(c).await,
-            ContractType::UpdateAccount(c) => transport.update_account(c).await,
-            ContractType::ProposalCreate(c) => transport.proposal_create(c).await,
-            ContractType::ProposalApprove(c) => transport.proposal_approve(c).await,
-            ContractType::ProposalDelete(c) => transport.proposal_delete(c).await,
-            ContractType::CreateWitness(c) => transport.create_witness(c).await,
-            ContractType::UpdateWitness(c) => transport.update_witness(c).await,
-            ContractType::UpdateBrokerage(c) => transport.update_brokerage(c).await,
-            ContractType::SetAccountId(c) => transport.set_account_id(c).await,
-            ContractType::ClearContractAbi(c) => transport.clear_contract_abi(c).await,
-            ContractType::UpdateSetting(c) => transport.update_setting(c).await,
-            ContractType::UpdateEnergyLimit(c) => transport.update_energy_limit(c).await,
-            ContractType::ExchangeCreate(c) => transport.exchange_create(c).await,
-            ContractType::ExchangeInject(c) => transport.exchange_inject(c).await,
-            ContractType::ExchangeWithdraw(c) => transport.exchange_withdraw(c).await,
-            ContractType::ExchangeTransaction(c) => transport.exchange_transaction(c).await,
-            ContractType::MarketSellAsset(c) => transport.market_sell_asset(c).await,
-            ContractType::MarketCancelOrder(c) => transport.market_cancel_order(c).await,
-        };
-        let mut raw = raw_result.map_err(Error::transport)?;
-
-        // ── 3. Apply request-level overrides ────────────────────────────────
-        raw.apply_request_fields(&req).map_err(Error::Transport)?;
-
-        Ok(raw)
+        crate::provider::build_via_transport(self.inner.transport(), req).await
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use tronz_primitives::{Address, Bytes};
+    use core::future::Future;
+    use std::sync::{Arc, Mutex};
+
+    use prost::Message as _;
+    use tronz_primitives::{Address, B256, Bytes, RecoverableSignature};
+    use tronz_signer::{LocalSigner, SignerError, TronSigner, TronWallet};
 
     use super::*;
     use crate::{
+        fillers::WalletFiller,
         transport::mock::MockTransport,
-        types::{ContractType, TriggerSmartContract},
+        types::{ContractType, TransferContract, TriggerSmartContract},
     };
+
+    const KEY_A: &str = "0000000000000000000000000000000000000000000000000000000000000001";
+    const KEY_B: &str = "0000000000000000000000000000000000000000000000000000000000000002";
 
     #[tokio::test]
     async fn recommended_fillers_do_not_fetch_tapos() {
@@ -456,5 +406,147 @@ mod tests {
 
         assert_eq!(filled.fee_limit, Some(Trx::from_sun_unchecked(20_000_000)));
         assert!(filled.ref_block_bytes.is_none());
+    }
+
+    #[test]
+    fn signer_ownership_moves_into_cloneable_wallet_filler() {
+        let signer: Box<dyn TronSigner + Send + Sync> =
+            Box::new(LocalSigner::from_hex(KEY_A).unwrap());
+        let expected = signer.address();
+        let builder = ProviderBuilder::default().with_signer(signer);
+        assert_eq!(builder.filler.signer_address(), Some(expected));
+
+        let wallet = TronWallet::new(LocalSigner::from_hex(KEY_A).unwrap());
+        let builder = ProviderBuilder::default().wallet(wallet);
+        assert_eq!(builder.filler.signer_address(), Some(expected));
+    }
+
+    #[derive(Clone, Debug)]
+    struct RecordingWallet {
+        inner: TronWallet,
+        keys: Arc<Mutex<Vec<Address>>>,
+    }
+
+    impl TronNetworkWallet for RecordingWallet {
+        fn default_signer_address(&self) -> Address {
+            self.inner.default_signer_address()
+        }
+
+        fn has_signer_for(&self, address: &Address) -> bool {
+            self.inner.has_signer_for(address)
+        }
+
+        fn signer_addresses(&self) -> impl Iterator<Item = Address> {
+            self.inner.signer_addresses()
+        }
+
+        fn sign_hash_with(
+            &self,
+            key: Address,
+            hash: &B256,
+        ) -> impl Future<Output = Result<RecoverableSignature, SignerError>> + Send {
+            self.keys.lock().unwrap().push(key);
+            self.inner.sign_hash_with(key, hash)
+        }
+
+        fn sign_message_with(
+            &self,
+            key: Address,
+            message: &[u8],
+        ) -> impl Future<Output = Result<RecoverableSignature, SignerError>> + Send {
+            self.keys.lock().unwrap().push(key);
+            self.inner.sign_message_with(key, message)
+        }
+    }
+
+    type RecordingProvider = FilledProvider<MockTransport, WalletFiller<RecordingWallet>>;
+
+    fn recording_provider() -> (RecordingProvider, Arc<Mutex<Vec<Address>>>) {
+        let mut inner = TronWallet::new(LocalSigner::from_hex(KEY_A).unwrap());
+        inner.register_signer(LocalSigner::from_hex(KEY_B).unwrap());
+
+        let keys = Arc::new(Mutex::new(Vec::new()));
+        let wallet = RecordingWallet { inner, keys: Arc::clone(&keys) };
+
+        let transport = MockTransport::new();
+        let tx = crate::proto::Transaction {
+            raw_data: Some(crate::proto::transaction::Raw::default()),
+            ..Default::default()
+        };
+        transport.push_ok(
+            "transfer_trx",
+            RawTransaction::from_proto_extention(vec![0; 32], tx.encode_to_vec(), 0, 0).unwrap(),
+        );
+        transport.push_ok("broadcast_transaction", ());
+
+        let provider = FilledProvider::new(RootProvider::new(transport), WalletFiller::new(wallet));
+        (provider, keys)
+    }
+
+    fn transfer_from(owner: Address) -> TransactionRequest {
+        TransactionRequest::default().with_contract(ContractType::Transfer(TransferContract {
+            owner_address: owner,
+            to_address: Address::from_evm_bytes([9; 20]),
+            amount: Trx::from_sun_unchecked(1),
+        }))
+    }
+
+    #[tokio::test]
+    async fn send_transaction_signs_with_the_credential_named_by_the_owner() {
+        let secondary = LocalSigner::from_hex(KEY_B).unwrap().address();
+        let (provider, keys) = recording_provider();
+
+        provider.send_transaction(transfer_from(secondary)).await.unwrap();
+
+        assert_eq!(*keys.lock().unwrap(), vec![secondary]);
+    }
+
+    #[tokio::test]
+    async fn send_transaction_falls_back_to_the_default_credential() {
+        let default = LocalSigner::from_hex(KEY_A).unwrap().address();
+        let (provider, keys) = recording_provider();
+
+        provider.send_transaction(transfer_from(Address::ZERO)).await.unwrap();
+
+        assert_eq!(*keys.lock().unwrap(), vec![default]);
+    }
+
+    #[tokio::test]
+    async fn send_transaction_signs_for_an_unheld_owner_with_the_default_credential() {
+        let default = LocalSigner::from_hex(KEY_A).unwrap().address();
+        let multisig_owner = Address::from_evm_bytes([7; 20]);
+        let (provider, keys) = recording_provider();
+
+        provider.send_transaction(transfer_from(multisig_owner)).await.unwrap();
+
+        assert_eq!(*keys.lock().unwrap(), vec![default]);
+    }
+
+    #[tokio::test]
+    async fn active_permission_still_prefers_the_owner_key_when_the_wallet_holds_it() {
+        let owner = LocalSigner::from_hex(KEY_B).unwrap().address();
+        let (provider, keys) = recording_provider();
+
+        provider.send_transaction(transfer_from(owner).with_permission_id(2)).await.unwrap();
+
+        assert_eq!(*keys.lock().unwrap(), vec![owner]);
+    }
+
+    #[tokio::test]
+    async fn send_transaction_errors_when_the_wallet_holds_no_credentials() {
+        let transport = MockTransport::new();
+        transport.push_ok(
+            "transfer_trx",
+            RawTransaction::from_proto_extention(vec![0; 32], Vec::new(), 0, 0).unwrap(),
+        );
+        let provider = FilledProvider::new(
+            RootProvider::new(transport),
+            WalletFiller::new(TronWallet::default()),
+        );
+
+        let Err(err) = provider.send_transaction(transfer_from(Address::ZERO)).await else {
+            panic!("signing without a credential should fail");
+        };
+        assert!(err.to_string().contains("missing signing credential"));
     }
 }

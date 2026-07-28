@@ -469,6 +469,46 @@ pub struct Permission {
     pub keys: Vec<PermissionKey>,
 }
 
+impl Permission {
+    /// The weight `address` carries in this permission, or `None` if it is not
+    /// an authorized key.
+    pub fn weight_of(&self, address: &Address) -> Option<i64> {
+        self.keys.iter().find(|key| key.address == *address).map(|key| key.weight)
+    }
+
+    /// The combined weight of the distinct `keys` that this permission
+    /// authorizes.
+    ///
+    /// Addresses the permission does not authorize contribute nothing, and a
+    /// repeated address counts once — the same as on-chain, where a second
+    /// signature from one key adds no weight.
+    pub fn weight_of_all<'a, I>(&self, keys: I) -> i64
+    where
+        I: IntoIterator<Item = &'a Address>,
+    {
+        let mut counted = Vec::new();
+        let mut total = 0;
+        for address in keys {
+            if counted.contains(&address) {
+                continue;
+            }
+            if let Some(weight) = self.weight_of(address) {
+                counted.push(address);
+                total += weight;
+            }
+        }
+        total
+    }
+
+    /// Whether `keys` together reach this permission's threshold.
+    pub fn is_satisfied_by<'a, I>(&self, keys: I) -> bool
+    where
+        I: IntoIterator<Item = &'a Address>,
+    {
+        self.weight_of_all(keys) >= self.threshold
+    }
+}
+
 /// A key + weight pair within a [`Permission`].
 #[derive(Clone, Debug)]
 pub struct PermissionKey {
@@ -846,6 +886,48 @@ mod tests {
             })
             .needs_fee_limit()
         );
+    }
+
+    fn key(byte: u8, weight: i64) -> PermissionKey {
+        let mut bytes = [0u8; 20];
+        bytes[19] = byte;
+        PermissionKey { address: Address::from_evm_bytes(bytes), weight }
+    }
+
+    fn two_of_three() -> Permission {
+        Permission {
+            id: 2,
+            permission_name: "active".to_string(),
+            threshold: 3,
+            keys: vec![key(1, 2), key(2, 2), key(3, 2)],
+        }
+    }
+
+    #[test]
+    fn permission_weighs_known_keys_only() {
+        let permission = two_of_three();
+        let stranger = key(9, 0).address;
+
+        assert_eq!(permission.weight_of(&key(1, 0).address), Some(2));
+        assert_eq!(permission.weight_of(&stranger), None);
+        assert_eq!(permission.weight_of_all(&[key(1, 0).address, stranger]), 2);
+    }
+
+    #[test]
+    fn permission_counts_a_repeated_key_once() {
+        let permission = two_of_three();
+        let address = key(1, 0).address;
+
+        assert_eq!(permission.weight_of_all(&[address, address, address]), 2);
+        assert!(!permission.is_satisfied_by(&[address, address]));
+    }
+
+    #[test]
+    fn permission_is_satisfied_once_the_threshold_is_reached() {
+        let permission = two_of_three();
+
+        assert!(!permission.is_satisfied_by(&[key(1, 0).address]));
+        assert!(permission.is_satisfied_by(&[key(1, 0).address, key(2, 0).address]));
     }
 }
 

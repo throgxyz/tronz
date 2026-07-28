@@ -5,7 +5,7 @@
 use tronz_primitives::{Address, Bytes};
 
 use crate::{
-    builders::resolve_owner,
+    builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
     transport::TronTransport as _,
@@ -185,6 +185,7 @@ impl<P: TronProvider> Trc10Api for P {
 #[derive(Debug)]
 pub struct TransferTrc10Builder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     to: Option<Address>,
     token_id: Option<String>,
@@ -194,10 +195,18 @@ pub struct TransferTrc10Builder<'a, P> {
 
 impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, to: None, token_id: None, amount: None, memo: None }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            to: None,
+            token_id: None,
+            amount: None,
+            memo: None,
+        }
     }
 
-    /// Override the sender (defaults to the provider's signer address).
+    /// Override the owner address (defaults to the provider's signer address).
     pub fn from(mut self, from: Address) -> Self {
         self.owner = Some(from);
         self
@@ -227,14 +236,14 @@ impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the transfer.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let to = self.to.ok_or(Error::missing_field("to"))?;
         let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::TransferAsset(TransferAssetContract {
                 owner_address: owner,
                 to_address: to,
@@ -242,10 +251,12 @@ impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
                 amount,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── IssueTrc10Builder ─────────────────────────────────────────────────────────
@@ -256,6 +267,7 @@ impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
 #[derive(Debug)]
 pub struct IssueTrc10Builder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<tronz_primitives::Address>,
     name: Option<String>,
     abbr: Option<String>,
@@ -278,6 +290,7 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             name: None,
             abbr: None,
@@ -377,8 +390,8 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the token issuance.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let name = self.name.ok_or(Error::missing_field("name"))?;
         let abbr = self.abbr.ok_or(Error::missing_field("abbr"))?;
@@ -392,7 +405,7 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
         let start_time = now_ms + self.start_offset_ms;
         let end_time = start_time + self.duration_ms;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::AssetIssue(AssetIssueContract {
                 owner_address: owner,
                 name,
@@ -409,10 +422,12 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
                 public_free_asset_net_limit: self.public_free_asset_net_limit,
                 frozen_supply: self.frozen_supply,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── ParticipateTrc10Builder ───────────────────────────────────────────────────
@@ -423,6 +438,7 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
 #[derive(Debug)]
 pub struct ParticipateTrc10Builder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     to: Option<Address>,
     token_id: Option<String>,
@@ -432,7 +448,15 @@ pub struct ParticipateTrc10Builder<'a, P> {
 
 impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, to: None, token_id: None, amount: None, memo: None }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            to: None,
+            token_id: None,
+            amount: None,
+            memo: None,
+        }
     }
 
     /// Override the buyer address (defaults to the provider's signer address).
@@ -465,14 +489,14 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the participation.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let to = self.to.ok_or(Error::missing_field("to"))?;
         let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ParticipateAssetIssue(ParticipateAssetIssueContract {
                 owner_address: owner,
                 to_address: to,
@@ -480,10 +504,12 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
                 amount,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── UnfreezeTrc10Builder ──────────────────────────────────────────────────────
@@ -494,13 +520,14 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
 #[derive(Debug)]
 pub struct UnfreezeTrc10Builder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     memo: Option<Bytes>,
 }
 
 impl<'a, P: TronProvider> UnfreezeTrc10Builder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, memo: None }
+        Self { provider, permission_id: None, owner: None, memo: None }
     }
 
     /// Override the issuer address (defaults to the provider's signer address).
@@ -515,19 +542,21 @@ impl<'a, P: TronProvider> UnfreezeTrc10Builder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the unfreeze.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UnfreezeAsset(UnfreezeAssetContract {
                 owner_address: owner,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── UpdateTrc10Builder ────────────────────────────────────────────────────────
@@ -538,6 +567,7 @@ impl<'a, P: TronProvider> UnfreezeTrc10Builder<'a, P> {
 #[derive(Debug)]
 pub struct UpdateTrc10Builder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     description: String,
     url: Option<String>,
@@ -550,6 +580,7 @@ impl<'a, P: TronProvider> UpdateTrc10Builder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             description: String::new(),
             url: None,
@@ -595,12 +626,12 @@ impl<'a, P: TronProvider> UpdateTrc10Builder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the metadata update.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let url = self.url.ok_or(Error::missing_field("url"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UpdateAsset(UpdateAssetContract {
                 owner_address: owner,
                 description: self.description,
@@ -609,8 +640,10 @@ impl<'a, P: TronProvider> UpdateTrc10Builder<'a, P> {
                 new_public_limit: self.new_public_limit,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }

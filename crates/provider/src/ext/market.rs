@@ -5,7 +5,7 @@
 use tronz_primitives::{Address, B256, Bytes};
 
 use crate::{
-    builders::resolve_owner,
+    builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
     transport::TronTransport as _,
@@ -129,6 +129,7 @@ impl<P: TronProvider> MarketApi for P {
 #[derive(Debug)]
 pub struct MarketSellBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     sell_token_id: Option<String>,
     sell_token_quantity: Option<i64>,
@@ -141,6 +142,7 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             sell_token_id: None,
             sell_token_quantity: None,
@@ -186,8 +188,8 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the sell order.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let sell_token_id = self.sell_token_id.ok_or(Error::missing_field("sell_token_id"))?;
         let sell_token_quantity =
@@ -196,7 +198,7 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
         let buy_token_quantity =
             self.buy_token_quantity.ok_or(Error::missing_field("buy_token_quantity"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::MarketSellAsset(MarketSellAssetContract {
                 owner_address: owner,
                 sell_token_id,
@@ -205,10 +207,12 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
                 buy_token_quantity,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── MarketCancelBuilder ───────────────────────────────────────────────────────
@@ -219,6 +223,7 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
 #[derive(Debug)]
 pub struct MarketCancelBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     order_id: Option<B256>,
     memo: Option<Bytes>,
@@ -226,7 +231,7 @@ pub struct MarketCancelBuilder<'a, P> {
 
 impl<'a, P: TronProvider> MarketCancelBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, order_id: None, memo: None }
+        Self { provider, permission_id: None, owner: None, order_id: None, memo: None }
     }
 
     /// Override the canceller address (defaults to the provider's signer address).
@@ -247,21 +252,23 @@ impl<'a, P: TronProvider> MarketCancelBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the cancellation.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let order_id = self.order_id.ok_or(Error::missing_field("order_id"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::MarketCancelOrder(MarketCancelOrderContract {
                 owner_address: owner,
                 order_id,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 #[cfg(test)]
 mod tests {

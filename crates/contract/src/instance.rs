@@ -51,14 +51,15 @@ impl<P> ContractInstance<P> {
         self
     }
 
-    /// Set the default caller (`msg.sender`) for read-only calls.
+    /// Set the default account calls are made as — the simulated
+    /// `msg.sender` for reads, the transaction owner for writes.
     #[inline]
     pub fn caller(mut self, caller: Address) -> Self {
         self.caller = Some(caller);
         self
     }
 
-    /// Set the default caller in place.
+    /// As [`caller`](Self::caller), but in place.
     #[inline]
     pub fn set_caller(&mut self, caller: Address) {
         self.caller = Some(caller);

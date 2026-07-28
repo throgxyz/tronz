@@ -2,7 +2,7 @@
 
 use tronz_primitives::Address;
 
-use super::resolve_owner;
+use super::{builder_exits, resolve_owner};
 use crate::{
     error::Result,
     provider::{PendingTransaction, TronProvider},
@@ -13,6 +13,7 @@ use crate::{
 #[derive(Debug)]
 pub struct AccountPermissionUpdateBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     owner_permission: Option<Permission>,
     witness: Option<Permission>,
@@ -22,7 +23,14 @@ pub struct AccountPermissionUpdateBuilder<'a, P> {
 impl<'a, P: TronProvider> AccountPermissionUpdateBuilder<'a, P> {
     /// Start a new builder.
     pub fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, owner_permission: None, witness: None, actives: Vec::new() }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            owner_permission: None,
+            witness: None,
+            actives: Vec::new(),
+        }
     }
 
     /// Override the account being updated.
@@ -49,10 +57,10 @@ impl<'a, P: TronProvider> AccountPermissionUpdateBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::AccountPermissionUpdate(
                 AccountPermissionUpdateContract {
                     owner_address: owner,
@@ -61,8 +69,10 @@ impl<'a, P: TronProvider> AccountPermissionUpdateBuilder<'a, P> {
                     actives: self.actives,
                 },
             )),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }

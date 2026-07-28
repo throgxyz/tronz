@@ -2,7 +2,7 @@
 
 use tronz_primitives::{Address, ResourceCode, Trx};
 
-use super::resolve_owner;
+use super::{builder_exits, resolve_owner};
 use crate::{
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
@@ -21,6 +21,7 @@ use crate::{
 #[derive(Debug)]
 pub struct FreezeV1Builder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     amount: Option<Trx>,
     resource: ResourceCode,
@@ -33,6 +34,7 @@ impl<'a, P: TronProvider> FreezeV1Builder<'a, P> {
     pub fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             amount: None,
             resource: ResourceCode::Energy,
@@ -71,12 +73,12 @@ impl<'a, P: TronProvider> FreezeV1Builder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::FreezeBalanceV1(FreezeBalanceV1Contract {
                 owner_address: owner,
                 frozen_balance: amount,
@@ -84,10 +86,12 @@ impl<'a, P: TronProvider> FreezeV1Builder<'a, P> {
                 resource: self.resource,
                 receiver_address: self.receiver,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 /// Unstake TRX (Stake 1.0, legacy).
@@ -101,6 +105,7 @@ impl<'a, P: TronProvider> FreezeV1Builder<'a, P> {
 #[derive(Debug)]
 pub struct UnfreezeV1Builder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     resource: ResourceCode,
     receiver: Option<Address>,
@@ -109,7 +114,13 @@ pub struct UnfreezeV1Builder<'a, P> {
 impl<'a, P: TronProvider> UnfreezeV1Builder<'a, P> {
     /// Start a new V1 unfreeze builder (defaults to releasing energy stake).
     pub fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, resource: ResourceCode::Energy, receiver: None }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            resource: ResourceCode::Energy,
+            receiver: None,
+        }
     }
 
     /// Override the account.
@@ -130,26 +141,29 @@ impl<'a, P: TronProvider> UnfreezeV1Builder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UnfreezeBalanceV1(UnfreezeBalanceV1Contract {
                 owner_address: owner,
                 resource: self.resource,
                 receiver_address: self.receiver,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 /// Stake TRX to obtain energy or bandwidth (`FreezeBalanceV2`).
 #[derive(Debug)]
 pub struct FreezeBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     amount: Option<Trx>,
     resource: ResourceCode,
@@ -158,7 +172,13 @@ pub struct FreezeBuilder<'a, P> {
 impl<'a, P: TronProvider> FreezeBuilder<'a, P> {
     /// Start a new freeze builder (defaults to staking for energy).
     pub fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, amount: None, resource: ResourceCode::Energy }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            amount: None,
+            resource: ResourceCode::Energy,
+        }
     }
 
     /// Override the staking account.
@@ -179,27 +199,30 @@ impl<'a, P: TronProvider> FreezeBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::FreezeBalanceV2(FreezeBalanceV2Contract {
                 owner_address: owner,
                 frozen_balance: amount,
                 resource: self.resource,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 /// Unstake TRX (`UnfreezeBalanceV2`); subject to the network unbonding delay.
 #[derive(Debug)]
 pub struct UnfreezeBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     amount: Option<Trx>,
     resource: ResourceCode,
@@ -208,7 +231,13 @@ pub struct UnfreezeBuilder<'a, P> {
 impl<'a, P: TronProvider> UnfreezeBuilder<'a, P> {
     /// Start a new unfreeze builder (defaults to releasing energy stake).
     pub fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, amount: None, resource: ResourceCode::Energy }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            amount: None,
+            resource: ResourceCode::Energy,
+        }
     }
 
     /// Override the account.
@@ -229,21 +258,23 @@ impl<'a, P: TronProvider> UnfreezeBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::UnfreezeBalanceV2(UnfreezeBalanceV2Contract {
                 owner_address: owner,
                 unfreeze_balance: amount,
                 resource: self.resource,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 #[cfg(test)]

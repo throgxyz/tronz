@@ -32,7 +32,7 @@ use coins_bip32::{path::DerivationPath, prelude::Parent, xkeys::XPriv};
 use coins_bip39::{English, Mnemonic, Wordlist};
 use thiserror::Error;
 
-use crate::{LocalSigner, SignerError, TronSigner};
+use crate::{LocalSigner, SignerError};
 
 /// TRON BIP-44 coin type (registered as 195).
 const TRON_COIN_TYPE: u32 = 195;

@@ -32,6 +32,64 @@ use crate::{
     },
 };
 
+/// Route a request's contract to the transport call that builds it, then apply
+/// the request-level overrides the node does not know about.
+///
+/// Shared by [`TronProvider::build_transaction`] and `FilledProvider`'s
+/// filler-aware override.
+pub(crate) async fn build_via_transport<T: TronTransport>(
+    transport: &T,
+    mut req: TransactionRequest,
+) -> Result<RawTransaction> {
+    use crate::types::ContractType;
+
+    let contract = req.contract.take().ok_or(Error::missing_field("contract"))?;
+
+    let raw_result = match contract {
+        ContractType::Transfer(c) => transport.transfer_trx(c).await,
+        ContractType::TriggerSmartContract(c) => transport.trigger_smart_contract(c).await,
+        ContractType::FreezeBalanceV1(c) => transport.freeze_balance_v1(c).await,
+        ContractType::UnfreezeBalanceV1(c) => transport.unfreeze_balance_v1(c).await,
+        ContractType::FreezeBalanceV2(c) => transport.freeze_balance_v2(c).await,
+        ContractType::UnfreezeBalanceV2(c) => transport.unfreeze_balance_v2(c).await,
+        ContractType::DelegateResource(c) => transport.delegate_resource(c).await,
+        ContractType::UnDelegateResource(c) => transport.undelegate_resource(c).await,
+        ContractType::WithdrawExpireUnfreeze(c) => transport.withdraw_expire_unfreeze(c).await,
+        ContractType::CancelAllUnfreezeV2(c) => transport.cancel_all_unfreeze_v2(c).await,
+        ContractType::WithdrawBalance(c) => transport.withdraw_balance(c).await,
+        ContractType::AccountPermissionUpdate(c) => transport.account_permission_update(c).await,
+        ContractType::CreateSmartContract(c) => transport.create_smart_contract(c).await,
+        ContractType::AssetIssue(c) => transport.create_asset_issue(c).await,
+        ContractType::TransferAsset(c) => transport.transfer_asset(c).await,
+        ContractType::ParticipateAssetIssue(c) => transport.participate_asset_issue(c).await,
+        ContractType::UnfreezeAsset(c) => transport.unfreeze_asset(c).await,
+        ContractType::UpdateAsset(c) => transport.update_asset(c).await,
+        ContractType::CreateAccount(c) => transport.create_account(c).await,
+        ContractType::VoteWitness(c) => transport.vote_witness_account(c).await,
+        ContractType::UpdateAccount(c) => transport.update_account(c).await,
+        ContractType::ProposalCreate(c) => transport.proposal_create(c).await,
+        ContractType::ProposalApprove(c) => transport.proposal_approve(c).await,
+        ContractType::ProposalDelete(c) => transport.proposal_delete(c).await,
+        ContractType::CreateWitness(c) => transport.create_witness(c).await,
+        ContractType::UpdateWitness(c) => transport.update_witness(c).await,
+        ContractType::UpdateBrokerage(c) => transport.update_brokerage(c).await,
+        ContractType::SetAccountId(c) => transport.set_account_id(c).await,
+        ContractType::ClearContractAbi(c) => transport.clear_contract_abi(c).await,
+        ContractType::UpdateSetting(c) => transport.update_setting(c).await,
+        ContractType::UpdateEnergyLimit(c) => transport.update_energy_limit(c).await,
+        ContractType::ExchangeCreate(c) => transport.exchange_create(c).await,
+        ContractType::ExchangeInject(c) => transport.exchange_inject(c).await,
+        ContractType::ExchangeWithdraw(c) => transport.exchange_withdraw(c).await,
+        ContractType::ExchangeTransaction(c) => transport.exchange_transaction(c).await,
+        ContractType::MarketSellAsset(c) => transport.market_sell_asset(c).await,
+        ContractType::MarketCancelOrder(c) => transport.market_cancel_order(c).await,
+    };
+
+    let mut raw = raw_result.map_err(Error::transport)?;
+    raw.apply_request_fields(&req).map_err(Error::Transport)?;
+    Ok(raw)
+}
+
 pub(crate) mod private {
     /// Sealed marker: only this crate may implement [`TronProvider`](super::TronProvider).
     ///
@@ -642,7 +700,7 @@ pub trait TronProvider: ContractReadProvider + private::Sealed {
     /// Fill, sign, and broadcast a pre-built request.
     ///
     /// The default implementation returns [`Error::no_signer`] — a signer filler
-    /// (e.g. `SignerFiller`) must be in the filler chain for this to succeed.
+    /// (e.g. `WalletFiller`) must be in the filler chain for this to succeed.
     fn send_transaction(
         &self,
         _req: TransactionRequest,
@@ -651,6 +709,29 @@ pub trait TronProvider: ContractReadProvider + private::Sealed {
         Self: Sized,
     {
         async move { Err(Error::no_signer()) }
+    }
+
+    /// Ask the node to construct the transaction **without signing or
+    /// broadcasting it**.
+    ///
+    /// Returns the unsigned [`RawTransaction`]. Sign it once (single-sig) or
+    /// collect several signatures (multisig) and submit through
+    /// [`broadcast`](Self::broadcast). For the common single-signer case prefer
+    /// [`send_transaction`](Self::send_transaction), which fills, signs, and
+    /// broadcasts in one step.
+    ///
+    /// The default implementation runs no fillers, so a client-side fee limit or
+    /// TAPOS override must already be present on `req`. `FilledProvider` runs its
+    /// filler chain first.
+    fn build_transaction(
+        &self,
+        req: TransactionRequest,
+    ) -> impl Future<Output = Result<RawTransaction>> + Send
+    where
+        Self: Sized,
+    {
+        let transport = self.transport().clone();
+        async move { build_via_transport(&transport, req).await }
     }
 
     /// Broadcast an already-signed transaction.

@@ -5,7 +5,7 @@
 use tronz_primitives::{Address, Bytes};
 
 use crate::{
-    builders::resolve_owner,
+    builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
     transport::TronTransport as _,
@@ -114,6 +114,7 @@ impl<P: TronProvider> ExchangeApi for P {
 #[derive(Debug)]
 pub struct ExchangeCreateBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     first_token_id: Option<String>,
     first_token_balance: Option<i64>,
@@ -126,6 +127,7 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             first_token_id: None,
             first_token_balance: None,
@@ -171,8 +173,8 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the exchange-create transaction.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let first_token_id = self.first_token_id.ok_or(Error::missing_field("first_token_id"))?;
         let first_token_balance =
@@ -182,7 +184,7 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
         let second_token_balance =
             self.second_token_balance.ok_or(Error::missing_field("second_token_balance"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ExchangeCreate(ExchangeCreateContract {
                 owner_address: owner,
                 first_token_id,
@@ -191,10 +193,12 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
                 second_token_balance,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── ExchangeInjectBuilder ─────────────────────────────────────────────────────
@@ -205,6 +209,7 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
 #[derive(Debug)]
 pub struct ExchangeInjectBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     exchange_id: Option<i64>,
     token_id: Option<String>,
@@ -214,10 +219,18 @@ pub struct ExchangeInjectBuilder<'a, P> {
 
 impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, exchange_id: None, token_id: None, quant: None, memo: None }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            exchange_id: None,
+            token_id: None,
+            quant: None,
+            memo: None,
+        }
     }
 
-    /// Override the sender address (defaults to the provider's signer address).
+    /// Override the owner address (defaults to the provider's signer address).
     pub fn from(mut self, from: Address) -> Self {
         self.owner = Some(from);
         self
@@ -247,14 +260,14 @@ impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the inject transaction.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let exchange_id = self.exchange_id.ok_or(Error::missing_field("exchange_id"))?;
         let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
         let quant = self.quant.ok_or(Error::missing_field("quant"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ExchangeInject(ExchangeInjectContract {
                 owner_address: owner,
                 exchange_id,
@@ -262,10 +275,12 @@ impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
                 quant,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── ExchangeWithdrawBuilder ───────────────────────────────────────────────────
@@ -276,6 +291,7 @@ impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
 #[derive(Debug)]
 pub struct ExchangeWithdrawBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     exchange_id: Option<i64>,
     token_id: Option<String>,
@@ -285,10 +301,18 @@ pub struct ExchangeWithdrawBuilder<'a, P> {
 
 impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, exchange_id: None, token_id: None, quant: None, memo: None }
+        Self {
+            provider,
+            permission_id: None,
+            owner: None,
+            exchange_id: None,
+            token_id: None,
+            quant: None,
+            memo: None,
+        }
     }
 
-    /// Override the sender address (defaults to the provider's signer address).
+    /// Override the owner address (defaults to the provider's signer address).
     pub fn from(mut self, from: Address) -> Self {
         self.owner = Some(from);
         self
@@ -318,14 +342,14 @@ impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the withdraw transaction.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let exchange_id = self.exchange_id.ok_or(Error::missing_field("exchange_id"))?;
         let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
         let quant = self.quant.ok_or(Error::missing_field("quant"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ExchangeWithdraw(ExchangeWithdrawContract {
                 owner_address: owner,
                 exchange_id,
@@ -333,10 +357,12 @@ impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
                 quant,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 // ── ExchangeTradeBuilder ──────────────────────────────────────────────────────
@@ -347,6 +373,7 @@ impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
 #[derive(Debug)]
 pub struct ExchangeTradeBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
     exchange_id: Option<i64>,
     token_id: Option<String>,
@@ -359,6 +386,7 @@ impl<'a, P: TronProvider> ExchangeTradeBuilder<'a, P> {
     pub(crate) fn new(provider: &'a P) -> Self {
         Self {
             provider,
+            permission_id: None,
             owner: None,
             exchange_id: None,
             token_id: None,
@@ -404,15 +432,15 @@ impl<'a, P: TronProvider> ExchangeTradeBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast the trade transaction.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let exchange_id = self.exchange_id.ok_or(Error::missing_field("exchange_id"))?;
         let token_id = self.token_id.ok_or(Error::missing_field("token_id"))?;
         let quant = self.quant.ok_or(Error::missing_field("quant"))?;
         let expected = self.expected.ok_or(Error::missing_field("expected"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::ExchangeTransaction(ExchangeTransactionContract {
                 owner_address: owner,
                 exchange_id,
@@ -421,10 +449,12 @@ impl<'a, P: TronProvider> ExchangeTradeBuilder<'a, P> {
                 expected,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 #[cfg(test)]

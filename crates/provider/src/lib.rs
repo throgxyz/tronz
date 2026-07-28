@@ -20,7 +20,7 @@ pub type Error = ProviderError;
 
 mod provider;
 pub use ext::{GovernanceApi, Trc10Api, WitnessApi};
-pub use fillers::HasSigner;
+pub use fillers::{HasSigner, WalletFiller};
 pub use provider::{
     ContractReadProvider, FilledProvider, PendingTransaction, PendingTransactionError,
     ProviderBuilder, RootProvider, SolidityProvider, SolidityProviderBuilder, TronProvider,

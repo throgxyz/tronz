@@ -11,7 +11,7 @@ use std::{
 
 use tokio::sync::Mutex;
 use tronz_primitives::{Address, B256, RecoverableSignature, Trx};
-use tronz_signer::{SignerError, TronSigner};
+use tronz_signer::{SignerError, TronNetworkWallet};
 
 use crate::{
     error::Result,
@@ -220,50 +220,64 @@ impl TxFiller for FeeLimitFiller {
     }
 }
 
-/// Carries the signer for a provider. Signing itself happens in the provider's
-/// `send_transaction`, after filling completes; this filler is a no-op marker.
-#[derive(Clone, Copy, Debug)]
-pub struct SignerFiller<S> {
-    signer: S,
+/// Carries a wallet for local transaction signing.
+#[derive(Clone, Debug)]
+pub struct WalletFiller<W> {
+    wallet: W,
 }
 
-impl<S: TronSigner> SignerFiller<S> {
-    /// Wrap a signer.
-    pub fn new(signer: S) -> Self {
-        Self { signer }
+impl<W> WalletFiller<W> {
+    /// Wrap a wallet.
+    pub const fn new(wallet: W) -> Self {
+        Self { wallet }
     }
 
-    /// Borrow the wrapped signer.
-    pub fn signer(&self) -> &S {
-        &self.signer
+    /// Borrow the wrapped wallet.
+    pub const fn wallet(&self) -> &W {
+        &self.wallet
     }
 }
 
-impl<S: TronSigner> TxFiller for SignerFiller<S> {
+impl<W> AsRef<W> for WalletFiller<W> {
+    fn as_ref(&self) -> &W {
+        &self.wallet
+    }
+}
+
+impl<W> AsMut<W> for WalletFiller<W> {
+    fn as_mut(&mut self) -> &mut W {
+        &mut self.wallet
+    }
+}
+
+impl<W: TronNetworkWallet + Clone> TxFiller for WalletFiller<W> {
     // Intentionally a no-op: signing is performed by the provider once the
     // request is fully filled.
 }
 
 // ── HasSigner ─────────────────────────────────────────────────────────────────
 
-/// Implemented by filler chains that (may) carry a signer.
-///
-/// All filler types implement this trait. Non-signer fillers return `None` from
-/// both methods; [`SignerFiller`] returns the wrapped signer's address and signs.
-/// [`JoinFill`] prefers the right branch, then falls back to the left.
-///
-/// This allows [`FilledProvider`](crate::provider::FilledProvider) to locate the
-/// signer at runtime without knowing the exact filler chain type.
+/// Provides signing access through a filler chain.
 pub trait HasSigner {
-    /// The TRON address of the attached signer, if any.
+    /// The default signing address of the attached wallet, if any.
     fn signer_address(&self) -> Option<Address>;
 
-    /// Sign `hash` with the attached signer.  Returns `None` when no signer is
-    /// present in this filler chain.
+    /// Sign with `key` when available, otherwise with the default credential.
+    ///
+    /// Returns `None` when the chain contains no wallet.
+    fn sign_with(
+        &self,
+        key: Option<Address>,
+        hash: B256,
+    ) -> impl Future<Output = Option<Result<RecoverableSignature, SignerError>>> + Send;
+
+    /// Sign `hash` with the wallet's default credential.
     fn sign(
         &self,
         hash: B256,
-    ) -> impl Future<Output = Option<Result<RecoverableSignature, SignerError>>> + Send;
+    ) -> impl Future<Output = Option<Result<RecoverableSignature, SignerError>>> + Send {
+        self.sign_with(None, hash)
+    }
 }
 
 impl HasSigner for Identity {
@@ -275,8 +289,9 @@ impl HasSigner for Identity {
     // trait to use `async fn` too, which conflicts with the explicit `+ Send`
     // bound we need for multi-threaded executor compatibility.
     #[allow(clippy::manual_async_fn)]
-    fn sign(
+    fn sign_with(
         &self,
+        _key: Option<Address>,
         _hash: B256,
     ) -> impl Future<Output = Option<Result<RecoverableSignature, SignerError>>> + Send {
         async { None }
@@ -289,8 +304,9 @@ impl HasSigner for TaposFiller {
     }
 
     #[allow(clippy::manual_async_fn)]
-    fn sign(
+    fn sign_with(
         &self,
+        _key: Option<Address>,
         _hash: B256,
     ) -> impl Future<Output = Option<Result<RecoverableSignature, SignerError>>> + Send {
         async { None }
@@ -303,25 +319,32 @@ impl HasSigner for FeeLimitFiller {
     }
 
     #[allow(clippy::manual_async_fn)]
-    fn sign(
+    fn sign_with(
         &self,
+        _key: Option<Address>,
         _hash: B256,
     ) -> impl Future<Output = Option<Result<RecoverableSignature, SignerError>>> + Send {
         async { None }
     }
 }
 
-impl<S: TronSigner> HasSigner for SignerFiller<S> {
+impl<W: TronNetworkWallet + Clone> HasSigner for WalletFiller<W> {
     fn signer_address(&self) -> Option<Address> {
-        Some(self.signer.address())
+        Some(self.wallet.default_signer_address())
     }
 
-    fn sign(
+    fn sign_with(
         &self,
+        key: Option<Address>,
         hash: B256,
     ) -> impl Future<Output = Option<Result<RecoverableSignature, SignerError>>> + Send {
-        let signer = self.signer.clone();
-        async move { Some(signer.sign_hash(hash).await) }
+        let wallet = self.wallet.clone();
+        async move {
+            let key = key
+                .filter(|address| wallet.has_signer_for(address))
+                .unwrap_or_else(|| wallet.default_signer_address());
+            Some(wallet.sign_hash_with(key, &hash).await)
+        }
     }
 }
 
@@ -330,17 +353,18 @@ impl<L: HasSigner + Clone + Send, R: HasSigner + Clone + Send> HasSigner for Joi
         self.right.signer_address().or_else(|| self.left.signer_address())
     }
 
-    fn sign(
+    fn sign_with(
         &self,
+        key: Option<Address>,
         hash: B256,
     ) -> impl Future<Output = Option<Result<RecoverableSignature, SignerError>>> + Send {
         let left = self.left.clone();
         let right = self.right.clone();
         async move {
-            if let Some(result) = right.sign(hash).await {
+            if let Some(result) = right.sign_with(key, hash).await {
                 Some(result)
             } else {
-                left.sign(hash).await
+                left.sign_with(key, hash).await
             }
         }
     }
@@ -501,33 +525,82 @@ mod tests {
         assert!(tx.fee_limit.is_none());
     }
 
-    // ── SignerFiller ──────────────────────────────────────────────────────────
-
     #[test]
-    fn signer_filler_exposes_address() {
-        use tronz_signer::LocalSigner;
+    fn wallet_filler_exposes_address() {
+        use tronz_signer::{LocalSigner, TronWallet};
         let signer = LocalSigner::from_hex(
             "0000000000000000000000000000000000000000000000000000000000000001",
         )
         .unwrap();
         let expected = signer.address();
-        let filler = SignerFiller::new(signer);
+        let filler = WalletFiller::new(TronWallet::new(signer));
         assert_eq!(filler.signer_address(), Some(expected));
-        assert_eq!(filler.signer().address(), expected);
+        assert_eq!(filler.wallet().default_signer_address(), expected);
+    }
+
+    #[tokio::test]
+    async fn wallet_filler_signs_with_the_credential_named_by_key() {
+        use tronz_signer::{LocalSigner, TronWallet};
+        let default = LocalSigner::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap();
+        let secondary = LocalSigner::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000002",
+        )
+        .unwrap();
+
+        let mut wallet = TronWallet::new(default.clone());
+        wallet.register_signer(secondary.clone());
+        let filler = WalletFiller::new(wallet);
+
+        let hash = B256::repeat_byte(9);
+        let by_default = filler.sign_with(None, hash).await.unwrap().unwrap();
+        let by_key = filler.sign_with(Some(secondary.address()), hash).await.unwrap().unwrap();
+
+        assert_eq!(by_default.recover_address_from_prehash(hash).unwrap(), default.address());
+        assert_eq!(by_key.recover_address_from_prehash(hash).unwrap(), secondary.address());
+    }
+
+    #[tokio::test]
+    async fn wallet_filler_falls_back_to_the_default_credential_for_an_unheld_owner() {
+        use tronz_signer::{LocalSigner, TronWallet};
+        let signer = LocalSigner::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap();
+        let multisig_owner = LocalSigner::from_hex(
+            "0000000000000000000000000000000000000000000000000000000000000002",
+        )
+        .unwrap()
+        .address();
+        let filler = WalletFiller::new(TronWallet::new(signer.clone()));
+
+        let hash = B256::repeat_byte(9);
+        let sig = filler.sign_with(Some(multisig_owner), hash).await.unwrap().unwrap();
+        assert_eq!(sig.recover_address_from_prehash(hash).unwrap(), signer.address());
+    }
+
+    #[tokio::test]
+    async fn wallet_filler_errors_when_the_wallet_holds_no_credentials() {
+        use tronz_signer::TronWallet;
+        let filler = WalletFiller::new(TronWallet::default());
+
+        let result = filler.sign_with(None, B256::ZERO).await.unwrap();
+        assert!(result.unwrap_err().to_string().contains("missing signing credential"));
     }
 
     // ── JoinFill ─────────────────────────────────────────────────────────────
 
     #[test]
     fn join_fill_prefers_right_signer() {
-        use tronz_signer::LocalSigner;
+        use tronz_signer::{LocalSigner, TronWallet};
         let signer = LocalSigner::from_hex(
             "0000000000000000000000000000000000000000000000000000000000000001",
         )
         .unwrap();
         let expected = signer.address();
-        // left = TaposFiller (no signer), right = SignerFiller
-        let join = JoinFill::new(TaposFiller::new(), SignerFiller::new(signer));
+        let join = JoinFill::new(TaposFiller::new(), WalletFiller::new(TronWallet::new(signer)));
         assert_eq!(join.signer_address(), Some(expected));
     }
 

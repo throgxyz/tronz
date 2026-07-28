@@ -36,7 +36,7 @@ use tronz_abi::TronAbi;
 use tronz_primitives::{Address, Bytes, Trx};
 use tronz_provider::{
     Error as ProviderError, PendingTransaction, TronProvider,
-    types::{ContractType, CreateSmartContract, TransactionRequest},
+    types::{ContractType, CreateSmartContract, RawTransaction, TransactionRequest},
 };
 
 use crate::error::{ContractError, Result};
@@ -54,6 +54,8 @@ pub struct DeployBuilder<P> {
     consume_user_resource_percent: i64,
     origin_energy_limit: i64,
     name: String,
+    owner: Option<Address>,
+    permission_id: Option<i32>,
 }
 
 #[derive(Debug)]
@@ -74,7 +76,23 @@ impl<P: TronProvider> DeployBuilder<P> {
             consume_user_resource_percent: 100,
             origin_energy_limit: 10_000_000,
             name: String::new(),
+            owner: None,
+            permission_id: None,
         }
+    }
+
+    /// Override the deploying account (defaults to the provider's signer).
+    #[inline]
+    pub fn from(mut self, owner: Address) -> Self {
+        self.owner = Some(owner);
+        self
+    }
+
+    /// Set the transaction permission id.
+    #[inline]
+    pub fn permission_id(mut self, id: i32) -> Self {
+        self.permission_id = Some(id);
+        self
     }
 
     /// Attach the contract's Alloy JSON ABI.
@@ -164,9 +182,21 @@ impl<P: TronProvider> DeployBuilder<P> {
     ///
     /// [`TransactionInfo::contract_address`]: tronz_provider::types::TransactionInfo::contract_address
     pub async fn send(self) -> Result<PendingTransaction<P>> {
+        let provider = self.provider.clone();
+        provider.send_transaction(self.into_request()?).await.map_err(ContractError::Provider)
+    }
+
+    /// Build without signing or broadcasting.
+    pub async fn build(self) -> Result<RawTransaction> {
+        let provider = self.provider.clone();
+        provider.build_transaction(self.into_request()?).await.map_err(ContractError::Provider)
+    }
+
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = self
-            .provider
-            .signer_address()
+            .owner
+            .or_else(|| self.provider.signer_address())
             .ok_or_else(ProviderError::no_signer)
             .map_err(ContractError::Provider)?;
 
@@ -175,8 +205,8 @@ impl<P: TronProvider> DeployBuilder<P> {
             DeploymentAbi::Tron(abi) => abi,
         };
 
-        let mut req = TransactionRequest::default().with_contract(
-            ContractType::CreateSmartContract(CreateSmartContract {
+        let mut req = TransactionRequest {
+            contract: Some(ContractType::CreateSmartContract(CreateSmartContract {
                 owner_address: owner,
                 bytecode: self.bytecode,
                 abi,
@@ -184,13 +214,15 @@ impl<P: TronProvider> DeployBuilder<P> {
                 consume_user_resource_percent: self.consume_user_resource_percent,
                 origin_energy_limit: self.origin_energy_limit,
                 name: self.name,
-            }),
-        );
+            })),
+            permission_id: self.permission_id,
+            ..Default::default()
+        };
 
         if let Some(limit) = self.fee_limit {
             req = req.with_fee_limit(limit);
         }
 
-        self.provider.send_transaction(req).await.map_err(ContractError::Provider)
+        Ok(req)
     }
 }

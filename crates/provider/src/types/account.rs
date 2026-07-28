@@ -74,6 +74,22 @@ pub struct AccountPermissions {
     pub actives: Vec<Permission>,
 }
 
+impl AccountPermissions {
+    /// The permission a transaction's `permission_id` refers to.
+    ///
+    /// `0` is the owner permission, `1` the witness permission, and `2` upwards
+    /// the active ones. Note that ids are stored on the permissions themselves,
+    /// so active permissions are matched by [`Permission::id`] rather than by
+    /// their position in [`actives`](Self::actives).
+    pub fn by_id(&self, id: i32) -> Option<&Permission> {
+        match id {
+            0 => self.owner.as_ref(),
+            1 => self.witness.as_ref(),
+            _ => self.actives.iter().find(|permission| permission.id == id),
+        }
+    }
+}
+
 /// Bandwidth + energy usage/limits and delegation totals for an account.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
@@ -150,4 +166,33 @@ pub struct DelegatedResourceIndex {
     pub from_accounts: Vec<Address>,
     /// Accounts this address delegated **to**.
     pub to_accounts: Vec<Address>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn permission(id: i32) -> Permission {
+        Permission {
+            id,
+            permission_name: format!("permission{id}"),
+            threshold: 1,
+            keys: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn permissions_are_looked_up_by_id_not_position() {
+        let permissions = AccountPermissions {
+            owner: Some(permission(0)),
+            witness: Some(permission(1)),
+            // A gap in the ids: active permission 3 sits at index 1.
+            actives: vec![permission(2), permission(4)],
+        };
+
+        assert_eq!(permissions.by_id(0).map(|p| p.id), Some(0));
+        assert_eq!(permissions.by_id(1).map(|p| p.id), Some(1));
+        assert_eq!(permissions.by_id(4).map(|p| p.id), Some(4));
+        assert!(permissions.by_id(3).is_none());
+    }
 }

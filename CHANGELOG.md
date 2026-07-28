@@ -9,24 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Alloy-style `ProviderBuilder::connect_grpc` and `connect_grpc_with_key`
-  connection methods. The former `on_grpc` and `on_grpc_with_key` names remain
-  available as deprecated aliases.
-- `Debug` implementations for public provider and contract builders.
-- Standard byte and cryptographic conversion traits for `Address` and
-  `RecoverableSignature`, plus `Log` value traits and topic-count validation
-  through `Log::is_valid`.
-- `TryFrom<i32> for ResourceCode`, mirroring the existing
-  `From<ResourceCode> for i32`. Unknown discriminants yield the new
-  `UnknownResourceCode` error.
+- `TronNetworkWallet` and `TronWallet`, an Alloy-style wallet layer supporting
+  multiple credentials and custom key routing.
+- Multisig support across all transaction, contract-call, and deployment
+  builders via `.permission_id(id)`, `.build()`, and `.into_request()`.
+  `sign_hash_with_many`, permission lookup, and local threshold helpers complete
+  the unsigned-build/sign/broadcast flow.
+- `TronSignerSync` and expanded `LocalSigner` construction, conversion, random
+  generation, and synchronous signing APIs.
+- TronWeb-compatible `signMessageV2` personal-message signing, recovery, and
+  verification.
+- TIP-712 typed-data signing behind the `eip712` feature (`signer-eip712` on the
+  `tronz` facade).
+- PBKDF2-HMAC-SHA256 keystore decryption in addition to scrypt.
+- Alloy-style `ProviderBuilder::connect_grpc` and `connect_grpc_with_key`;
+  `on_grpc` variants remain deprecated aliases.
+- Additional standard conversions and validation for `Address`,
+  `RecoverableSignature`, `Log`, and `ResourceCode`, plus `Debug`
+  implementations for public provider and contract builders.
 
-- TronWeb `signMessageV2`-compatible personal message signing and verification —
-  `TronSigner::sign_message`, `hash_message`, `recover_message_address`, and
-  `verify_message` — using the TRON-prefixed message format documented as
-  TIP-191-compatible. `RecoverableSignature` also gains address recovery
-  (`recover_address_from_prehash`) and `27`/`28` legacy recovery-id encoding
-  (`to_legacy_bytes`) for TronWeb / TronLink interoperability. `to_bytes()`
-  (`0`/`1`, the native transaction encoding) is unchanged.
+### Fixed
+
+- Keystore decryption now rejects invalid `dklen` values instead of panicking or
+  allocating from untrusted input.
+
+### Changed (Breaking)
+
+- `TronSigner` adopts the Alloy-style async signer API:
+  `sign_hash` takes `&B256`, dynamic dispatch uses `#[auto_impl(&mut, Box)]`,
+  and provider ownership moves to `TronWallet`.
+- `SignerFiller<S>` is replaced by generic `WalletFiller<W>`;
+  `ProviderBuilder::wallet` accepts any `TronNetworkWallet`, while `with_signer`
+  remains the single-signer convenience.
+- Contract `caller` now controls both simulated `msg.sender` and
+  the owner of sent/built transactions; deployments gain the equivalent `from`.
+- Keystore `kdfparams` is now the `KdfparamsType` enum, supporting
+  both scrypt and PBKDF2 parameters.
+- `Log::topics` is private and `Log::new` validates the EVM
+  four-topic limit; use `topics()`, `topics_mut()`, or `new_unchecked`.
 
 ### Changed
 
@@ -34,11 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Alloy. Use `ProviderBuilder::default()` to start with no fillers.
 - Endpoint builder methods now accept any `IntoIterator` whose items implement
   `Into<String>`, rather than requiring a pre-built `Vec<String>`.
-- **Breaking:** `Log::topics` is now private, so the four-topic EVM limit cannot
-  be broken after construction. `Log::new` validates and returns `Option<Self>`;
-  use `Log::new_unchecked` to preserve a malformed node response verbatim. Read
-  topics through `Log::topics()` and edit them in place through
-  `Log::topics_mut()`.
 
 ## [0.4.1](https://github.com/throgxyz/tronz/compare/v0.4.0...v0.4.1) - 2026-07-19
 

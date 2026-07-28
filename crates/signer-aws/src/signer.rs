@@ -1,8 +1,7 @@
 // `SdkError` variants are inherently large; boxing every call site would hurt ergonomics.
 #![allow(clippy::result_large_err)]
 
-use core::future::Future;
-
+use async_trait::async_trait;
 use aws_sdk_kms::{
     Client,
     error::SdkError,
@@ -115,17 +114,15 @@ impl AwsSigner {
     }
 }
 
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl TronSigner for AwsSigner {
     fn address(&self) -> Address {
         self.address
     }
 
-    fn sign_hash(
-        &self,
-        hash: B256,
-    ) -> impl Future<Output = Result<RecoverableSignature, SignerError>> + Send {
-        let this = self.clone();
-        async move { this.sign_hash_inner(hash).await.map_err(SignerError::from) }
+    async fn sign_hash(&self, hash: &B256) -> Result<RecoverableSignature, SignerError> {
+        self.sign_hash_inner(*hash).await.map_err(SignerError::from)
     }
 }
 
@@ -217,7 +214,7 @@ mod tests {
         println!("address: {}", signer.address());
 
         let hash = B256::repeat_byte(0xab);
-        let sig = TronSigner::sign_hash(&signer, hash).await.unwrap();
+        let sig = TronSigner::sign_hash(&signer, &hash).await.unwrap();
         assert!(sig.v() == 0 || sig.v() == 1);
         assert_eq!(sig.to_bytes().len(), 65);
     }

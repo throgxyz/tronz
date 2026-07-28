@@ -10,7 +10,9 @@ use core::marker::PhantomData;
 
 use alloy_sol_types::SolCall;
 use tronz_primitives::{Address, Trx};
-use tronz_provider::{ContractReadProvider, PendingTransaction, TronProvider};
+use tronz_provider::{
+    ContractReadProvider, PendingTransaction, TronProvider, types::RawTransaction,
+};
 
 use crate::{
     call::CallBuilder,
@@ -50,7 +52,7 @@ impl<P: ContractReadProvider, C: SolCall> TronCallBuilder<P, C> {
         Self { inner: self.inner.token(token_id, value), _call: PhantomData }
     }
 
-    /// Set the caller (`msg.sender`) used for simulation and energy estimation.
+    /// Set the caller for reads and the owner for writes.
     #[inline]
     pub fn caller(self, caller: Address) -> Self {
         Self { inner: self.inner.caller(caller), _call: PhantomData }
@@ -72,11 +74,22 @@ impl<P: ContractReadProvider, C: SolCall> TronCallBuilder<P, C> {
 }
 
 impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
+    /// Set the transaction permission id.
+    #[inline]
+    pub fn permission_id(self, id: i32) -> Self {
+        Self { inner: self.inner.permission_id(id), _call: PhantomData }
+    }
+
     /// Broadcast the call as a state-changing transaction (`trigger_smart_contract`).
     ///
     /// Requires a signer attached to the provider.
     pub async fn send(self) -> Result<PendingTransaction<P>> {
         self.inner.send().await
+    }
+
+    /// Build without signing or broadcasting.
+    pub async fn build(self) -> Result<RawTransaction> {
+        self.inner.build().await
     }
 }
 

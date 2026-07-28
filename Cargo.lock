@@ -32,6 +32,7 @@ dependencies = [
  "alloy-primitives",
  "alloy-sol-type-parser",
  "alloy-sol-types",
+ "derive_more",
  "itoa",
  "serde",
  "serde_json",
@@ -3491,6 +3492,8 @@ dependencies = [
 name = "tronz"
 version = "0.4.1"
 dependencies = [
+ "anyhow",
+ "tokio",
  "tronz-abi",
  "tronz-contract",
  "tronz-primitives",
@@ -3578,15 +3581,22 @@ name = "tronz-signer"
 version = "0.4.1"
 dependencies = [
  "aes",
+ "alloy-dyn-abi",
+ "alloy-primitives",
+ "alloy-sol-types",
+ "async-trait",
+ "auto_impl",
  "coins-bip32",
  "coins-bip39",
  "ctr",
  "hex",
  "k256",
+ "pbkdf2 0.13.0",
  "rand 0.9.4",
  "scrypt",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "sha3 0.11.0",
  "tempfile",
  "thiserror 2.0.18",
@@ -3599,6 +3609,7 @@ dependencies = [
 name = "tronz-signer-aws"
 version = "0.4.1"
 dependencies = [
+ "async-trait",
  "aws-config",
  "aws-sdk-kms",
  "hex",

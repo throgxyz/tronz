@@ -10,16 +10,26 @@ license      = { workspace = true }
 repository   = { workspace = true }
 
 [features]
+## TIP-712 typed-data signing via `sign_typed_data` / `sign_dynamic_typed_data`.
+eip712 = ["dep:alloy-dyn-abi", "dep:alloy-sol-types"]
+## Random private key generation via `LocalSigner::random`.
+rand = ["dep:rand"]
 ## BIP-39 mnemonic + BIP-44 HD key derivation via `MnemonicBuilder`.
-mnemonic = ["dep:coins-bip32", "dep:coins-bip39", "dep:rand"]
+mnemonic = ["dep:coins-bip32", "dep:coins-bip39", "rand"]
 ## Web3 Secret Storage V3 keystore encrypt/decrypt.
-keystore = ["dep:scrypt", "dep:aes", "dep:ctr", "dep:sha3", "dep:uuid", "dep:serde", "dep:serde_json", "dep:rand"]
+keystore = ["dep:scrypt", "dep:pbkdf2", "dep:sha2", "dep:aes", "dep:ctr", "dep:sha3", "dep:uuid", "dep:serde", "dep:serde_json", "rand"]
 
 [dependencies]
 tronz-primitives = { workspace = true }
+async-trait      = { workspace = true }
+auto_impl        = { workspace = true }
 k256             = { workspace = true }
 hex              = { workspace = true }
 thiserror        = { workspace = true }
+
+# eip712 feature
+alloy-dyn-abi   = { workspace = true, optional = true, features = ["eip712"] }
+alloy-sol-types = { workspace = true, optional = true }
 
 # mnemonic feature
 coins-bip32 = { workspace = true, optional = true }
@@ -28,6 +38,8 @@ rand        = { workspace = true, optional = true }
 
 # keystore feature
 scrypt     = { workspace = true, optional = true }
+pbkdf2     = { workspace = true, optional = true }
+sha2       = { workspace = true, optional = true }
 aes        = { workspace = true, optional = true }
 ctr        = { workspace = true, optional = true }
 sha3       = { workspace = true, optional = true }
@@ -36,5 +48,7 @@ serde      = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
-tokio    = { workspace = true, features = ["rt", "macros"] }
-tempfile = "3"
+alloy-primitives = { workspace = true }
+serde_json       = { workspace = true }
+tokio            = { workspace = true, features = ["rt", "macros"] }
+tempfile         = "3"

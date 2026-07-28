@@ -57,7 +57,8 @@ impl<P: ContractReadProvider> Trc721Instance<P> {
         Self { inner: self.inner.at(address) }
     }
 
-    /// Set the default caller (`msg.sender`) for read-only calls.
+    /// Set the default account calls are made as — the simulated
+    /// `msg.sender` for reads, the transaction owner for writes.
     pub fn caller(self, caller: Address) -> Self {
         Self { inner: self.inner.caller(caller) }
     }

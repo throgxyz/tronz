@@ -2,7 +2,7 @@
 
 use tronz_primitives::{Address, Bytes, Trx};
 
-use super::resolve_owner;
+use super::{builder_exits, resolve_owner};
 use crate::{
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
@@ -17,15 +17,16 @@ pub struct TransferBuilder<'a, P> {
     to: Option<Address>,
     amount: Option<Trx>,
     memo: Option<Bytes>,
+    permission_id: Option<i32>,
 }
 
 impl<'a, P: TronProvider> TransferBuilder<'a, P> {
     /// Start a new transfer builder.
     pub fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None, to: None, amount: None, memo: None }
+        Self { provider, owner: None, to: None, amount: None, memo: None, permission_id: None }
     }
 
-    /// Override the sender (defaults to the provider's signer address).
+    /// Override the owner address (defaults to the provider's signer address).
     pub fn from(mut self, from: Address) -> Self {
         self.owner = Some(from);
         self
@@ -49,23 +50,25 @@ impl<'a, P: TronProvider> TransferBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
         let to = self.to.ok_or(Error::missing_field("to"))?;
         let amount = self.amount.ok_or(Error::missing_field("amount"))?;
 
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::Transfer(TransferContract {
                 owner_address: owner,
                 to_address: to,
                 amount,
             })),
             memo: self.memo,
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 #[cfg(test)]
@@ -106,5 +109,43 @@ mod tests {
         let provider = mock_provider();
         let err = provider.send_trx().from(addr(1)).to(addr(2)).send().await.err().unwrap();
         assert!(err.is_local_usage_error());
+    }
+
+    /// The `permission_id` set on a fluent builder reaches the transaction the
+    /// node hands back, and `build` stops before signing or broadcasting — the
+    /// mock would fail on an unexpected broadcast.
+    #[tokio::test]
+    async fn build_carries_the_permission_id_and_leaves_the_transaction_unsigned() {
+        use prost::Message as _;
+
+        use crate::types::RawTransaction;
+
+        let node_tx = crate::proto::Transaction {
+            raw_data: Some(crate::proto::transaction::Raw {
+                contract: vec![crate::proto::transaction::Contract::default()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let transport = MockTransport::new();
+        transport.push_ok(
+            "transfer_trx",
+            RawTransaction::from_proto_extention(vec![0; 32], node_tx.encode_to_vec(), 0, 0)
+                .unwrap(),
+        );
+
+        let raw = RootProvider::new(transport)
+            .send_trx()
+            .from(addr(1))
+            .to(addr(2))
+            .amount(Trx::from_sun(1_000_000).unwrap())
+            .permission_id(2)
+            .build()
+            .await
+            .unwrap();
+
+        let decoded = crate::proto::Transaction::decode(raw.raw_proto.as_ref()).unwrap();
+        assert_eq!(decoded.raw_data.unwrap().contract[0].permission_id, 2);
+        assert!(decoded.signature.is_empty());
     }
 }

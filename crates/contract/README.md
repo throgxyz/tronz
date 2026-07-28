@@ -62,6 +62,28 @@ let contract = provider.contract(address, Interface::new(json_abi));
 Use `.tron_abi(abi)` instead of `.abi(abi)` to deploy already-native metadata
 without an Alloy conversion.
 
+## Multisig calls and deployments
+
+Contract calls and deployments expose the same unsigned transaction flow as
+provider builders. Set the multisig account and active permission, then call
+`.build()` to collect the required signatures before broadcasting:
+
+```rust,ignore
+let raw = contract
+    .call_raw(calldata)
+    .caller(multisig_account)
+    .permission_id(2)
+    .build()
+    .await?;
+
+let signatures = wallet.sign_hash_with_many(&keys, &raw.tx_id()).await?;
+let signed = SignedTransaction { raw, signatures };
+provider.broadcast(signed).await?;
+```
+
+For deployments, use `.from(multisig_account).permission_id(2).build()`.
+`.send()` remains the single-signature convenience path.
+
 ## Standard token interfaces (static ABI)
 
 Use the typed wrappers for well-known standards:

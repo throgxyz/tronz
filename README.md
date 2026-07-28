@@ -64,6 +64,7 @@ Optional features:
 |---|---|
 | `signer-mnemonic` | BIP-39 mnemonic generation + BIP-44 HD derivation (`MnemonicBuilder`) |
 | `signer-keystore` | Web3 Secret Storage V3 encrypt/decrypt (`LocalSigner::encrypt_keystore`, `decrypt_keystore`) |
+| `signer-eip712` | TIP-712 typed-data signing (`TronSigner::sign_typed_data`) — TronWeb `signTypedData`-compatible |
 | `signer-aws` | AWS KMS signer (`AwsSigner`) — the private key never leaves the HSM |
 | `provider-grpc` | gRPC transport without TLS — use for local or private nodes |
 
@@ -110,6 +111,56 @@ async fn main() -> anyhow::Result<()> {
 
     let receipt = pending.get_receipt().await?;
     println!("confirmed in block #{}", receipt.block_number);
+    Ok(())
+}
+```
+
+### Send from a multisig account
+
+`.build()` stops at the unsigned transaction so several keys can sign it, and
+`.permission_id(id)` authorizes through an active permission instead of the
+account's owner permission.
+
+```rust,no_run
+use tronz::{
+    LocalSigner, ProviderBuilder, TronNetworkWallet, TronProvider, TronWallet, Trx,
+    TRONGRID_NILE,
+};
+use tronz::providers::types::SignedTransaction;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let a = LocalSigner::from_hex("FIRST_PRIVATE_KEY")?;
+    let b = LocalSigner::from_hex("SECOND_PRIVATE_KEY")?;
+    let account = "TMultisigAccount".parse()?;
+    let to = "TRecipientAddress".parse()?;
+
+    let mut wallet = TronWallet::new(a.clone());
+    wallet.register_signer(b.clone());
+
+    let provider = ProviderBuilder::new()
+        .wallet(wallet.clone())
+        .connect_grpc(TRONGRID_NILE)
+        .await?;
+
+    let raw = provider
+        .send_trx()
+        .from(account)
+        .to(to)
+        .amount(Trx::from_sun(1_000_000)?)
+        .permission_id(2)
+        .build()
+        .await?;
+
+    let keys = [a.address(), b.address()];
+    let signatures = wallet.sign_hash_with_many(&keys, &raw.tx_id()).await?;
+    let signed = SignedTransaction { raw, signatures };
+
+    // Check the threshold before spending bandwidth on a rejected transaction.
+    let weight = provider.get_transaction_sign_weight(&signed).await?;
+    if weight.current_weight >= weight.required_weight {
+        provider.broadcast(signed).await?;
+    }
     Ok(())
 }
 ```
@@ -314,7 +365,7 @@ let receipt = pending.await_solidified_success(&solidity).await?; // waits for i
 | [`tronz`](https://crates.io/crates/tronz) | Meta-crate — re-exports everything |
 | [`tronz-primitives`](https://crates.io/crates/tronz-primitives) | `Address`, `Trx`, `ResourceCode`, `RecoverableSignature` |
 | [`tronz-abi`](https://crates.io/crates/tronz-abi) | Native TRON ABI metadata and optional Alloy `JsonAbi` conversion |
-| [`tronz-signer`](https://crates.io/crates/tronz-signer) | `TronSigner` trait and `LocalSigner` (in-memory secp256k1) |
+| [`tronz-signer`](https://crates.io/crates/tronz-signer) | `TronSigner`, `TronSignerSync`, `TronNetworkWallet`, `TronWallet`, and `LocalSigner` |
 | [`tronz-provider`](https://crates.io/crates/tronz-provider) | FullNode and SolidityNode transports/providers, fillers, domain types, extension traits |
 | [`tronz-contract`](https://crates.io/crates/tronz-contract) | `ContractInstance`, `DeployBuilder`, TRC20 bindings, event decoding |
 | [`tronz-sol-macro`](https://crates.io/crates/tronz-sol-macro) | `tron_sol!` procedural macro |

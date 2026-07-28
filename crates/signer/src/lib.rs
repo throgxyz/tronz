@@ -8,9 +8,20 @@ mod error;
 pub use error::SignerError;
 
 mod signer;
-pub use signer::{NoSigner, TronSigner};
+pub use signer::{TronSigner, TronSignerSync};
+
+mod wallet;
+pub use wallet::{TronNetworkWallet, TronWallet};
 
 mod local;
+#[cfg(feature = "eip712")]
+#[cfg_attr(docsrs, doc(cfg(feature = "eip712")))]
+#[doc(no_inline)]
+pub use alloy_dyn_abi::{self, TypedData};
+#[cfg(feature = "eip712")]
+#[cfg_attr(docsrs, doc(cfg(feature = "eip712")))]
+#[doc(no_inline)]
+pub use alloy_sol_types::{self, Eip712Domain, SolStruct};
 pub use k256;
 pub use local::LocalSigner;
 pub use tronz_primitives::RecoverableSignature;

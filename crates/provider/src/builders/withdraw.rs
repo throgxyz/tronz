@@ -2,7 +2,7 @@
 
 use tronz_primitives::Address;
 
-use super::resolve_owner;
+use super::{builder_exits, resolve_owner};
 use crate::{
     error::Result,
     provider::{PendingTransaction, TronProvider},
@@ -16,13 +16,14 @@ use crate::{
 #[derive(Debug)]
 pub struct WithdrawExpireBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
 }
 
 impl<'a, P: TronProvider> WithdrawExpireBuilder<'a, P> {
     /// Start a new builder.
     pub fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None }
+        Self { provider, permission_id: None, owner: None }
     }
 
     /// Override the account.
@@ -31,30 +32,33 @@ impl<'a, P: TronProvider> WithdrawExpireBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::WithdrawExpireUnfreeze(WithdrawExpireUnfreezeContract {
                 owner_address: owner,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }
 
 /// Cancel all in-progress unfreeze operations.
 #[derive(Debug)]
 pub struct CancelAllUnfreezeBuilder<'a, P> {
     provider: &'a P,
+    permission_id: Option<i32>,
     owner: Option<Address>,
 }
 
 impl<'a, P: TronProvider> CancelAllUnfreezeBuilder<'a, P> {
     /// Start a new builder.
     pub fn new(provider: &'a P) -> Self {
-        Self { provider, owner: None }
+        Self { provider, permission_id: None, owner: None }
     }
 
     /// Override the account.
@@ -63,15 +67,17 @@ impl<'a, P: TronProvider> CancelAllUnfreezeBuilder<'a, P> {
         self
     }
 
-    /// Build, sign, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    /// The request this builder describes, without contacting the node.
+    pub fn into_request(self) -> Result<TransactionRequest> {
         let owner = resolve_owner(self.owner, self.provider)?;
-        let req = TransactionRequest {
+        Ok(TransactionRequest {
             contract: Some(ContractType::CancelAllUnfreezeV2(CancelAllUnfreezeV2Contract {
                 owner_address: owner,
             })),
+            permission_id: self.permission_id,
             ..Default::default()
-        };
-        self.provider.send_transaction(req).await
+        })
     }
+
+    builder_exits!();
 }

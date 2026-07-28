@@ -23,6 +23,12 @@ tronz-provider   = { workspace = true }
 tronz-contract   = { workspace = true, optional = true, features = ["provider"] }
 tronz-signer-aws = { workspace = true, optional = true }
 
+# Only the workspace README's examples need these: they are written as complete
+# programs so a reader can copy one and run it.
+[dev-dependencies]
+anyhow = "1"
+tokio  = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
 [features]
 default = ["provider-grpc-tls", "contract", "signer-local"]
 full    = ["default"]
@@ -38,5 +44,7 @@ signer-local = []
 signer-mnemonic = ["tronz-signer/mnemonic"]
 # Web3 Secret Storage V3 keystore.
 signer-keystore = ["tronz-signer/keystore"]
+# TIP-712 typed-data signing.
+signer-eip712 = ["tronz-signer/eip712"]
 # AWS KMS signer (private key stays in the HSM).
 signer-aws = ["dep:tronz-signer-aws"]
