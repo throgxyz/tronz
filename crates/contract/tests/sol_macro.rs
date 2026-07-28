@@ -1,6 +1,11 @@
 //! Tests for the [`tron_sol!`] macro.
 
 #![cfg(feature = "provider")]
+#![allow(
+    dead_code,
+    clippy::unused_async,
+    reason = "generated APIs are compile-tested without invoking every helper"
+)]
 
 use tronz_contract::{SolCall as _, tron_sol};
 use tronz_primitives::{Address, Bytes, U256};
@@ -38,7 +43,6 @@ fn return_type_decode() {
     assert_eq!(IERC20::balanceOfCall::abi_decode_returns(&out).unwrap(), U256::from(42u64),);
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _erc20_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let token = IERC20::new(addr, provider);
     let _: String = token.name().call().await.unwrap();
@@ -56,7 +60,6 @@ async fn _erc20_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let _ = token.call_builder(&IERC20::balanceOfCall { owner: addr.into() }).call().await;
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _erc20_read_api<P: ContractReadProvider>(provider: P, addr: Address) {
     let token = IERC20::new(addr, provider).caller(addr);
     let _: U256 = token.balanceOf(addr).call().await.unwrap();
@@ -64,7 +67,6 @@ async fn _erc20_read_api<P: ContractReadProvider>(provider: P, addr: Address) {
     let _ = token.Transfer_filter().query_block(1).await;
 }
 
-#[allow(dead_code)]
 fn _instance_is_debug<P: TronProvider>() {
     fn assert_debug<T: core::fmt::Debug>() {}
     assert_debug::<IERC20::Instance<P>>();
@@ -90,7 +92,6 @@ fn overloaded_selectors_differ() {
     );
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _erc721_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let nft = IERC721::new(addr, provider);
     let _ = nft.ownerOf(U256::ZERO).call().await;
@@ -111,7 +112,6 @@ tron_sol! {
 
 // Regression: UDVT parameters must map to the underlying type (U256), not the
 // wrapper name, so the generated method signature matches the `…Call` struct field.
-#[allow(dead_code, clippy::unused_async)]
 async fn _udvt_maps_to_underlying<P: TronProvider + Clone>(provider: P, addr: Address) {
     let pool = IPool::new(addr, provider);
     let _ = pool.deposit(U256::ZERO).send().await;
@@ -127,7 +127,6 @@ tron_sol! {
     }
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _keyword_params<P: TronProvider + Clone>(provider: P, addr: Address) {
     let c = IKeywordParams::new(addr, provider);
     let _ = c.configure(U256::ZERO, addr, true).send().await;
@@ -154,7 +153,6 @@ fn deployed_bytecode_is_embedded() {
     assert_eq!(&SimpleToken::DEPLOYED_BYTECODE[..], &[0x60, 0x80, 0x60, 0x40, 0x51]);
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _deploy_api<P: TronProvider + Clone>(provider: P) {
     // deploy_builder lets you chain .abi(...).name(...) before sending
     let _ = SimpleToken::deploy_builder(provider.clone(), U256::from(1000u64));
@@ -180,7 +178,6 @@ fn reserved_names_get_call_suffix() {
     let _ = IReserved::providerCall {};
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _reserved_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let c = IReserved::new(addr, provider);
     let _: Address = c.address();
@@ -229,7 +226,6 @@ fn multiple_items_one_invocation() {
     let _ = IRegistry::lookupCall::SELECTOR;
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _multi_instance_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let exchange = IExchange::new(addr, provider.clone());
     let _ =
@@ -289,7 +285,6 @@ fn public_state_var_selectors_exist() {
     let _ = IVault::ownerCall::SELECTOR;
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _vault_getters<P: TronProvider + Clone>(provider: P, addr: Address) {
     let vault = IVault::new(addr, provider);
     let _: U256 = vault.totalDeposits().call().await.unwrap();
@@ -308,7 +303,6 @@ tron_sol! {
     }
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _event_filter_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     use tronz_primitives::B256;
     let token = IToken::new(addr, provider);
@@ -343,7 +337,6 @@ fn json_abi_type_layer_encoding() {
     assert_eq!(encoded.len(), 36);
 }
 
-#[allow(dead_code, clippy::unused_async)]
 async fn _json_abi_rpc_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let token = IERC20Json::new(addr, provider);
     let _: String = token.name().call().await.unwrap();

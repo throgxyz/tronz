@@ -3,6 +3,8 @@
 //!
 //! Modeled on alloy's `TxFiller` / `JoinFill` pattern.
 
+#![allow(clippy::manual_async_fn, reason = "explicit RPIT preserves the required Send bound")]
+
 use core::future::Future;
 use std::{
     sync::Arc,
@@ -41,10 +43,6 @@ pub trait TxFiller: Clone + Send + Sync {
     fn fill_sync(&self, _tx: &mut TransactionRequest) {}
 
     /// Fill fields that require a network round-trip.
-    ///
-    /// The explicit `+ Send` bound is required so filler futures can run on a
-    /// multi-threaded executor, hence the manual `impl Future` form.
-    #[allow(clippy::manual_async_fn)]
     fn fill(
         &self,
         tx: TransactionRequest,
@@ -86,7 +84,6 @@ impl<L: TxFiller, R: TxFiller> TxFiller for JoinFill<L, R> {
         self.right.fill_sync(tx);
     }
 
-    #[allow(clippy::manual_async_fn)]
     fn fill(
         &self,
         tx: TransactionRequest,
@@ -285,10 +282,6 @@ impl HasSigner for Identity {
         None
     }
 
-    // Returns a trivially Send future; `async fn` syntax would require the
-    // trait to use `async fn` too, which conflicts with the explicit `+ Send`
-    // bound we need for multi-threaded executor compatibility.
-    #[allow(clippy::manual_async_fn)]
     fn sign_with(
         &self,
         _key: Option<Address>,
@@ -303,7 +296,6 @@ impl HasSigner for TaposFiller {
         None
     }
 
-    #[allow(clippy::manual_async_fn)]
     fn sign_with(
         &self,
         _key: Option<Address>,
@@ -318,7 +310,6 @@ impl HasSigner for FeeLimitFiller {
         None
     }
 
-    #[allow(clippy::manual_async_fn)]
     fn sign_with(
         &self,
         _key: Option<Address>,
