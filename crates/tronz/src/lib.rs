@@ -29,6 +29,13 @@ pub use tronz_abi::{
     TronAbi, TronAbiEntry, TronAbiEntryType, TronAbiParam, TronAbiStateMutability,
 };
 
+/// RPC domain types and protobuf representations.
+pub mod rpc {
+    /// TRON domain types and their protobuf representations.
+    #[doc(inline)]
+    pub use tronz_rpc_types as types;
+}
+
 /// TRON signers, wallets, and local key implementations.
 pub mod signers {
     #[doc(inline)]

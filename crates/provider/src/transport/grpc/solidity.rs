@@ -1,10 +1,11 @@
 //! tonic-backed gRPC transport for `protocol.WalletSolidity`.
 
+use async_trait::async_trait;
 use tronz_primitives::{Address, ResourceCode, Trx, TxId};
 
 use super::{GrpcCore, GrpcTransportConfig, RetryConfig, codec, light_block};
 use crate::{
-    error::TransportErrorKind,
+    error::{TransportErrorKind, TransportResult},
     proto::{self, EmptyMessage},
     transport::SolidityTransport,
     types::{
@@ -17,13 +18,15 @@ macro_rules! solidity_unary {
     ($self:ident, $method:ident, $req:expr) => {{
         let req = $req;
         $self
-            .core
-            .call_with_retry(|| {
-                let mut client = $self.core.wallet_solidity_client();
-                let req = req.clone();
-                async move { Ok(client.$method(req).await?.into_inner()) }
-            })
-            .await
+                    .core
+                    .call_with_retry(stringify!($method), || {
+                        let mut client = $self.core.wallet_solidity_client();
+                        let req = req.clone();
+                        async move {
+                            Ok(client.$method(req).await.map_err(super::map_status)?.into_inner())
+                        }
+                    })
+                    .await
     }};
 }
 
@@ -79,6 +82,18 @@ impl SolidityGrpcTransportBuilder {
         self
     }
 
+    /// Wrap every call in `middleware`, outermost first.
+    ///
+    /// See [`GrpcMiddleware`](super::GrpcMiddleware) for what belongs here rather
+    /// than in a [`ProviderLayer`](crate::ProviderLayer).
+    pub fn with_middleware(
+        mut self,
+        middleware: std::sync::Arc<dyn super::GrpcMiddleware>,
+    ) -> Self {
+        self.config.middleware.push(middleware);
+        self
+    }
+
     /// Override the retry policy.
     pub fn with_retry(mut self, retry: RetryConfig) -> Self {
         self.config.retry = retry;
@@ -112,10 +127,9 @@ impl SolidityGrpcTransportBuilder {
 
 impl crate::transport::private::Sealed for SolidityGrpcTransport {}
 
+#[async_trait]
 impl SolidityTransport for SolidityGrpcTransport {
-    type Error = TransportErrorKind;
-
-    async fn get_now_block(&self) -> Result<BlockInfo, Self::Error> {
+    async fn get_now_block(&self) -> TransportResult<BlockInfo> {
         let block: light_block::BlockSummaryProto = self
             .core
             .unary(
@@ -123,12 +137,13 @@ impl SolidityTransport for SolidityGrpcTransport {
                 "/protocol.WalletSolidity/GetNowBlock2",
                 "protocol.WalletSolidity",
                 "GetNowBlock2",
+                "get_now_block",
             )
             .await?;
-        block.into_block_info(None)
+        Ok(block.into_block_info(None)?)
     }
 
-    async fn get_block_by_number(&self, num: i64) -> Result<BlockInfo, Self::Error> {
+    async fn get_block_by_number(&self, num: i64) -> TransportResult<Option<BlockInfo>> {
         let block: light_block::BlockSummaryProto = self
             .core
             .unary(
@@ -136,45 +151,47 @@ impl SolidityTransport for SolidityGrpcTransport {
                 "/protocol.WalletSolidity/GetBlockByNum2",
                 "protocol.WalletSolidity",
                 "GetBlockByNum2",
+                "get_block_by_number",
             )
             .await?;
-        block.into_block_info(None)
+        Ok(block.into_block_lookup(None)?)
     }
 
-    async fn get_account(&self, address: Address) -> Result<AccountInfo, Self::Error> {
+    async fn get_account(&self, address: Address) -> TransportResult<AccountInfo> {
         let req = proto::Account { address: address.as_bytes().to_vec(), ..Default::default() };
         let account = solidity_unary!(self, get_account, req)?;
-        codec::account_from_proto(account, address)
+        Ok(codec::account_from_proto(account, address)?)
     }
 
-    async fn get_transaction_by_id(&self, tx_id: TxId) -> Result<SignedTransaction, Self::Error> {
-        let req = proto::BytesMessage { value: tx_id.as_slice().to_vec() };
-        let tx = solidity_unary!(self, get_transaction_by_id, req)?;
-        codec::signed_tx_from_proto(tx)
-    }
-
-    async fn get_transaction_info(
+    async fn get_transaction_by_id(
         &self,
         tx_id: TxId,
-    ) -> Result<Option<TransactionInfo>, Self::Error> {
+    ) -> TransportResult<Option<SignedTransaction>> {
+        let req = proto::BytesMessage { value: tx_id.as_slice().to_vec() };
+        let tx = solidity_unary!(self, get_transaction_by_id, req)?;
+        Ok(codec::signed_tx_lookup(tx)?)
+    }
+
+    async fn get_transaction_info(&self, tx_id: TxId) -> TransportResult<Option<TransactionInfo>> {
         let req = proto::BytesMessage { value: tx_id.as_slice().to_vec() };
         let info = solidity_unary!(self, get_transaction_info_by_id, req)?;
-        codec::transaction_info_from_proto(info)
+        Ok(codec::transaction_info_from_proto(info)?)
     }
 
     async fn get_transaction_info_by_block_num(
         &self,
         block_num: i64,
-    ) -> Result<Vec<TransactionInfo>, Self::Error> {
+    ) -> TransportResult<Vec<TransactionInfo>> {
         let req = proto::NumberMessage { num: block_num };
         let list = solidity_unary!(self, get_transaction_info_by_block_num, req)?;
         list.transaction_info
             .into_iter()
             .filter_map(|info| codec::transaction_info_from_proto(info).transpose())
-            .collect()
+            .collect::<Result<_, _>>()
+            .map_err(Into::into)
     }
 
-    async fn get_transaction_count_by_block_num(&self, block_num: i64) -> Result<u64, Self::Error> {
+    async fn get_transaction_count_by_block_num(&self, block_num: i64) -> TransportResult<u64> {
         let req = proto::NumberMessage { num: block_num };
         let res = solidity_unary!(self, get_transaction_count_by_block_num, req)?;
         Ok(res.num as u64)
@@ -183,20 +200,20 @@ impl SolidityTransport for SolidityGrpcTransport {
     async fn trigger_constant_contract(
         &self,
         params: TriggerSmartContract,
-    ) -> Result<ConstantCallResult, Self::Error> {
+    ) -> TransportResult<ConstantCallResult> {
         let req = codec::trigger_smart_contract_to_proto(params);
         let ext = solidity_unary!(self, trigger_constant_contract, req)?;
-        codec::constant_result_from_extention(ext)
+        Ok(codec::constant_result_from_extention(ext)?)
     }
 
-    async fn estimate_energy(&self, params: TriggerSmartContract) -> Result<i64, Self::Error> {
+    async fn estimate_energy(&self, params: TriggerSmartContract) -> TransportResult<i64> {
         let req = codec::trigger_smart_contract_to_proto(params);
         let msg = solidity_unary!(self, estimate_energy, req)?;
         codec::check_return(msg.result)?;
         Ok(msg.energy_required)
     }
 
-    async fn list_witnesses(&self) -> Result<Vec<WitnessInfo>, Self::Error> {
+    async fn list_witnesses(&self) -> TransportResult<Vec<WitnessInfo>> {
         let list = solidity_unary!(self, list_witnesses, EmptyMessage::default())?;
         Ok(list.witnesses.into_iter().filter_map(codec::witness_from_proto).collect())
     }
@@ -205,7 +222,7 @@ impl SolidityTransport for SolidityGrpcTransport {
         &self,
         offset: i64,
         limit: i64,
-    ) -> Result<Vec<WitnessInfo>, Self::Error> {
+    ) -> TransportResult<Vec<WitnessInfo>> {
         let req = proto::PaginatedMessage { offset, limit };
         let list = solidity_unary!(self, get_paginated_now_witness_list, req)?;
         Ok(list.witnesses.into_iter().filter_map(codec::witness_from_proto).collect())
@@ -215,51 +232,59 @@ impl SolidityTransport for SolidityGrpcTransport {
         &self,
         from: Address,
         to: Address,
-    ) -> Result<Vec<DelegatedResource>, Self::Error> {
+    ) -> TransportResult<Vec<DelegatedResource>> {
         let req = proto::DelegatedResourceMessage {
             from_address: from.as_bytes().to_vec(),
             to_address: to.as_bytes().to_vec(),
         };
         let list = solidity_unary!(self, get_delegated_resource, req)?;
-        list.delegated_resource.into_iter().map(codec::delegated_resource_from_proto).collect()
+        list.delegated_resource
+            .into_iter()
+            .map(codec::delegated_resource_from_proto)
+            .collect::<Result<_, _>>()
+            .map_err(Into::into)
     }
 
     async fn get_delegated_resource_index_v1(
         &self,
         address: Address,
-    ) -> Result<DelegatedResourceIndex, Self::Error> {
+    ) -> TransportResult<DelegatedResourceIndex> {
         let req = proto::BytesMessage { value: address.as_bytes().to_vec() };
         let idx = solidity_unary!(self, get_delegated_resource_account_index, req)?;
-        codec::delegated_resource_index_from_proto(idx)
+        Ok(codec::delegated_resource_index_from_proto(idx)?)
     }
 
     async fn get_delegated_resource(
         &self,
         from: Address,
         to: Address,
-    ) -> Result<Vec<DelegatedResource>, Self::Error> {
+    ) -> TransportResult<Vec<DelegatedResource>> {
         let req = proto::DelegatedResourceMessage {
             from_address: from.as_bytes().to_vec(),
             to_address: to.as_bytes().to_vec(),
         };
         let list = solidity_unary!(self, get_delegated_resource_v2, req)?;
-        list.delegated_resource.into_iter().map(codec::delegated_resource_from_proto).collect()
+        list.delegated_resource
+            .into_iter()
+            .map(codec::delegated_resource_from_proto)
+            .collect::<Result<_, _>>()
+            .map_err(Into::into)
     }
 
     async fn get_delegated_resource_index(
         &self,
         address: Address,
-    ) -> Result<DelegatedResourceIndex, Self::Error> {
+    ) -> TransportResult<DelegatedResourceIndex> {
         let req = proto::BytesMessage { value: address.as_bytes().to_vec() };
         let idx = solidity_unary!(self, get_delegated_resource_account_index_v2, req)?;
-        codec::delegated_resource_index_from_proto(idx)
+        Ok(codec::delegated_resource_index_from_proto(idx)?)
     }
 
     async fn get_can_delegate_max(
         &self,
         address: Address,
         resource: ResourceCode,
-    ) -> Result<Trx, Self::Error> {
+    ) -> TransportResult<Trx> {
         let req = proto::CanDelegatedMaxSizeRequestMessage {
             owner_address: address.as_bytes().to_vec(),
             r#type: resource.as_i32(),
@@ -268,7 +293,7 @@ impl SolidityTransport for SolidityGrpcTransport {
         Ok(Trx::from_sun_unchecked(res.max_size))
     }
 
-    async fn get_available_unfreeze_count(&self, address: Address) -> Result<i64, Self::Error> {
+    async fn get_available_unfreeze_count(&self, address: Address) -> TransportResult<i64> {
         let req = proto::GetAvailableUnfreezeCountRequestMessage {
             owner_address: address.as_bytes().to_vec(),
         };
@@ -280,7 +305,7 @@ impl SolidityTransport for SolidityGrpcTransport {
         &self,
         address: Address,
         timestamp_ms: i64,
-    ) -> Result<Trx, Self::Error> {
+    ) -> TransportResult<Trx> {
         let req = proto::CanWithdrawUnfreezeAmountRequestMessage {
             owner_address: address.as_bytes().to_vec(),
             timestamp: timestamp_ms,

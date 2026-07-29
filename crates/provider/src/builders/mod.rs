@@ -75,7 +75,7 @@ macro_rules! builder_exits {
         }
 
         /// Build, sign, and broadcast.
-        pub async fn send(self) -> Result<PendingTransaction<P>> {
+        pub async fn send(self) -> Result<PendingTransaction> {
             let provider = self.provider;
             provider.send_transaction(self.into_request()?).await
         }

@@ -186,7 +186,6 @@ mod tests {
         let permissions = AccountPermissions {
             owner: Some(permission(0)),
             witness: Some(permission(1)),
-            // A gap in the ids: active permission 3 sits at index 1.
             actives: vec![permission(2), permission(4)],
         };
 

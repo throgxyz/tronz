@@ -15,7 +15,7 @@ cargo add tronz
 Or in your `Cargo.toml`:
 
 ```toml
-tronz = "0.4"
+tronz = "0.5"
 ```
 
 The default features include the TLS-enabled gRPC provider, contract bindings,
@@ -124,11 +124,12 @@ For more examples, see the [throgxyz/examples](https://github.com/throgxyz/examp
 
 | Crate | Description |
 |-------|-------------|
-| [`tronz`] | Meta-crate re-exporting all sub-crates |
+| [`tronz`] | SDK facade for the commonly used crates and APIs |
 | [`tronz-abi`] | Native TRON ABI metadata and optional Alloy JSON ABI conversion |
 | [`tronz-primitives`] | `Address`, `Trx`, `ResourceCode`, signatures |
+| [`tronz-rpc-types`] | TRON domain types and protobuf messages, without a network stack |
 | [`tronz-signer`] | `TronSigner`, `TronSignerSync`, `TronNetworkWallet`, `TronWallet`, and `LocalSigner` |
-| [`tronz-provider`] | FullNode and SolidityNode transports/providers, fillers, and domain types |
+| [`tronz-provider`] | FullNode and SolidityNode transports/providers, fillers, and builders |
 | [`tronz-contract`] | TRC20 / TRC721 bindings, deployment, calls, and event filters |
 | [`tronz-sol-macro`] | `tron_sol!` procedural macro for provider-bound contract bindings |
 | [`tronz-signer-aws`] | AWS KMS signer (`signer-aws` feature) |
@@ -136,6 +137,7 @@ For more examples, see the [throgxyz/examples](https://github.com/throgxyz/examp
 [`tronz`]: https://github.com/throgxyz/tronz/tree/main/crates/tronz
 [`tronz-abi`]: https://github.com/throgxyz/tronz/tree/main/crates/abi
 [`tronz-primitives`]: https://github.com/throgxyz/tronz/tree/main/crates/primitives
+[`tronz-rpc-types`]: https://github.com/throgxyz/tronz/tree/main/crates/rpc-types
 [`tronz-signer`]: https://github.com/throgxyz/tronz/tree/main/crates/signer
 [`tronz-provider`]: https://github.com/throgxyz/tronz/tree/main/crates/provider
 [`tronz-contract`]: https://github.com/throgxyz/tronz/tree/main/crates/contract

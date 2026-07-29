@@ -55,9 +55,13 @@ pub enum ContractError {
     /// Confirmation polling timed out without the transaction being indexed.
     ///
     /// Flattened from [`PendingTransactionError::ConfirmationTimeout`] via the
-    /// [`From`] impl so callers can match it directly without nesting.
-    #[error("timed out waiting for transaction confirmation")]
-    ConfirmationTimeout,
+    /// [`From`] impl so callers can match it directly without nesting, and carrying
+    /// the last thing that went wrong while polling, if anything did.
+    #[error("timed out waiting for transaction confirmation{}", .last_error.as_ref().map(|e| format!(": {e}")).unwrap_or_default())]
+    ConfirmationTimeout {
+        /// The last failure seen while polling.
+        last_error: Option<Box<ProviderError>>,
+    },
 
     /// The transaction was confirmed on-chain but its execution did not succeed
     /// (reverted, ran out of energy, etc.). Carries the full receipt.
@@ -83,7 +87,9 @@ impl From<PendingTransactionError> for ContractError {
     fn from(e: PendingTransactionError) -> Self {
         match e {
             PendingTransactionError::Transport(e) => Self::Provider(e),
-            PendingTransactionError::ConfirmationTimeout => Self::ConfirmationTimeout,
+            PendingTransactionError::ConfirmationTimeout { last_error } => {
+                Self::ConfirmationTimeout { last_error }
+            }
             PendingTransactionError::Reverted(info) => Self::ExecutionFailed(info),
             // Forward any future variants added to PendingTransactionError as a
             // LocalUsageError so this From impl doesn't need updating on every

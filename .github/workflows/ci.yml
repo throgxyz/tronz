@@ -117,7 +117,7 @@ jobs:
       # mock- and unit-tested surface only. No coverage threshold is enforced.
       - name: Collect coverage
         run: |
-          cargo llvm-cov --workspace --all-features --branch \
+          cargo llvm-cov --workspace --all-features \
             --ignore-filename-regex 'proto|generated|build\.rs' \
             --lcov --output-path lcov.info
           cargo llvm-cov report --ignore-filename-regex 'proto|generated|build\.rs' --summary-only

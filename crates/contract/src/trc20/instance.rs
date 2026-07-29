@@ -36,7 +36,7 @@ pub struct Trc20Instance<P: ContractReadProvider> {
     inner: ContractInstance<P>,
 }
 
-impl<P: ContractReadProvider> Trc20Instance<P> {
+impl<P: ContractReadProvider + Clone> Trc20Instance<P> {
     /// Bind to the TRC20 contract at `address`.
     pub fn new(provider: P, address: Address) -> Self {
         Self { inner: ContractInstance::new_raw(provider, address) }
@@ -160,13 +160,13 @@ impl<P: ContractReadProvider> Trc20Instance<P> {
     }
 }
 
-impl<P: TronProvider> Trc20Instance<P> {
+impl<P: TronProvider + Clone> Trc20Instance<P> {
     /// Transfer `amount` tokens from the signer's account to `to`.
     pub async fn transfer(
         &self,
         to: Address,
         amount: U256,
-    ) -> Result<PendingTransaction<P>, Trc20Error> {
+    ) -> Result<PendingTransaction, Trc20Error> {
         self.transfer_call(to, amount).send().await
     }
 
@@ -175,7 +175,7 @@ impl<P: TronProvider> Trc20Instance<P> {
         &self,
         spender: Address,
         amount: U256,
-    ) -> Result<PendingTransaction<P>, Trc20Error> {
+    ) -> Result<PendingTransaction, Trc20Error> {
         self.approve_call(spender, amount).send().await
     }
 
@@ -185,20 +185,20 @@ impl<P: TronProvider> Trc20Instance<P> {
         from: Address,
         to: Address,
         amount: U256,
-    ) -> Result<PendingTransaction<P>, Trc20Error> {
+    ) -> Result<PendingTransaction, Trc20Error> {
         self.transfer_from_call(from, to, amount).send().await
     }
 }
 
 /// Convenience method on any [`ContractReadProvider`] for binding a TRC20 instance.
-pub trait Trc20Ext: ContractReadProvider + Sized {
+pub trait Trc20Ext: ContractReadProvider + Clone + Sized {
     /// Bind to the TRC20 contract at `address`.
     fn trc20(&self, address: Address) -> Trc20Instance<Self> {
         Trc20Instance::new(self.clone(), address)
     }
 }
 
-impl<P: ContractReadProvider> Trc20Ext for P {}
+impl<P: ContractReadProvider + Clone> Trc20Ext for P {}
 
 #[cfg(test)]
 mod tests {

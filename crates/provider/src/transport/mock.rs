@@ -24,14 +24,14 @@
 use std::{
     any::{Any, type_name},
     collections::{HashMap, VecDeque},
-    future::Future,
     sync::{Arc, Mutex},
 };
 
+use async_trait::async_trait;
 use tronz_primitives::{Address, B256, ResourceCode, Trx, TxId};
 
 use crate::{
-    error::TransportErrorKind,
+    error::{TransportErrorKind, TransportResult},
     transport::TronTransport,
     types::{
         AccountInfo, AccountNet, AccountPermissionUpdateContract, AccountResource, AssetInfo,
@@ -131,32 +131,38 @@ impl MockTransport {
     }
 }
 
-/// Generates the [`TronTransport`] method bodies: each consumes its arguments,
-/// pops the next queued response for its name, and returns it as a ready future.
-macro_rules! mock_methods {
-    ($( fn $name:ident(&self $(, $arg:ident : $ty:ty )* ) -> $ret:ty; )*) => {
-        $(
-            fn $name(&self $(, $arg : $ty )* ) -> impl Future<Output = Result<$ret, Self::Error>> + Send {
-                let _ = ( $( $arg, )* );
-                let result = self.pop::<$ret>(stringify!($name));
-                async move { result }
-            }
-        )*
+/// Generates a whole transport impl: each method consumes its arguments and pops
+/// the next queued response for its name.
+///
+/// The `#[async_trait]` attribute has to be emitted from in here rather than
+/// written at the call site, because an attribute macro runs before the
+/// `macro_rules!` body it wraps is expanded and so would never see these methods.
+macro_rules! mock_transport {
+    ($target:ident as $trait:path {
+        $( fn $name:ident(&self $(, $arg:ident : $ty:ty )* ) -> $ret:ty; )*
+    }) => {
+        #[async_trait]
+        impl $trait for $target {
+            $(
+                async fn $name(&self $(, $arg : $ty )* ) -> TransportResult<$ret> {
+                    let _ = ( $( $arg, )* );
+                    self.pop::<$ret>(stringify!($name))
+                }
+            )*
+        }
     };
 }
 
 impl super::private::Sealed for MockTransport {}
 
-impl TronTransport for MockTransport {
-    type Error = TransportErrorKind;
-
-    mock_methods! {
+mock_transport! {
+    MockTransport as TronTransport {
         fn get_now_block(&self) -> BlockInfo;
-        fn get_block_by_number(&self, num: i64) -> BlockInfo;
+        fn get_block_by_number(&self, num: i64) -> Option<BlockInfo>;
         fn get_account(&self, address: Address) -> AccountInfo;
         fn get_account_resource(&self, address: Address) -> AccountResource;
         fn broadcast_transaction(&self, tx: &SignedTransaction) -> ();
-        fn get_transaction_by_id(&self, tx_id: TxId) -> SignedTransaction;
+        fn get_transaction_by_id(&self, tx_id: TxId) -> Option<SignedTransaction>;
         fn get_transaction_info(&self, tx_id: TxId) -> Option<TransactionInfo>;
         fn trigger_smart_contract(&self, params: TriggerSmartContract) -> RawTransaction;
         fn trigger_constant_contract(&self, params: TriggerSmartContract) -> ConstantCallResult;
@@ -218,7 +224,7 @@ impl TronTransport for MockTransport {
         fn get_node_info(&self) -> NodeInfo;
         fn list_nodes(&self) -> Vec<NodeAddress>;
         fn get_dynamic_properties(&self) -> ChainProperties;
-        fn get_block_by_id(&self, block_id: B256) -> BlockInfo;
+        fn get_block_by_id(&self, block_id: B256) -> Option<BlockInfo>;
         fn get_blocks_by_latest_num(&self, count: i64) -> Vec<BlockInfo>;
         fn get_blocks_by_limit(&self, start: i64, end: i64) -> Vec<BlockInfo>;
         fn get_transaction_count_by_block_num(&self, block_num: i64) -> u64;
@@ -288,14 +294,12 @@ impl MockSolidityTransport {
 
 impl super::private::Sealed for MockSolidityTransport {}
 
-impl crate::transport::SolidityTransport for MockSolidityTransport {
-    type Error = TransportErrorKind;
-
-    mock_methods! {
+mock_transport! {
+    MockSolidityTransport as crate::transport::SolidityTransport {
         fn get_now_block(&self) -> BlockInfo;
-        fn get_block_by_number(&self, num: i64) -> BlockInfo;
+        fn get_block_by_number(&self, num: i64) -> Option<BlockInfo>;
         fn get_account(&self, address: Address) -> AccountInfo;
-        fn get_transaction_by_id(&self, tx_id: TxId) -> SignedTransaction;
+        fn get_transaction_by_id(&self, tx_id: TxId) -> Option<SignedTransaction>;
         fn get_transaction_info(&self, tx_id: TxId) -> Option<TransactionInfo>;
         fn get_transaction_info_by_block_num(&self, block_num: i64) -> Vec<TransactionInfo>;
         fn get_transaction_count_by_block_num(&self, block_num: i64) -> u64;
@@ -340,8 +344,6 @@ mod tests {
     async fn delegates_through_root_provider() {
         let mock = MockTransport::new();
         mock.push_ok::<u64>("get_total_transactions", 42);
-
-        // Exercises the real provider -> transport delegation path.
         let provider = RootProvider::new(mock);
         assert_eq!(provider.transport().get_total_transactions().await.unwrap(), 42);
     }

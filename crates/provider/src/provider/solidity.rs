@@ -3,6 +3,7 @@
 use core::time::Duration;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use tronz_primitives::{Address, ResourceCode, Trx, TxId};
 
 use crate::{
@@ -10,7 +11,7 @@ use crate::{
     error::ProviderError,
     provider::{ContractReadProvider, pending::PendingTransactionError},
     transport::{
-        SolidityTransport,
+        DynSolidityTransport, SolidityTransport,
         grpc::{RetryConfig, SolidityGrpcTransport, SolidityGrpcTransportBuilder},
     },
     types::{
@@ -23,14 +24,16 @@ const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(3);
 const DEFAULT_POLL_ATTEMPTS: u32 = 20;
 
 /// A read-only provider over `protocol.WalletSolidity`.
+///
+/// The transport is erased on the way in, so this type is nameable without
+/// naming the transport. Cloning is a refcount bump.
 #[derive(Clone)]
-pub struct SolidityProvider<T: SolidityTransport = SolidityGrpcTransport> {
-    inner: Arc<T>,
+pub struct SolidityProvider {
+    inner: DynSolidityTransport,
 }
 
-impl<T: SolidityTransport> crate::provider::private::ContractReadSealed for SolidityProvider<T> {}
-
-impl<T: SolidityTransport> ContractReadProvider for SolidityProvider<T> {
+#[async_trait]
+impl ContractReadProvider for SolidityProvider {
     async fn call_contract(&self, params: TriggerSmartContract) -> Result<ConstantCallResult> {
         SolidityProvider::trigger_constant_contract(self, params).await
     }
@@ -48,15 +51,20 @@ impl<T: SolidityTransport> ContractReadProvider for SolidityProvider<T> {
     }
 }
 
-impl<T: SolidityTransport> SolidityProvider<T> {
+impl SolidityProvider {
     /// Wrap an existing [`SolidityTransport`].
-    pub fn new(transport: T) -> Self {
+    pub fn new(transport: impl SolidityTransport) -> Self {
         Self { inner: Arc::new(transport) }
     }
 
+    /// Wrap an already-erased transport, without boxing twice.
+    pub fn new_erased(transport: DynSolidityTransport) -> Self {
+        Self { inner: transport }
+    }
+
     /// Borrow the underlying transport.
-    pub fn transport(&self) -> &T {
-        &self.inner
+    pub fn transport(&self) -> &dyn SolidityTransport {
+        &*self.inner
     }
 
     /// Fetch the latest solidified block.
@@ -64,8 +72,8 @@ impl<T: SolidityTransport> SolidityProvider<T> {
         self.inner.get_now_block().await.map_err(ProviderError::transport)
     }
 
-    /// Fetch a solidified block by height.
-    pub async fn get_block_by_number(&self, num: i64) -> Result<BlockInfo> {
+    /// Fetch a solidified block by height, or `None` if it has not solidified.
+    pub async fn get_block_by_number(&self, num: i64) -> Result<Option<BlockInfo>> {
         self.inner.get_block_by_number(num).await.map_err(ProviderError::transport)
     }
 
@@ -74,8 +82,9 @@ impl<T: SolidityTransport> SolidityProvider<T> {
         self.inner.get_account(address).await.map_err(ProviderError::transport)
     }
 
-    /// Fetch a transaction by id from solidified state.
-    pub async fn get_transaction(&self, tx_id: TxId) -> Result<SignedTransaction> {
+    /// Fetch a transaction by id from solidified state, or `None` if it has not
+    /// solidified.
+    pub async fn get_transaction(&self, tx_id: TxId) -> Result<Option<SignedTransaction>> {
         self.inner.get_transaction_by_id(tx_id).await.map_err(ProviderError::transport)
     }
 
@@ -213,6 +222,7 @@ impl<T: SolidityTransport> SolidityProvider<T> {
         interval: Duration,
         max_attempts: u32,
     ) -> std::result::Result<TransactionInfo, PendingTransactionError> {
+        let mut last_error = None;
         for attempt in 0..max_attempts {
             if attempt > 0 {
                 tokio::time::sleep(interval).await;
@@ -220,10 +230,15 @@ impl<T: SolidityTransport> SolidityProvider<T> {
             match self.get_transaction_info(tx_id).await {
                 Ok(Some(info)) => return Ok(info),
                 Ok(None) => continue,
-                Err(e) => return Err(PendingTransactionError::Transport(e)),
+                // An unreachable node is not an answer about the transaction; the
+                // remaining attempts are what bound the wait.
+                Err(err) if super::pending::is_worth_reasking(&err) => {
+                    last_error = Some(Box::new(err));
+                }
+                Err(err) => return Err(PendingTransactionError::Transport(err)),
             }
         }
-        Err(PendingTransactionError::ConfirmationTimeout)
+        Err(PendingTransactionError::ConfirmationTimeout { last_error })
     }
 
     /// Poll until `tx_id` has solidified and its execution succeeded.
@@ -253,7 +268,7 @@ impl<T: SolidityTransport> SolidityProvider<T> {
     }
 }
 
-impl SolidityProvider<SolidityGrpcTransport> {
+impl SolidityProvider {
     /// Connect with the default transport configuration.
     ///
     /// Use [`builder`](Self::builder) to customize it.
@@ -310,10 +325,7 @@ impl SolidityProviderBuilder {
     }
 
     /// Connect using the accumulated configuration.
-    pub async fn connect(
-        self,
-        uri: impl AsRef<str>,
-    ) -> Result<SolidityProvider<SolidityGrpcTransport>> {
+    pub async fn connect(self, uri: impl AsRef<str>) -> Result<SolidityProvider> {
         let transport = self.inner.connect(uri).await.map_err(ProviderError::from)?;
         Ok(SolidityProvider::new(transport))
     }
@@ -325,31 +337,14 @@ mod tests {
 
     use super::*;
     use crate::{
-        error::TransportErrorKind,
-        transport::mock::MockSolidityTransport,
-        types::{ContractResult, TxStatus},
+        error::TransportErrorKind, transport::mock::MockSolidityTransport, types::TxStatus,
     };
 
     const NEAR_INSTANT: Duration = Duration::from_millis(1);
 
-    fn info(status: TxStatus) -> TransactionInfo {
-        TransactionInfo {
-            tx_id: TxId::ZERO,
-            block_number: 1,
-            block_timestamp: 1,
-            status,
-            energy_usage: 0,
-            energy_fee: Trx::ZERO,
-            net_usage: 0,
-            net_fee: Trx::ZERO,
-            contract_result: ContractResult::Default,
-            contract_address: None,
-            logs: vec![],
-            revert_reason: None,
-        }
-    }
+    use tronz_rpc_types::test_utils::transaction_info as info;
 
-    fn provider(mock: MockSolidityTransport) -> SolidityProvider<MockSolidityTransport> {
+    fn provider(mock: MockSolidityTransport) -> SolidityProvider {
         SolidityProvider::new(mock)
     }
 
@@ -366,16 +361,7 @@ mod tests {
         assert!(receipt.is_some_and(|info| info.is_success()));
     }
 
-    fn witness(vote_count: i64) -> WitnessInfo {
-        WitnessInfo {
-            address: Address::ZERO,
-            vote_count,
-            url: "https://sr.example".to_string(),
-            total_produced: 0,
-            total_missed: 0,
-            is_active: true,
-        }
-    }
+    use tronz_rpc_types::test_utils::witness;
 
     #[tokio::test]
     async fn list_witnesses_returns_solidified_witnesses() {
@@ -397,16 +383,7 @@ mod tests {
         assert_eq!(witnesses[0].vote_count, 99);
     }
 
-    fn delegation(bandwidth: i64, energy: i64) -> DelegatedResource {
-        DelegatedResource {
-            from: Address::ZERO,
-            to: Address::ZERO,
-            bandwidth_amount: Trx::from_sun_unchecked(bandwidth),
-            energy_amount: Trx::from_sun_unchecked(energy),
-            bandwidth_expire_time_ms: 0,
-            energy_expire_time_ms: 0,
-        }
-    }
+    use tronz_rpc_types::test_utils::delegated_resource as delegation;
 
     #[tokio::test]
     async fn get_delegated_resource_returns_solidified_delegations() {
@@ -496,7 +473,7 @@ mod tests {
             .wait_for_transaction_with(TxId::ZERO, NEAR_INSTANT, 3)
             .await
             .unwrap_err();
-        assert!(matches!(err, PendingTransactionError::ConfirmationTimeout));
+        assert!(matches!(err, PendingTransactionError::ConfirmationTimeout { .. }));
     }
 
     #[tokio::test]
@@ -505,7 +482,7 @@ mod tests {
             .wait_for_transaction_with(TxId::ZERO, NEAR_INSTANT, 0)
             .await
             .unwrap_err();
-        assert!(matches!(err, PendingTransactionError::ConfirmationTimeout));
+        assert!(matches!(err, PendingTransactionError::ConfirmationTimeout { .. }));
     }
 
     #[tokio::test]

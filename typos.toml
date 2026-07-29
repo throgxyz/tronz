@@ -1,6 +1,8 @@
 [files]
-# TRON protocol buffer definitions are third-party — do not check for typos.
-extend-exclude = ["crates/provider/proto/**"]
+# The TRON protocol buffer definitions are third-party, and so are the field names
+# generated from them — `latest_opration_time` and `Sucess` are spelled that way
+# on the wire.
+extend-exclude = ["crates/rpc-types/proto/**", "**/generated/**"]
 
 [default.extend-words]
 # TRON-specific abbreviations that typos would otherwise flag.

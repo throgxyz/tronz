@@ -8,7 +8,6 @@ use crate::{
     builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
-    transport::TronTransport as _,
     types::{
         AssetInfo, AssetIssueContract, ContractType, FrozenSupply, ParticipateAssetIssueContract,
         TransactionRequest, TransferAssetContract, UnfreezeAssetContract, UpdateAssetContract,
@@ -177,8 +176,6 @@ impl<P: TronProvider> Trc10Api for P {
     }
 }
 
-// ── Builder ───────────────────────────────────────────────────────────────────
-
 /// Builds a TRC10 token transfer.
 ///
 /// Created by [`Trc10Api::transfer_trc10`].
@@ -258,8 +255,6 @@ impl<'a, P: TronProvider> TransferTrc10Builder<'a, P> {
 
     builder_exits!();
 }
-
-// ── IssueTrc10Builder ─────────────────────────────────────────────────────────
 
 /// Builds a TRC10 token issuance transaction.
 ///
@@ -430,8 +425,6 @@ impl<'a, P: TronProvider> IssueTrc10Builder<'a, P> {
     builder_exits!();
 }
 
-// ── ParticipateTrc10Builder ───────────────────────────────────────────────────
-
 /// Builds a TRC10 ICO participation transaction.
 ///
 /// Created by [`Trc10Api::participate_trc10`].
@@ -512,8 +505,6 @@ impl<'a, P: TronProvider> ParticipateTrc10Builder<'a, P> {
     builder_exits!();
 }
 
-// ── UnfreezeTrc10Builder ──────────────────────────────────────────────────────
-
 /// Builds an unfreeze-asset transaction (releases frozen TRC10 supply).
 ///
 /// Created by [`Trc10Api::unfreeze_trc10`].
@@ -558,8 +549,6 @@ impl<'a, P: TronProvider> UnfreezeTrc10Builder<'a, P> {
 
     builder_exits!();
 }
-
-// ── UpdateTrc10Builder ────────────────────────────────────────────────────────
 
 /// Builds a TRC10 token metadata update transaction.
 ///

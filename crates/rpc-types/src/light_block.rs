@@ -8,10 +8,10 @@
 use prost::Message;
 use tronz_primitives::{B256, Bytes};
 
-use crate::{error::TransportErrorKind, types::BlockInfo};
+use crate::{error::ResponseError, types::BlockInfo};
 
 #[derive(Clone, PartialEq, Message)]
-pub(super) struct BlockSummaryProto {
+pub struct BlockSummaryProto {
     #[prost(message, optional, tag = "2")]
     block_header: Option<BlockHeaderSummaryProto>,
     #[prost(bytes = "bytes", tag = "3")]
@@ -33,31 +33,49 @@ struct BlockHeaderRawSummaryProto {
 }
 
 #[derive(Clone, PartialEq, Message)]
-pub(super) struct BlockSummaryListProto {
+pub struct BlockSummaryListProto {
     #[prost(message, repeated, tag = "1")]
-    pub(super) blocks: Vec<BlockSummaryProto>,
+    pub blocks: Vec<BlockSummaryProto>,
 }
 
 impl BlockSummaryProto {
-    pub(super) fn into_block_info(
+    /// A block the caller asked for by height or hash, absent if the chain has no
+    /// such block.
+    ///
+    /// TRON answers a lookup that matched nothing with an entirely empty message
+    /// rather than an error. Only that counts as absent: an answer carrying a block
+    /// id but no header is a broken one, not a missing block.
+    pub fn into_block_lookup(
         self,
         fallback_hash: Option<B256>,
-    ) -> Result<BlockInfo, TransportErrorKind> {
+    ) -> Result<Option<BlockInfo>, ResponseError> {
+        if self.block_header.is_none() {
+            if self.block_id.is_empty() {
+                return Ok(None);
+            }
+
+            return Err(ResponseError::Malformed("block has an id but no block_header".into()));
+        }
+
+        self.into_block_info(fallback_hash).map(Some)
+    }
+
+    pub fn into_block_info(self, fallback_hash: Option<B256>) -> Result<BlockInfo, ResponseError> {
         let header = self
             .block_header
-            .ok_or_else(|| TransportErrorKind::Malformed("missing block_header".into()))?;
+            .ok_or_else(|| ResponseError::Malformed("missing block_header".into()))?;
         let raw = header
             .raw_data
-            .ok_or_else(|| TransportErrorKind::Malformed("missing block_header.raw_data".into()))?;
+            .ok_or_else(|| ResponseError::Malformed("missing block_header.raw_data".into()))?;
 
         let hash = if self.block_id.is_empty() {
-            fallback_hash.ok_or_else(|| TransportErrorKind::Malformed("missing blockid".into()))?
+            fallback_hash.ok_or_else(|| ResponseError::Malformed("missing blockid".into()))?
         } else {
             let bytes = Bytes::from(self.block_id);
             let block_id: [u8; 32] = bytes
                 .as_ref()
                 .try_into()
-                .map_err(|_| TransportErrorKind::Malformed("blockid must be 32 bytes".into()))?;
+                .map_err(|_| ResponseError::Malformed("blockid must be 32 bytes".into()))?;
             B256::from(block_id)
         };
 
@@ -119,19 +137,29 @@ mod tests {
         assert_eq!(info.timestamp, 5678);
         assert_eq!(info.hash, expected_hash);
     }
-
-    /// Replay a real `GetNowBlock2` response captured from a live node (see the
-    /// `capture` module). No-op until the fixture is committed. Verifies the
-    /// subset view correctly skips the transaction payload of a genuine block.
     #[test]
     fn replay_now_block() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("src/transport/grpc/fixtures/now_block.bin");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/fixtures/now_block.bin");
         let Ok(bytes) = std::fs::read(path) else { return };
         let light = BlockSummaryProto::decode(bytes.as_slice()).unwrap();
         let info = light.into_block_info(None).unwrap();
         assert!(info.number > 0, "captured block should have a positive height");
         assert_ne!(info.hash, B256::ZERO);
         assert!(info.timestamp > 0);
+    }
+
+    #[test]
+    fn an_empty_block_message_means_the_chain_has_no_such_block() {
+        let empty = BlockSummaryProto::default();
+
+        assert!(empty.into_block_lookup(None).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_block_with_an_id_but_no_header_is_broken_not_missing() {
+        let partial = BlockSummaryProto { block_header: None, block_id: vec![7; 32].into() };
+
+        assert!(matches!(partial.into_block_lookup(None), Err(ResponseError::Malformed(_))));
     }
 }

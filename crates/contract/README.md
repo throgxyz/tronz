@@ -192,7 +192,7 @@ use tronz_contract::trc20::Trc20Ext;
 # use tronz_primitives::Address;
 # use tronz_provider::{SolidityProvider, transport::SolidityTransport};
 # async fn run(
-#     solidity_provider: SolidityProvider<impl SolidityTransport>,
+#     solidity_provider: SolidityProvider,
 #     usdt_address: Address,
 #     my_address: Address,
 # ) -> Result<(), Box<dyn std::error::Error>> {

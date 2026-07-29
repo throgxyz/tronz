@@ -1,0 +1,31 @@
+[package]
+name         = "tronz-rpc-types"
+description  = "TRON domain model and protobuf message types for the tronz SDK."
+keywords     = ["tron", "blockchain", "protobuf", "cryptocurrency", "rpc"]
+categories   = ["cryptography::cryptocurrencies", "api-bindings", "encoding"]
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+repository   = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs", "-Zunstable-options", "--generate-link-to-definition", "--show-type-layout"]
+
+[dependencies]
+tronz-primitives = { workspace = true }
+tronz-abi        = { workspace = true }
+
+# `prost-types` is not decoration: `ChainParameters` carries a
+# `google.protobuf.Any`, which generates `::prost_types::Any`.
+prost       = { workspace = true }
+prost-types = { workspace = true }
+sha2        = { workspace = true }
+thiserror   = { workspace = true }
+tracing     = { workspace = true }
+
+[features]
+# Builders for the node-response types, which are `#[non_exhaustive]` and so can
+# only be constructed here. For tests in dependent crates.
+test-utils = []

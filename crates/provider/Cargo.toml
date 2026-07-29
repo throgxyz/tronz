@@ -1,6 +1,6 @@
 [package]
 name         = "tronz-provider"
-description  = "TRON domain model, gRPC transport, and provider for the tronz SDK."
+description  = "gRPC transports and high-level providers for the tronz SDK."
 keywords     = ["tron", "blockchain", "grpc", "cryptocurrency", "provider"]
 categories   = ["cryptography::cryptocurrencies", "network-programming", "api-bindings", "asynchronous"]
 version      = { workspace = true }
@@ -8,30 +8,26 @@ edition      = { workspace = true }
 rust-version = { workspace = true }
 license      = { workspace = true }
 repository   = { workspace = true }
-build        = "build.rs"
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs", "-Zunstable-options", "--generate-link-to-definition", "--show-type-layout"]
 
 [dependencies]
+async-trait      = { workspace = true }
+auto_impl        = { workspace = true }
 tronz-primitives = { workspace = true }
-tronz-abi        = { workspace = true }
 tronz-signer     = { workspace = true }
+tronz-rpc-types  = { workspace = true }
 
 prost       = { workspace = true }
-prost-types = { workspace = true }
 tonic       = { workspace = true }
 tonic-prost = { workspace = true }
-sha2        = { workspace = true }
 futures     = { workspace = true }
 tokio       = { workspace = true }
 tracing     = { workspace = true }
 thiserror   = { workspace = true }
 fastrand    = { workspace = true }
-
-[build-dependencies]
-tonic-prost-build = { version = "0.14" }
 
 [features]
 default = ["grpc-tls"]
@@ -44,6 +40,9 @@ mock = []
 
 [dev-dependencies]
 tronz-primitives = { workspace = true }
+tronz-rpc-types  = { workspace = true, features = ["test-utils"] }
+# A test helper builds a `transaction::Contract`, whose `parameter` is an `Any`.
+prost-types = { workspace = true }
 tronz-signer     = { workspace = true }
 tronz-provider-test-support = { path = "tests/support" }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time"] }

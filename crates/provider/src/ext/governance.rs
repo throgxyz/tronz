@@ -10,7 +10,6 @@ use crate::{
     builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
-    transport::TronTransport as _,
     types::{
         ContractType, ProposalApproveContract, ProposalCreateContract, ProposalDeleteContract,
         ProposalInfo, TransactionRequest,
@@ -97,8 +96,6 @@ impl<P: TronProvider> GovernanceApi for P {
     }
 }
 
-// ── SubmitProposalBuilder ─────────────────────────────────────────────────────
-
 /// Builds a governance proposal transaction.
 ///
 /// Created by [`GovernanceApi::submit_proposal`].
@@ -162,8 +159,6 @@ impl<'a, P: TronProvider> SubmitProposalBuilder<'a, P> {
 
     builder_exits!();
 }
-
-// ── ApproveProposalBuilder ────────────────────────────────────────────────────
 
 /// Builds an approve/disapprove proposal transaction.
 ///
@@ -235,8 +230,6 @@ impl<'a, P: TronProvider> ApproveProposalBuilder<'a, P> {
 
     builder_exits!();
 }
-
-// ── CancelProposalBuilder ─────────────────────────────────────────────────────
 
 /// Builds a cancel-proposal transaction.
 ///

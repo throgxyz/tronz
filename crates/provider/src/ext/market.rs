@@ -8,7 +8,6 @@ use crate::{
     builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
-    transport::TronTransport as _,
     types::{
         ContractType, MarketCancelOrderContract, MarketOrderInfo, MarketOrderPair, MarketPrice,
         MarketSellAssetContract, TransactionRequest,
@@ -121,8 +120,6 @@ impl<P: TronProvider> MarketApi for P {
     }
 }
 
-// ── MarketSellBuilder ─────────────────────────────────────────────────────────
-
 /// Builds a limit sell order on the order-book DEX.
 ///
 /// Created by [`MarketApi::market_sell`].
@@ -215,8 +212,6 @@ impl<'a, P: TronProvider> MarketSellBuilder<'a, P> {
     builder_exits!();
 }
 
-// ── MarketCancelBuilder ───────────────────────────────────────────────────────
-
 /// Builds a market-order cancellation transaction.
 ///
 /// Created by [`MarketApi::market_cancel`].
@@ -278,11 +273,11 @@ mod tests {
     use crate::{
         provider::RootProvider,
         transport::mock::MockTransport,
-        types::{MarketOrderInfo, MarketOrderPair, MarketOrderState},
+        types::{MarketOrderInfo, MarketOrderPair},
     };
-
-    fn mock_provider() -> RootProvider<MockTransport> {
-        RootProvider::new(MockTransport::new())
+    fn mock_provider() -> (RootProvider, MockTransport) {
+        let mock = MockTransport::new();
+        (RootProvider::new(mock.clone()), mock)
     }
 
     fn addr(b: u8) -> Address {
@@ -293,29 +288,16 @@ mod tests {
         })
     }
 
-    fn order(owner: Address) -> MarketOrderInfo {
-        MarketOrderInfo {
-            order_id: B256::ZERO,
-            owner_address: owner,
-            create_time: 0,
-            sell_token_id: "_".into(),
-            sell_token_quantity: 1_000_000,
-            buy_token_id: "1000001".into(),
-            buy_token_quantity: 500_000,
-            sell_token_quantity_remain: 1_000_000,
-            sell_token_quantity_return: 0,
-            state: MarketOrderState::Active,
-        }
-    }
+    use tronz_rpc_types::test_utils::market_order as order;
 
     #[tokio::test]
     async fn get_market_pair_list_returns_pushed_pairs() {
-        let provider = mock_provider();
+        let (provider, mock) = mock_provider();
         let pairs = vec![
             MarketOrderPair { sell_token_id: "_".into(), buy_token_id: "1000001".into() },
             MarketOrderPair { sell_token_id: "1000001".into(), buy_token_id: "_".into() },
         ];
-        provider.transport().push_ok::<Vec<MarketOrderPair>>("get_market_pair_list", pairs);
+        mock.push_ok::<Vec<MarketOrderPair>>("get_market_pair_list", pairs);
         let result = provider.get_market_pair_list().await.unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].sell_token_id, "_");
@@ -324,10 +306,8 @@ mod tests {
     #[tokio::test]
     async fn get_market_order_by_account_returns_orders() {
         let owner = addr(1);
-        let provider = mock_provider();
-        provider
-            .transport()
-            .push_ok::<Vec<MarketOrderInfo>>("get_market_order_by_account", vec![order(owner)]);
+        let (provider, mock) = mock_provider();
+        mock.push_ok::<Vec<MarketOrderInfo>>("get_market_order_by_account", vec![order(owner)]);
         let result = provider.get_market_order_by_account(owner).await.unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].owner_address, owner);

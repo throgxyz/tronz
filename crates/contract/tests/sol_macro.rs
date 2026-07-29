@@ -60,14 +60,14 @@ async fn _erc20_api<P: TronProvider + Clone>(provider: P, addr: Address) {
     let _ = token.call_builder(&IERC20::balanceOfCall { owner: addr.into() }).call().await;
 }
 
-async fn _erc20_read_api<P: ContractReadProvider>(provider: P, addr: Address) {
+async fn _erc20_read_api<P: ContractReadProvider + Clone>(provider: P, addr: Address) {
     let token = IERC20::new(addr, provider).caller(addr);
     let _: U256 = token.balanceOf(addr).call().await.unwrap();
     let _ = token.balanceOf(addr).caller(addr).estimate_energy().await;
     let _ = token.Transfer_filter().query_block(1).await;
 }
 
-fn _instance_is_debug<P: TronProvider>() {
+fn _instance_is_debug<P: TronProvider + Clone>() {
     fn assert_debug<T: core::fmt::Debug>() {}
     assert_debug::<IERC20::Instance<P>>();
 }

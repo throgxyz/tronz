@@ -312,9 +312,7 @@ mod tests {
         })
     }
 
-    fn make_filter(
-        address: Option<Address>,
-    ) -> TronEventFilter<RootProvider<MockTransport>, Transfer> {
+    fn make_filter(address: Option<Address>) -> TronEventFilter<RootProvider, Transfer> {
         TronEventFilter::new(RootProvider::new(MockTransport::new()), address)
     }
 

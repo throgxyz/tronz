@@ -16,10 +16,14 @@ body:
       options:
         - tronz (umbrella)
         - tronz-primitives
+        - tronz-abi
+        - tronz-rpc-types
         - tronz-signer
+        - tronz-signer-aws
         - tronz-provider (transport / gRPC)
         - tronz-provider (provider / fillers / builders)
         - tronz-contract (TRC20 / TRC721)
+        - tronz-sol-macro
         - examples
         - other
     validations:

@@ -16,7 +16,7 @@
 //! use tronz_contract::ContractExt as _;
 //!
 //! # async fn run(
-//! #     provider: impl tronz_provider::TronProvider,
+//! #     provider: impl tronz_provider::TronProvider + Clone,
 //! #     bytecode: tronz_primitives::Bytes,
 //! #     abi: tronz_contract::JsonAbi,
 //! # ) -> tronz_contract::Result<()> {
@@ -58,13 +58,13 @@ pub struct DeployBuilder<P> {
     permission_id: Option<i32>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum DeploymentAbi {
     Json(JsonAbi),
     Tron(TronAbi),
 }
 
-impl<P: TronProvider> DeployBuilder<P> {
+impl<P: TronProvider + Clone> DeployBuilder<P> {
     /// Create a new deployment builder with the given bytecode.
     pub fn new(provider: P, bytecode: impl Into<Bytes>) -> Self {
         Self {
@@ -178,26 +178,33 @@ impl<P: TronProvider> DeployBuilder<P> {
     /// The deployed contract address is in [`TransactionInfo::contract_address`].
     ///
     /// [`TransactionInfo::contract_address`]: tronz_provider::types::TransactionInfo::contract_address
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
-        let provider = self.provider.clone();
-        provider.send_transaction(self.into_request()?).await.map_err(ContractError::Provider)
+    pub async fn send(self) -> Result<PendingTransaction> {
+        let request = self.to_request()?;
+        self.provider.send_transaction(request).await.map_err(ContractError::Provider)
     }
 
     /// Build without signing or broadcasting.
     pub async fn build(self) -> Result<RawTransaction> {
-        let provider = self.provider.clone();
-        provider.build_transaction(self.into_request()?).await.map_err(ContractError::Provider)
+        let request = self.to_request()?;
+        self.provider.build_transaction(request).await.map_err(ContractError::Provider)
     }
 
     /// The request this builder describes, without contacting the node.
     pub fn into_request(self) -> Result<TransactionRequest> {
+        self.to_request()
+    }
+
+    /// As [`into_request`](Self::into_request), but leaves the provider in place
+    /// so `send` and `build` can still use it. Cloning the bytecode and ABI is a
+    /// refcount bump and a small copy.
+    fn to_request(&self) -> Result<TransactionRequest> {
         let owner = self
             .owner
             .or_else(|| self.provider.signer_address())
             .ok_or_else(ProviderError::no_signer)
             .map_err(ContractError::Provider)?;
 
-        let abi = match self.abi {
+        let abi = match self.abi.clone() {
             DeploymentAbi::Json(abi) => TronAbi::try_from(abi)?,
             DeploymentAbi::Tron(abi) => abi,
         };
@@ -205,12 +212,12 @@ impl<P: TronProvider> DeployBuilder<P> {
         let mut req = TransactionRequest {
             contract: Some(ContractType::CreateSmartContract(CreateSmartContract {
                 owner_address: owner,
-                bytecode: self.bytecode,
+                bytecode: self.bytecode.clone(),
                 abi,
                 call_value: self.call_value,
                 consume_user_resource_percent: self.consume_user_resource_percent,
                 origin_energy_limit: self.origin_energy_limit,
-                name: self.name,
+                name: self.name.clone(),
             })),
             permission_id: self.permission_id,
             ..Default::default()

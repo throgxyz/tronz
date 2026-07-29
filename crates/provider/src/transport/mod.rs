@@ -3,32 +3,37 @@
 //! [`TronTransport`] is a domain-specific async trait; [`grpc`] provides the
 //! default tonic-backed gRPC implementation targeting `grpc.trongrid.io:443`.
 
-use core::future::Future;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
+use async_trait::async_trait;
+use auto_impl::auto_impl;
 use tronz_primitives::{Address, B256, ResourceCode, Trx, TxId};
 
-use crate::types::{
-    AccountInfo, AccountNet, AccountPermissionUpdateContract, AccountResource, AssetInfo,
-    AssetIssueContract, BlockInfo, ChainProperties, ClearContractAbiContract, ConstantCallResult,
-    CreateAccountContract, CreateSmartContract, CreateWitnessContract, DelegatedResource,
-    DelegatedResourceIndex, ExchangeCreateContract, ExchangeInfo, ExchangeInjectContract,
-    ExchangeTransactionContract, ExchangeWithdrawContract, FreezeBalanceV1Contract,
-    FreezeBalanceV2Contract, MarketCancelOrderContract, MarketOrderInfo, MarketOrderPair,
-    MarketPrice, MarketSellAssetContract, NodeAddress, NodeInfo, ParticipateAssetIssueContract,
-    ProposalApproveContract, ProposalCreateContract, ProposalDeleteContract, ProposalInfo,
-    RawTransaction, SetAccountIdContract, SignWeight, SignedTransaction, SmartContractInfo,
-    TransactionInfo, TransferAssetContract, TransferContract, TriggerSmartContract,
-    UnDelegateResourceContract, UnfreezeAssetContract, UnfreezeBalanceV1Contract,
-    UnfreezeBalanceV2Contract, UpdateAccountContract, UpdateAssetContract, UpdateBrokerageContract,
-    UpdateEnergyLimitContract, UpdateSettingContract, UpdateWitnessContract, VoteWitnessContract,
-    WithdrawBalanceContract, WithdrawExpireUnfreezeContract, WitnessInfo,
+use crate::{
+    error::TransportResult,
+    types::{
+        AccountInfo, AccountNet, AccountPermissionUpdateContract, AccountResource, AssetInfo,
+        AssetIssueContract, BlockInfo, ChainProperties, ClearContractAbiContract,
+        ConstantCallResult, CreateAccountContract, CreateSmartContract, CreateWitnessContract,
+        DelegatedResource, DelegatedResourceIndex, ExchangeCreateContract, ExchangeInfo,
+        ExchangeInjectContract, ExchangeTransactionContract, ExchangeWithdrawContract,
+        FreezeBalanceV1Contract, FreezeBalanceV2Contract, MarketCancelOrderContract,
+        MarketOrderInfo, MarketOrderPair, MarketPrice, MarketSellAssetContract, NodeAddress,
+        NodeInfo, ParticipateAssetIssueContract, ProposalApproveContract, ProposalCreateContract,
+        ProposalDeleteContract, ProposalInfo, RawTransaction, SetAccountIdContract, SignWeight,
+        SignedTransaction, SmartContractInfo, TransactionInfo, TransferAssetContract,
+        TransferContract, TriggerSmartContract, UnDelegateResourceContract, UnfreezeAssetContract,
+        UnfreezeBalanceV1Contract, UnfreezeBalanceV2Contract, UpdateAccountContract,
+        UpdateAssetContract, UpdateBrokerageContract, UpdateEnergyLimitContract,
+        UpdateSettingContract, UpdateWitnessContract, VoteWitnessContract, WithdrawBalanceContract,
+        WithdrawExpireUnfreezeContract, WitnessInfo,
+    },
 };
 
 pub mod grpc;
 
 mod solidity;
-pub use solidity::SolidityTransport;
+pub use solidity::{DynSolidityTransport, SolidityTransport};
 
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
@@ -41,307 +46,295 @@ pub(crate) mod private {
     /// releases without breaking downstream code. Tests use the in-crate
     /// `MockTransport` (feature `mock`).
     pub trait Sealed {}
+
+    // Lets `auto_impl`'s forwarding impls satisfy the seal, which is what makes
+    // `Arc<dyn TronTransport>` a transport in its own right.
+    impl<T: ?Sized + Sealed> Sealed for &T {}
+    impl<T: ?Sized + Sealed> Sealed for std::sync::Arc<T> {}
 }
+
+/// A [`TronTransport`] with its concrete type erased.
+///
+/// This is how [`RootProvider`](crate::RootProvider) holds its transport, which is
+/// why no provider type mentions one. Constructing it by hand is only worth it to
+/// share a single connection between providers, since `RootProvider::new` erases
+/// whatever it is given:
+///
+/// ```no_run
+/// # use std::sync::Arc;
+/// # use tronz_provider::{DynTransport, RootProvider};
+/// # use tronz_provider::transport::grpc::{GrpcTransport, TRONGRID_MAINNET};
+/// # async fn run() -> tronz_provider::Result<()> {
+/// let transport: DynTransport = Arc::new(GrpcTransport::connect(TRONGRID_MAINNET).await?);
+/// let read = RootProvider::new_erased(Arc::clone(&transport));
+/// let write = RootProvider::new_erased(transport);
+/// # let _ = (read, write);
+/// # Ok(()) }
+/// ```
+pub type DynTransport = Arc<dyn TronTransport>;
 
 /// A low-level transport that maps each TRON node API endpoint to an async
 /// method returning domain types.
 ///
-/// Implementations are cheap to clone (typically an `Arc`-backed HTTP client)
-/// and must be `Send + Sync + 'static` for use across spawned tasks.
+/// Implementations must be `Send + Sync + 'static` for use across spawned tasks.
+/// `Clone` is deliberately not required: providers store the transport erased, so
+/// [`DynTransport`] is a transport in its own right.
+///
+/// Methods are boxed by `async_trait`, so every call — erased or not — costs one
+/// allocation. That is what makes the trait object-safe, and it is invisible next
+/// to the network round-trip it wraps.
 ///
 /// This trait is **sealed** — only `tronz` may implement it. For tests, use the
 /// `MockTransport` provided under the `mock` feature.
-pub trait TronTransport: Clone + Send + Sync + 'static + private::Sealed {
-    /// The transport's error type.  Must be convertible to
-    /// [`crate::error::TransportErrorKind`] so that the provider layer can wrap it
-    /// uniformly.
-    type Error: std::error::Error + Into<crate::error::TransportErrorKind> + Send + Sync + 'static;
-
+#[async_trait]
+#[auto_impl(&, Arc)]
+pub trait TronTransport: Send + Sync + 'static + private::Sealed {
     // --- Block ---
 
     /// Fetch the latest block.
-    fn get_now_block(&self) -> impl Future<Output = Result<BlockInfo, Self::Error>> + Send;
+    async fn get_now_block(&self) -> TransportResult<BlockInfo>;
 
     /// Fetch a block by height.
-    fn get_block_by_number(
-        &self,
-        num: i64,
-    ) -> impl Future<Output = Result<BlockInfo, Self::Error>> + Send;
+    async fn get_block_by_number(&self, num: i64) -> TransportResult<Option<BlockInfo>>;
 
     // --- Account ---
 
     /// Fetch on-chain account state.
-    fn get_account(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<AccountInfo, Self::Error>> + Send;
+    async fn get_account(&self, address: Address) -> TransportResult<AccountInfo>;
 
     /// Fetch account bandwidth/energy resource usage.
-    fn get_account_resource(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<AccountResource, Self::Error>> + Send;
+    async fn get_account_resource(&self, address: Address) -> TransportResult<AccountResource>;
 
     // --- Transaction ---
 
     /// Broadcast a signed transaction.
-    fn broadcast_transaction(
-        &self,
-        tx: &SignedTransaction,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
+    async fn broadcast_transaction(&self, tx: &SignedTransaction) -> TransportResult<()>;
 
     /// Fetch a transaction by id.
-    fn get_transaction_by_id(
+    async fn get_transaction_by_id(
         &self,
         tx_id: TxId,
-    ) -> impl Future<Output = Result<SignedTransaction, Self::Error>> + Send;
+    ) -> TransportResult<Option<SignedTransaction>>;
 
     /// Fetch a transaction's post-confirmation info/receipt.
     ///
     /// Returns `None` if the node has not yet indexed the transaction.
-    fn get_transaction_info(
-        &self,
-        tx_id: TxId,
-    ) -> impl Future<Output = Result<Option<TransactionInfo>, Self::Error>> + Send;
+    async fn get_transaction_info(&self, tx_id: TxId) -> TransportResult<Option<TransactionInfo>>;
 
     // --- Smart contracts ---
 
     /// Build an unsigned `RawTransaction` for a contract trigger (server fills TAPOS).
-    fn trigger_smart_contract(
+    async fn trigger_smart_contract(
         &self,
         params: TriggerSmartContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Execute a constant (read-only) contract call.
-    fn trigger_constant_contract(
+    async fn trigger_constant_contract(
         &self,
         params: TriggerSmartContract,
-    ) -> impl Future<Output = Result<ConstantCallResult, Self::Error>> + Send;
+    ) -> TransportResult<ConstantCallResult>;
 
     /// Estimate the energy a contract call would consume.
-    fn estimate_energy(
-        &self,
-        params: TriggerSmartContract,
-    ) -> impl Future<Output = Result<i64, Self::Error>> + Send;
+    async fn estimate_energy(&self, params: TriggerSmartContract) -> TransportResult<i64>;
 
     // --- Native contracts ---
 
     /// Build a TRX transfer transaction.
-    fn transfer_trx(
-        &self,
-        params: TransferContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    async fn transfer_trx(&self, params: TransferContract) -> TransportResult<RawTransaction>;
 
     /// Build an account-permission-update transaction.
-    fn account_permission_update(
+    async fn account_permission_update(
         &self,
         params: AccountPermissionUpdateContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a smart-contract-deploy transaction.
-    fn create_smart_contract(
+    async fn create_smart_contract(
         &self,
         params: CreateSmartContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     // --- Staking ---
 
     /// Build a freeze (stake) transaction (Stake 1.0, legacy).
-    fn freeze_balance_v1(
+    async fn freeze_balance_v1(
         &self,
         params: FreezeBalanceV1Contract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build an unfreeze (unstake) transaction (Stake 1.0, legacy).
-    fn unfreeze_balance_v1(
+    async fn unfreeze_balance_v1(
         &self,
         params: UnfreezeBalanceV1Contract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a freeze (stake) transaction.
-    fn freeze_balance_v2(
+    async fn freeze_balance_v2(
         &self,
         params: FreezeBalanceV2Contract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build an unfreeze (unstake) transaction.
-    fn unfreeze_balance_v2(
+    async fn unfreeze_balance_v2(
         &self,
         params: UnfreezeBalanceV2Contract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a delegate-resource transaction.
-    fn delegate_resource(
+    async fn delegate_resource(
         &self,
         params: crate::types::DelegateResourceContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build an undelegate-resource transaction.
-    fn undelegate_resource(
+    async fn undelegate_resource(
         &self,
         params: UnDelegateResourceContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a withdraw-expire-unfreeze transaction.
-    fn withdraw_expire_unfreeze(
+    async fn withdraw_expire_unfreeze(
         &self,
         params: WithdrawExpireUnfreezeContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a cancel-all-unfreeze transaction.
-    fn cancel_all_unfreeze_v2(
+    async fn cancel_all_unfreeze_v2(
         &self,
         params: crate::types::CancelAllUnfreezeV2Contract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a withdraw-balance (claim rewards) transaction.
-    fn withdraw_balance(
+    async fn withdraw_balance(
         &self,
         params: WithdrawBalanceContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     // --- Resource queries ---
 
     /// Query delegations between two accounts (Stake 1.0, legacy).
-    fn get_delegated_resource_v1(
+    async fn get_delegated_resource_v1(
         &self,
         from: Address,
         to: Address,
-    ) -> impl Future<Output = Result<Vec<DelegatedResource>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<DelegatedResource>>;
 
     /// Query the full delegation index for an account (Stake 1.0, legacy).
-    fn get_delegated_resource_index_v1(
+    async fn get_delegated_resource_index_v1(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<DelegatedResourceIndex, Self::Error>> + Send;
+    ) -> TransportResult<DelegatedResourceIndex>;
 
     /// Query delegations between two accounts (Stake 2.0).
-    fn get_delegated_resource(
+    async fn get_delegated_resource(
         &self,
         from: Address,
         to: Address,
-    ) -> impl Future<Output = Result<Vec<DelegatedResource>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<DelegatedResource>>;
 
     /// Query the full delegation index for an account (Stake 2.0).
-    fn get_delegated_resource_index(
+    async fn get_delegated_resource_index(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<DelegatedResourceIndex, Self::Error>> + Send;
+    ) -> TransportResult<DelegatedResourceIndex>;
 
     /// Query the max amount still delegatable for a resource.
-    fn get_can_delegate_max(
+    async fn get_can_delegate_max(
         &self,
         address: Address,
         resource: ResourceCode,
-    ) -> impl Future<Output = Result<Trx, Self::Error>> + Send;
+    ) -> TransportResult<Trx>;
 
     /// Query the pending (unclaimed) reward for an account.
-    fn get_reward(&self, address: Address)
-    -> impl Future<Output = Result<Trx, Self::Error>> + Send;
+    async fn get_reward(&self, address: Address) -> TransportResult<Trx>;
 
     // --- Network ---
 
     /// Fetch the chain parameters.
-    fn get_chain_parameters(
-        &self,
-    ) -> impl Future<Output = Result<HashMap<String, i64>, Self::Error>> + Send;
+    async fn get_chain_parameters(&self) -> TransportResult<HashMap<String, i64>>;
 
     /// Fetch metadata for a deployed contract.
-    fn get_contract(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<SmartContractInfo, Self::Error>> + Send;
+    async fn get_contract(&self, address: Address) -> TransportResult<SmartContractInfo>;
 
     /// Fetch contract metadata including the deployed runtime bytecode.
     ///
     /// Like [`get_contract`](Self::get_contract) but also populates
     /// [`SmartContractInfo::runtime_bytecode`].
-    fn get_contract_info(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<SmartContractInfo, Self::Error>> + Send;
+    async fn get_contract_info(&self, address: Address) -> TransportResult<SmartContractInfo>;
 
     /// List all super representatives and candidates.
-    fn list_witnesses(&self) -> impl Future<Output = Result<Vec<WitnessInfo>, Self::Error>> + Send;
+    async fn list_witnesses(&self) -> TransportResult<Vec<WitnessInfo>>;
 
     /// Fetch a paginated list of witnesses sorted by real-time vote count.
-    fn get_paginated_now_witness_list(
+    async fn get_paginated_now_witness_list(
         &self,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<WitnessInfo>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<WitnessInfo>>;
 
     // --- Governance ---
 
     /// Submit a chain-parameter governance proposal.
-    fn proposal_create(
+    async fn proposal_create(
         &self,
         params: ProposalCreateContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Approve or revoke approval for a governance proposal.
-    fn proposal_approve(
+    async fn proposal_approve(
         &self,
         params: ProposalApproveContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Cancel a governance proposal.
-    fn proposal_delete(
+    async fn proposal_delete(
         &self,
         params: ProposalDeleteContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// List all on-chain proposals.
-    fn list_proposals(&self)
-    -> impl Future<Output = Result<Vec<ProposalInfo>, Self::Error>> + Send;
+    async fn list_proposals(&self) -> TransportResult<Vec<ProposalInfo>>;
 
     /// Fetch a paginated list of proposals.
-    fn get_paginated_proposal_list(
+    async fn get_paginated_proposal_list(
         &self,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<ProposalInfo>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<ProposalInfo>>;
 
     /// Fetch a single proposal by its ID.
-    fn get_proposal_by_id(
-        &self,
-        proposal_id: i64,
-    ) -> impl Future<Output = Result<ProposalInfo, Self::Error>> + Send;
+    async fn get_proposal_by_id(&self, proposal_id: i64) -> TransportResult<ProposalInfo>;
 
     // --- TRC10 ---
 
     /// Build a TRC10 token issuance transaction.
-    fn create_asset_issue(
+    async fn create_asset_issue(
         &self,
         params: AssetIssueContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a TRC10 token transfer transaction.
-    fn transfer_asset(
+    async fn transfer_asset(
         &self,
         params: TransferAssetContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Fetch metadata for a TRC10 token by its numeric ID.
     ///
     /// Returns `None` if no token with that ID exists.
-    fn get_asset_issue_by_id(
-        &self,
-        token_id: &str,
-    ) -> impl Future<Output = Result<Option<AssetInfo>, Self::Error>> + Send;
+    async fn get_asset_issue_by_id(&self, token_id: &str) -> TransportResult<Option<AssetInfo>>;
 
     /// Fetch all TRC10 tokens issued by `address`.
-    fn get_asset_issue_by_account(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<Vec<AssetInfo>, Self::Error>> + Send;
+    async fn get_asset_issue_by_account(&self, address: Address)
+    -> TransportResult<Vec<AssetInfo>>;
 
     /// Fetch a paginated list of all TRC10 tokens on-chain.
-    fn get_paginated_asset_issue_list(
+    async fn get_paginated_asset_issue_list(
         &self,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<AssetInfo>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<AssetInfo>>;
 
     /// Fetch a TRC10 token by name.
     ///
@@ -350,78 +343,67 @@ pub trait TronTransport: Clone + Send + Sync + 'static + private::Sealed {
     /// Token names are not unique after the `ALLOW_SAME_TOKEN_NAME` proposal;
     /// use [`get_asset_issue_list_by_name`](Self::get_asset_issue_list_by_name)
     /// if multiple tokens share the same name.
-    fn get_asset_issue_by_name(
-        &self,
-        name: &str,
-    ) -> impl Future<Output = Result<Option<AssetInfo>, Self::Error>> + Send;
+    async fn get_asset_issue_by_name(&self, name: &str) -> TransportResult<Option<AssetInfo>>;
 
     /// Fetch all TRC10 tokens with a given name.
-    fn get_asset_issue_list_by_name(
-        &self,
-        name: &str,
-    ) -> impl Future<Output = Result<Vec<AssetInfo>, Self::Error>> + Send;
+    async fn get_asset_issue_list_by_name(&self, name: &str) -> TransportResult<Vec<AssetInfo>>;
 
     /// Build a participate-in-ICO transaction (buy TRC10 tokens with TRX).
-    fn participate_asset_issue(
+    async fn participate_asset_issue(
         &self,
         params: ParticipateAssetIssueContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build an unfreeze-asset transaction (release frozen TRC10 supply).
-    fn unfreeze_asset(
+    async fn unfreeze_asset(
         &self,
         params: UnfreezeAssetContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build an update-asset transaction (change TRC10 metadata).
-    fn update_asset(
-        &self,
-        params: UpdateAssetContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    async fn update_asset(&self, params: UpdateAssetContract) -> TransportResult<RawTransaction>;
 
     // --- Account management ---
 
     /// Activate a new account on-chain.
-    fn create_account(
+    async fn create_account(
         &self,
         params: CreateAccountContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Vote for super representatives.
-    fn vote_witness_account(
+    async fn vote_witness_account(
         &self,
         params: VoteWitnessContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Update an account's on-chain name.
-    fn update_account(
+    async fn update_account(
         &self,
         params: UpdateAccountContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Set a short alphanumeric account ID (on-chain alias).
-    fn set_account_id(
-        &self,
-        params: SetAccountIdContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    async fn set_account_id(&self, params: SetAccountIdContract)
+    -> TransportResult<RawTransaction>;
 
     /// Clear the ABI of a deployed smart contract.
-    fn clear_contract_abi(
+    async fn clear_contract_abi(
         &self,
         params: ClearContractAbiContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Update the caller-energy-percentage setting on a smart contract.
-    fn update_setting(
+    async fn update_setting(
         &self,
         params: UpdateSettingContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Update the per-call origin energy limit on a smart contract.
-    fn update_energy_limit(
+    async fn update_energy_limit(
         &self,
         params: UpdateEnergyLimitContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     // --- Staking queries ---
 
@@ -429,118 +411,95 @@ pub trait TronTransport: Clone + Send + Sync + 'static + private::Sealed {
     ///
     /// `timestamp_ms` is the reference time (unix milliseconds); pass the
     /// current time to check what is withdrawable right now.
-    fn get_can_withdraw_unfreeze_amount(
+    async fn get_can_withdraw_unfreeze_amount(
         &self,
         address: Address,
         timestamp_ms: i64,
-    ) -> impl Future<Output = Result<Trx, Self::Error>> + Send;
+    ) -> TransportResult<Trx>;
 
     /// Query how many more unfreeze operations the account can initiate
     /// (TRON caps concurrent unfreeze windows to 32).
-    fn get_available_unfreeze_count(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<i64, Self::Error>> + Send;
+    async fn get_available_unfreeze_count(&self, address: Address) -> TransportResult<i64>;
 
     // --- Pricing / fees ---
 
     /// Fetch the historical bandwidth price schedule (colon-separated pairs).
-    fn get_bandwidth_prices(&self) -> impl Future<Output = Result<String, Self::Error>> + Send;
+    async fn get_bandwidth_prices(&self) -> TransportResult<String>;
 
     /// Fetch the historical energy price schedule (colon-separated pairs).
-    fn get_energy_prices(&self) -> impl Future<Output = Result<String, Self::Error>> + Send;
+    async fn get_energy_prices(&self) -> TransportResult<String>;
 
     /// Fetch the memo-attach fee schedule.
-    fn get_memo_fee(&self) -> impl Future<Output = Result<u64, Self::Error>> + Send;
+    async fn get_memo_fee(&self) -> TransportResult<u64>;
 
     // --- Network / chain ---
 
     /// Fetch the next maintenance-cycle timestamp (unix ms).
-    fn get_next_maintenance_time(&self) -> impl Future<Output = Result<i64, Self::Error>> + Send;
+    async fn get_next_maintenance_time(&self) -> TransportResult<i64>;
 
     /// Fetch the total amount of TRX that has been burned.
-    fn get_burn_trx(&self) -> impl Future<Output = Result<u64, Self::Error>> + Send;
+    async fn get_burn_trx(&self) -> TransportResult<u64>;
 
     /// Fetch the total number of transactions ever processed.
-    fn get_total_transactions(&self) -> impl Future<Output = Result<u64, Self::Error>> + Send;
+    async fn get_total_transactions(&self) -> TransportResult<u64>;
 
     /// Fetch basic info about the connected node.
-    fn get_node_info(&self) -> impl Future<Output = Result<NodeInfo, Self::Error>> + Send;
+    async fn get_node_info(&self) -> TransportResult<NodeInfo>;
 
     /// List all known gossip-network peer addresses.
-    fn list_nodes(&self) -> impl Future<Output = Result<Vec<NodeAddress>, Self::Error>> + Send;
+    async fn list_nodes(&self) -> TransportResult<Vec<NodeAddress>>;
 
     /// Fetch dynamic chain properties (head block id, number, timestamp).
-    fn get_dynamic_properties(
-        &self,
-    ) -> impl Future<Output = Result<ChainProperties, Self::Error>> + Send;
+    async fn get_dynamic_properties(&self) -> TransportResult<ChainProperties>;
 
     // --- Block queries ---
 
     /// Fetch a block by its hash (block id).
-    fn get_block_by_id(
-        &self,
-        block_id: B256,
-    ) -> impl Future<Output = Result<BlockInfo, Self::Error>> + Send;
+    async fn get_block_by_id(&self, block_id: B256) -> TransportResult<Option<BlockInfo>>;
 
     /// Fetch the `count` most recent blocks.
-    fn get_blocks_by_latest_num(
-        &self,
-        count: i64,
-    ) -> impl Future<Output = Result<Vec<BlockInfo>, Self::Error>> + Send;
+    async fn get_blocks_by_latest_num(&self, count: i64) -> TransportResult<Vec<BlockInfo>>;
 
     /// Fetch blocks in the range `[start, end)`.
-    fn get_blocks_by_limit(
-        &self,
-        start: i64,
-        end: i64,
-    ) -> impl Future<Output = Result<Vec<BlockInfo>, Self::Error>> + Send;
+    async fn get_blocks_by_limit(&self, start: i64, end: i64) -> TransportResult<Vec<BlockInfo>>;
 
     /// Count transactions in a given block by block number.
-    fn get_transaction_count_by_block_num(
-        &self,
-        block_num: i64,
-    ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
+    async fn get_transaction_count_by_block_num(&self, block_num: i64) -> TransportResult<u64>;
 
     // --- Transaction history ---
 
     /// Fetch paginated transactions sent *from* an address.
-    fn get_transactions_from(
+    async fn get_transactions_from(
         &self,
         address: Address,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<RawTransaction>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<RawTransaction>>;
 
     /// Fetch paginated transactions sent *to* an address.
-    fn get_transactions_to(
+    async fn get_transactions_to(
         &self,
         address: Address,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<RawTransaction>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<RawTransaction>>;
 
     /// Fetch all transaction infos included in a given block.
-    fn get_transaction_info_by_block_num(
+    async fn get_transaction_info_by_block_num(
         &self,
         block_num: i64,
-    ) -> impl Future<Output = Result<Vec<TransactionInfo>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<TransactionInfo>>;
 
     // --- Pending pool ---
 
     /// Fetch the number of pending (unconfirmed) transactions.
-    fn get_pending_size(&self) -> impl Future<Output = Result<u64, Self::Error>> + Send;
+    async fn get_pending_size(&self) -> TransportResult<u64>;
 
     /// Fetch a single pending transaction by id.
-    fn get_transaction_from_pending(
-        &self,
-        tx_id: TxId,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    async fn get_transaction_from_pending(&self, tx_id: TxId) -> TransportResult<RawTransaction>;
 
     /// Fetch all pending transactions.
-    fn get_pending_transactions(
-        &self,
-    ) -> impl Future<Output = Result<Vec<RawTransaction>, Self::Error>> + Send;
+    async fn get_pending_transactions(&self) -> TransportResult<Vec<RawTransaction>>;
 
     // --- Multi-sig ---
 
@@ -550,150 +509,135 @@ pub trait TronTransport: Clone + Send + Sync + 'static + private::Sealed {
     /// Takes a [`SignedTransaction`] so the already-collected signatures are
     /// included; the node uses them to compute `current_weight` and the
     /// approved-address list.
-    fn get_transaction_sign_weight(
+    async fn get_transaction_sign_weight(
         &self,
         tx: &SignedTransaction,
-    ) -> impl Future<Output = Result<SignWeight, Self::Error>> + Send;
+    ) -> TransportResult<SignWeight>;
 
     /// Fetch the list of addresses that have already signed a transaction.
-    fn get_transaction_approved_list(
+    async fn get_transaction_approved_list(
         &self,
         tx: &SignedTransaction,
-    ) -> impl Future<Output = Result<Vec<Address>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<Address>>;
 
     // --- Account net ---
 
     /// Fetch bandwidth and energy net-usage for an account.
-    fn get_account_net(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<AccountNet, Self::Error>> + Send;
+    async fn get_account_net(&self, address: Address) -> TransportResult<AccountNet>;
 
     // --- Witness ---
 
     /// Apply to become a super representative candidate.
-    fn create_witness(
+    async fn create_witness(
         &self,
         params: CreateWitnessContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Update a super representative's public URL.
-    fn update_witness(
+    async fn update_witness(
         &self,
         params: UpdateWitnessContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Update a super representative's brokerage ratio.
-    fn update_brokerage(
+    async fn update_brokerage(
         &self,
         params: UpdateBrokerageContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Fetch the brokerage ratio (0–100) for a super representative.
-    fn get_brokerage(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
+    async fn get_brokerage(&self, address: Address) -> TransportResult<u64>;
 
     /// Fetch the unclaimed reward amount for an address (alias for
     /// [`crate::provider::TronProvider::get_reward`]).
     ///
     /// Unlike [`crate::provider::TronProvider::get_reward`] which returns [`Trx`], this returns the
     /// raw sun value.
-    fn get_reward_info(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<u64, Self::Error>> + Send;
+    async fn get_reward_info(&self, address: Address) -> TransportResult<u64>;
 
     // --- DEX (built-in Bancor exchange) ---
 
     /// Build a transaction that creates a new TRC10 exchange pair.
-    fn exchange_create(
+    async fn exchange_create(
         &self,
         params: ExchangeCreateContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a transaction that injects liquidity into an exchange pair.
-    fn exchange_inject(
+    async fn exchange_inject(
         &self,
         params: ExchangeInjectContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a transaction that withdraws liquidity from an exchange pair.
-    fn exchange_withdraw(
+    async fn exchange_withdraw(
         &self,
         params: ExchangeWithdrawContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a transaction that executes a swap on an exchange pair.
-    fn exchange_transaction(
+    async fn exchange_transaction(
         &self,
         params: ExchangeTransactionContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// List all exchange pairs on-chain.
-    fn list_exchanges(&self)
-    -> impl Future<Output = Result<Vec<ExchangeInfo>, Self::Error>> + Send;
+    async fn list_exchanges(&self) -> TransportResult<Vec<ExchangeInfo>>;
 
     /// Fetch a paginated list of exchange pairs.
-    fn get_paginated_exchange_list(
+    async fn get_paginated_exchange_list(
         &self,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<ExchangeInfo>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<ExchangeInfo>>;
 
     /// Fetch a single exchange pair by its ID.
     ///
     /// Returns `None` if no exchange with that ID exists.
-    fn get_exchange_by_id(
-        &self,
-        exchange_id: i64,
-    ) -> impl Future<Output = Result<Option<ExchangeInfo>, Self::Error>> + Send;
+    async fn get_exchange_by_id(&self, exchange_id: i64) -> TransportResult<Option<ExchangeInfo>>;
 
     // --- Market (order-book DEX) ---
 
     /// Build a transaction that places a limit sell order.
-    fn market_sell_asset(
+    async fn market_sell_asset(
         &self,
         params: MarketSellAssetContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Build a transaction that cancels an open market order.
-    fn market_cancel_order(
+    async fn market_cancel_order(
         &self,
         params: MarketCancelOrderContract,
-    ) -> impl Future<Output = Result<RawTransaction, Self::Error>> + Send;
+    ) -> TransportResult<RawTransaction>;
 
     /// Fetch a market order by its ID.
     ///
     /// Returns `None` if no order with that ID exists.
-    fn get_market_order_by_id(
+    async fn get_market_order_by_id(
         &self,
         order_id: B256,
-    ) -> impl Future<Output = Result<Option<MarketOrderInfo>, Self::Error>> + Send;
+    ) -> TransportResult<Option<MarketOrderInfo>>;
 
     /// Fetch all market orders placed by `address`.
-    fn get_market_order_by_account(
+    async fn get_market_order_by_account(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<Vec<MarketOrderInfo>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<MarketOrderInfo>>;
 
     /// Fetch the price levels for a trading pair.
-    fn get_market_price_by_pair(
+    async fn get_market_price_by_pair(
         &self,
         sell_token_id: &str,
         buy_token_id: &str,
-    ) -> impl Future<Output = Result<Vec<MarketPrice>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<MarketPrice>>;
 
     /// Fetch all open orders for a trading pair.
-    fn get_market_order_list_by_pair(
+    async fn get_market_order_list_by_pair(
         &self,
         sell_token_id: &str,
         buy_token_id: &str,
-    ) -> impl Future<Output = Result<Vec<MarketOrderInfo>, Self::Error>> + Send;
+    ) -> TransportResult<Vec<MarketOrderInfo>>;
 
     /// Fetch all active trading pairs on the order-book DEX.
-    fn get_market_pair_list(
-        &self,
-    ) -> impl Future<Output = Result<Vec<MarketOrderPair>, Self::Error>> + Send;
+    async fn get_market_pair_list(&self) -> TransportResult<Vec<MarketOrderPair>>;
 }

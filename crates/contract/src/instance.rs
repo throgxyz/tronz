@@ -99,7 +99,7 @@ impl<P> std::fmt::Debug for ContractInstance<P> {
     }
 }
 
-impl<P: ContractReadProvider> ContractInstance<P> {
+impl<P: ContractReadProvider + Clone> ContractInstance<P> {
     /// Create a contract instance without an ABI — only raw calldata calls are available.
     ///
     /// Used internally by static-ABI wrappers like [`Trc20Instance`].
@@ -160,7 +160,7 @@ impl<P: ContractReadProvider> ContractInstance<P> {
     }
 }
 
-impl<P: TronProvider> ContractInstance<P> {
+impl<P: TronProvider + Clone> ContractInstance<P> {
     /// Encode and broadcast a state-changing call by function name.
     ///
     /// If the ABI contains overloaded functions with this name, the first
@@ -170,7 +170,7 @@ impl<P: TronProvider> ContractInstance<P> {
         &self,
         fn_name: &str,
         args: &[DynSolValue],
-    ) -> Result<tronz_provider::PendingTransaction<P>> {
+    ) -> Result<tronz_provider::PendingTransaction> {
         self.function(fn_name, args)?.send().await
     }
 
@@ -179,13 +179,13 @@ impl<P: TronProvider> ContractInstance<P> {
         &self,
         selector: &Selector,
         args: &[DynSolValue],
-    ) -> Result<tronz_provider::PendingTransaction<P>> {
+    ) -> Result<tronz_provider::PendingTransaction> {
         self.function_from_selector(selector, args)?.send().await
     }
 }
 
 /// Convenience methods on any [`ContractReadProvider`] for creating contract handles.
-pub trait ContractExt: ContractReadProvider + Sized {
+pub trait ContractExt: ContractReadProvider + Clone + Sized {
     /// Bind to the contract at `address` with a dynamic ABI [`Interface`].
     fn contract(&self, address: Address, interface: Interface) -> ContractInstance<Self> {
         ContractInstance::new(address, self.clone(), interface)
@@ -197,7 +197,7 @@ pub trait ContractExt: ContractReadProvider + Sized {
     ///
     /// ```no_run
     /// use tronz_contract::{ContractExt as _, JsonAbi};
-    /// # async fn run(provider: impl tronz_provider::TronProvider, bytecode: tronz_primitives::Bytes) -> tronz_contract::Result<()> {
+    /// # async fn run(provider: impl tronz_provider::TronProvider + Clone, bytecode: tronz_primitives::Bytes) -> tronz_contract::Result<()> {
     /// let abi = JsonAbi::new();
     /// let pending = provider
     ///     .deploy(bytecode)
@@ -215,7 +215,7 @@ pub trait ContractExt: ContractReadProvider + Sized {
     }
 }
 
-impl<P: ContractReadProvider> ContractExt for P {}
+impl<P: ContractReadProvider + Clone> ContractExt for P {}
 
 #[cfg(test)]
 mod tests {
@@ -223,7 +223,7 @@ mod tests {
 
     use super::*;
 
-    async fn dynamic_send_api_compiles<P: TronProvider>(
+    async fn dynamic_send_api_compiles<P: TronProvider + Clone>(
         contract: &ContractInstance<P>,
         selector: Selector,
     ) {
@@ -234,8 +234,6 @@ mod tests {
 
     #[test]
     fn dynamic_send_methods_are_available() {
-        let _ = dynamic_send_api_compiles::<
-            tronz_provider::RootProvider<tronz_provider::transport::mock::MockTransport>,
-        >;
+        let _ = dynamic_send_api_compiles::<tronz_provider::RootProvider>;
     }
 }

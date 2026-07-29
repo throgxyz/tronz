@@ -4,7 +4,7 @@ use tronz_primitives::Address;
 
 /// Metadata for a TRC10 (native TRON) token.
 ///
-/// Returned by [`Trc10Api::get_asset_info`](crate::ext::Trc10Api::get_asset_info).
+/// Returned by `Trc10Api::get_asset_info`.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct AssetInfo {

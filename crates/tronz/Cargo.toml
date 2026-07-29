@@ -22,6 +22,7 @@ tag-name = "v{{version}}"
 [dependencies]
 tronz-primitives = { workspace = true }
 tronz-abi        = { workspace = true }
+tronz-rpc-types  = { workspace = true }
 tronz-signer     = { workspace = true }
 tronz-provider   = { workspace = true }
 tronz-contract   = { workspace = true, optional = true, features = ["provider"] }

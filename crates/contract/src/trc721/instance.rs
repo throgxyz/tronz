@@ -33,7 +33,7 @@ pub struct Trc721Instance<P: ContractReadProvider> {
     inner: ContractInstance<P>,
 }
 
-impl<P: ContractReadProvider> Trc721Instance<P> {
+impl<P: ContractReadProvider + Clone> Trc721Instance<P> {
     /// Bind to the TRC721 contract at `address`.
     pub fn new(provider: P, address: Address) -> Self {
         Self { inner: ContractInstance::new_raw(provider, address) }
@@ -211,14 +211,14 @@ impl<P: ContractReadProvider> Trc721Instance<P> {
     }
 }
 
-impl<P: TronProvider> Trc721Instance<P> {
+impl<P: TronProvider + Clone> Trc721Instance<P> {
     /// Transfer `token_id` from `from` to `to`.
     pub async fn transfer_from(
         &self,
         from: Address,
         to: Address,
         token_id: U256,
-    ) -> Result<PendingTransaction<P>, Trc721Error> {
+    ) -> Result<PendingTransaction, Trc721Error> {
         self.transfer_from_call(from, to, token_id).send().await
     }
 
@@ -228,7 +228,7 @@ impl<P: TronProvider> Trc721Instance<P> {
         from: Address,
         to: Address,
         token_id: U256,
-    ) -> Result<PendingTransaction<P>, Trc721Error> {
+    ) -> Result<PendingTransaction, Trc721Error> {
         self.safe_transfer_from_call(from, to, token_id).send().await
     }
 
@@ -239,7 +239,7 @@ impl<P: TronProvider> Trc721Instance<P> {
         to: Address,
         token_id: U256,
         data: Bytes,
-    ) -> Result<PendingTransaction<P>, Trc721Error> {
+    ) -> Result<PendingTransaction, Trc721Error> {
         self.safe_transfer_from_with_data_call(from, to, token_id, data).send().await
     }
 
@@ -248,7 +248,7 @@ impl<P: TronProvider> Trc721Instance<P> {
         &self,
         to: Address,
         token_id: U256,
-    ) -> Result<PendingTransaction<P>, Trc721Error> {
+    ) -> Result<PendingTransaction, Trc721Error> {
         self.approve_call(to, token_id).send().await
     }
 
@@ -257,20 +257,20 @@ impl<P: TronProvider> Trc721Instance<P> {
         &self,
         operator: Address,
         approved: bool,
-    ) -> Result<PendingTransaction<P>, Trc721Error> {
+    ) -> Result<PendingTransaction, Trc721Error> {
         self.set_approval_for_all_call(operator, approved).send().await
     }
 }
 
 /// Convenience method on any [`ContractReadProvider`] for binding a TRC721 instance.
-pub trait Trc721Ext: ContractReadProvider + Sized {
+pub trait Trc721Ext: ContractReadProvider + Clone + Sized {
     /// Bind to the TRC721 contract at `address`.
     fn trc721(&self, address: Address) -> Trc721Instance<Self> {
         Trc721Instance::new(self.clone(), address)
     }
 }
 
-impl<P: ContractReadProvider> Trc721Ext for P {}
+impl<P: ContractReadProvider + Clone> Trc721Ext for P {}
 
 #[cfg(test)]
 mod tests {
