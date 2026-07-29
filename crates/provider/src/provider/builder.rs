@@ -160,7 +160,7 @@ impl<F: TxFiller, L> ProviderBuilder<F, L> {
     /// Observe or pace every call the transport makes.
     ///
     /// The seam nothing above it routes around: a
-    /// [`ProviderLayer`](crate::ProviderLayer) only sees the methods it overrides,
+    /// [`ProviderLayer`] only sees the methods it overrides,
     /// while middleware also sees a [`PendingTransaction`]'s polling and an event
     /// watcher's. Install more than one and they nest, first added outermost.
     ///
@@ -465,7 +465,7 @@ impl<F: TxFiller, L: ProviderLayer<RootProvider>> ProviderBuilder<F, L> {
 /// A provider that automatically applies filler `F` before every send.
 ///
 /// `P` is whatever it was built over: a [`RootProvider`], or that wrapped in the
-/// [`ProviderLayer`](crate::ProviderLayer)s a
+/// [`ProviderLayer`]s a
 /// [`ProviderBuilder::layer`] installed. Fillers sit outside layers, so a layer sees
 /// transactions with their fields already filled in.
 #[derive(Clone)]
