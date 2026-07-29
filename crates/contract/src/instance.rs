@@ -1,4 +1,4 @@
-//! Generic [`ContractInstance`] — a provider-bound handle to any TRON smart contract.
+//! Contract instance.
 
 use alloy_dyn_abi::DynSolValue;
 use alloy_json_abi::JsonAbi;
@@ -110,8 +110,6 @@ impl<P: ContractReadProvider> ContractInstance<P> {
         Self { address, caller: None, provider, interface: Interface::empty() }
     }
 
-    // ── raw calldata ──────────────────────────────────────────────────────────
-
     /// Create a [`CallBuilder`] with pre-encoded `data`.
     ///
     /// Choose `.call().await` for simulation or `.send().await` to broadcast.
@@ -124,8 +122,6 @@ impl<P: ContractReadProvider> ContractInstance<P> {
             None => call,
         }
     }
-
-    // ── dynamic ABI ───────────────────────────────────────────────────────────
 
     /// Create a [`CallBuilder`] for the function named `fn_name` with `args`.
     ///
@@ -147,8 +143,6 @@ impl<P: ContractReadProvider> ContractInstance<P> {
         Ok(self.call_raw(data))
     }
 
-    // ── convenience (dynamic call + immediate decode) ─────────────────────────
-
     /// Simulate a call by function name and return decoded output values.
     pub async fn call(&self, fn_name: &str, args: &[DynSolValue]) -> Result<Vec<DynSolValue>> {
         let output = self.function(fn_name, args)?.call().await?;
@@ -166,7 +160,29 @@ impl<P: ContractReadProvider> ContractInstance<P> {
     }
 }
 
-// ── Extension trait ───────────────────────────────────────────────────────────
+impl<P: TronProvider> ContractInstance<P> {
+    /// Encode and broadcast a state-changing call by function name.
+    ///
+    /// If the ABI contains overloaded functions with this name, the first
+    /// overload is used. Prefer [`send_with_selector`](Self::send_with_selector)
+    /// when the overload must be selected explicitly.
+    pub async fn send(
+        &self,
+        fn_name: &str,
+        args: &[DynSolValue],
+    ) -> Result<tronz_provider::PendingTransaction<P>> {
+        self.function(fn_name, args)?.send().await
+    }
+
+    /// Encode and broadcast a state-changing call selected by its function selector.
+    pub async fn send_with_selector(
+        &self,
+        selector: &Selector,
+        args: &[DynSolValue],
+    ) -> Result<tronz_provider::PendingTransaction<P>> {
+        self.function_from_selector(selector, args)?.send().await
+    }
+}
 
 /// Convenience methods on any [`ContractReadProvider`] for creating contract handles.
 pub trait ContractExt: ContractReadProvider + Sized {
@@ -200,3 +216,26 @@ pub trait ContractExt: ContractReadProvider + Sized {
 }
 
 impl<P: ContractReadProvider> ContractExt for P {}
+
+#[cfg(test)]
+mod tests {
+    use alloy_dyn_abi::DynSolValue;
+
+    use super::*;
+
+    async fn dynamic_send_api_compiles<P: TronProvider>(
+        contract: &ContractInstance<P>,
+        selector: Selector,
+    ) {
+        let args: &[DynSolValue] = &[];
+        let _ = contract.send("run", args).await;
+        let _ = contract.send_with_selector(&selector, args).await;
+    }
+
+    #[test]
+    fn dynamic_send_methods_are_available() {
+        let _ = dynamic_send_api_compiles::<
+            tronz_provider::RootProvider<tronz_provider::transport::mock::MockTransport>,
+        >;
+    }
+}

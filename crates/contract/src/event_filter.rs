@@ -1,13 +1,29 @@
-//! [`TronEventFilter`] — query and decode typed contract events on TRON.
+//! Typed contract event queries.
 
-use std::marker::PhantomData;
+use std::{collections::VecDeque, marker::PhantomData, time::Duration};
 
 use alloy_primitives::B256;
 use alloy_sol_types::SolEvent;
+use futures::{Stream, StreamExt, TryStreamExt, stream};
 use tronz_primitives::{Address, Log, TxId};
-use tronz_provider::{ContractReadProvider, Error as ProviderError};
+use tronz_provider::{ContractReadProvider, Error as ProviderError, TronProvider};
 
 use crate::error::{ContractError, Result};
+
+/// Blocks scanned concurrently by [`TronEventFilter::query_range`].
+const DEFAULT_CONCURRENCY: usize = 8;
+
+/// How long [`EventWatcher::into_stream`] waits after catching up to the head.
+/// TRON produces a block every 3 seconds.
+const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(3);
+
+/// Blocks the watcher trails the head by, so that events are only reported once
+/// they are unlikely to be reverted. TRON solidifies a block after roughly 19.
+const DEFAULT_CONFIRMATIONS: i64 = 19;
+
+/// Blocks a single [`EventWatcher::poll`] may scan, bounding both the number of
+/// requests it makes and the size of the batch it returns.
+const DEFAULT_MAX_BLOCKS_PER_POLL: i64 = 1_000;
 
 /// A typed event filter bound to a specific contract address and provider.
 ///
@@ -17,31 +33,42 @@ use crate::error::{ContractError, Result};
 ///
 /// # Querying
 ///
-/// TRON does not expose an Ethereum-style `eth_getLogs` RPC.  Two query paths
-/// are available:
+/// TRON does not expose an Ethereum-style `eth_getLogs` RPC, so there is no
+/// server-side topic filter and no single call that spans blocks. Logs are read
+/// per transaction or per block and filtered locally:
 ///
 /// | Method | What it scans |
 /// |--------|---------------|
 /// | [`query_tx`](Self::query_tx) | logs emitted by one transaction |
 /// | [`query_block`](Self::query_block) | logs emitted by every transaction in a block |
+/// | [`query_range`](Self::query_range) | a range of blocks, [`concurrency`](Self::concurrency) at a time |
 ///
-/// For a block range, call `query_block` in a loop.
+/// To follow new events instead of scanning history, see [`watch`](Self::watch).
 pub struct TronEventFilter<P, E> {
     provider: P,
     address: Option<Address>,
+    concurrency: usize,
     _event: PhantomData<fn() -> E>,
 }
 
 impl<P: ContractReadProvider, E: SolEvent> TronEventFilter<P, E> {
     /// Create a new filter, optionally restricted to a specific contract address.
     pub fn new(provider: P, address: Option<Address>) -> Self {
-        Self { provider, address, _event: PhantomData }
+        Self { provider, address, concurrency: DEFAULT_CONCURRENCY, _event: PhantomData }
     }
 
     /// Narrow the filter to a specific contract address.
     #[inline]
     pub fn address(mut self, address: Address) -> Self {
         self.address = Some(address);
+        self
+    }
+
+    /// How many blocks [`query_range`](Self::query_range) fetches at a time.
+    /// Values below 1 are treated as 1.
+    #[inline]
+    pub fn concurrency(mut self, blocks: usize) -> Self {
+        self.concurrency = blocks.max(1);
         self
     }
 
@@ -55,7 +82,7 @@ impl<P: ContractReadProvider, E: SolEvent> TronEventFilter<P, E> {
             .ok_or_else(|| {
                 ContractError::Provider(ProviderError::local_usage_str("transaction not found"))
             })?;
-        Ok(self.decode_logs(&info.logs))
+        self.decode_logs(&info.logs)
     }
 
     /// Collect all matching events emitted by any transaction in `block_num`.
@@ -65,22 +92,203 @@ impl<P: ContractReadProvider, E: SolEvent> TronEventFilter<P, E> {
             .transaction_infos_by_block(block_num)
             .await
             .map_err(ContractError::Provider)?;
-        Ok(infos.iter().flat_map(|info| self.decode_logs(&info.logs)).collect())
+        let mut events = Vec::new();
+        for info in &infos {
+            events.extend(self.decode_logs(&info.logs)?);
+        }
+        Ok(events)
     }
 
-    // ── internal ──────────────────────────────────────────────────────────────
+    /// Collect all matching events in the inclusive block range `from..=to`,
+    /// fetching [`concurrency`](Self::concurrency) blocks at a time.
+    ///
+    /// Events are returned in block order. An empty range yields no events.
+    /// Every block in the range costs one request, so prefer a bounded range
+    /// over scanning from genesis.
+    pub async fn query_range(&self, from: i64, to: i64) -> Result<Vec<E>> {
+        if from > to {
+            return Ok(Vec::new());
+        }
+        stream::iter((from..=to).map(|n| self.query_block(n)))
+            .buffered(self.concurrency)
+            .try_fold(Vec::new(), |mut acc, mut batch| async move {
+                acc.append(&mut batch);
+                Ok(acc)
+            })
+            .await
+    }
 
-    fn decode_logs(&self, logs: &[Log]) -> Vec<E> {
+    fn decode_logs(&self, logs: &[Log]) -> Result<Vec<E>> {
         let sig: B256 = E::SIGNATURE_HASH;
         logs.iter()
             .filter(|log| {
-                // both conditions must hold: emitter address (if filtered) and
-                // topic0 matching the event signature hash
+                // Anonymous events have no signature topic.
                 self.address.is_none_or(|a| log.address == a)
-                    && log.topics().first().copied() == Some(sig)
+                    && (E::ANONYMOUS || log.topics().first().copied() == Some(sig))
             })
-            .filter_map(|log| E::decode_raw_log(log.topics().iter().copied(), &log.data).ok())
+            .map(|log| {
+                E::decode_raw_log(log.topics().iter().copied(), &log.data)
+                    .map_err(ContractError::from)
+            })
             .collect()
+    }
+}
+
+impl<P: TronProvider, E: SolEvent> TronEventFilter<P, E> {
+    /// Follow events produced from now on, skipping all history.
+    ///
+    /// The first event surfaces only once the block after the current head has
+    /// gathered enough [`confirmations`](EventWatcher::confirmations), which at
+    /// the default of 19 is about a minute away. Call `confirmations(0)` to
+    /// report straight from the unconfirmed head instead.
+    ///
+    /// Costs one request to read the current height.
+    pub async fn watch(self) -> Result<EventWatcher<P, E>> {
+        let head = self.head().await?;
+        Ok(self.watch_from(head + 1))
+    }
+
+    /// Follow events starting at `block`, replaying anything already produced
+    /// from that height onwards.
+    ///
+    /// A large gap is closed over several polls rather than all at once — see
+    /// [`EventWatcher::max_blocks_per_poll`].
+    pub fn watch_from(self, block: i64) -> EventWatcher<P, E> {
+        EventWatcher {
+            filter: self,
+            next_block: block,
+            confirmations: DEFAULT_CONFIRMATIONS,
+            max_blocks: DEFAULT_MAX_BLOCKS_PER_POLL,
+            interval: DEFAULT_POLL_INTERVAL,
+            caught_up: false,
+        }
+    }
+
+    async fn head(&self) -> Result<i64> {
+        self.provider.get_now_block().await.map(|b| b.number).map_err(ContractError::Provider)
+    }
+}
+
+/// Follows a contract's events by polling for new blocks.
+///
+/// TRON has no log subscription, so this scans every block as it appears. Build
+/// one with [`TronEventFilter::watch`] or
+/// [`TronEventFilter::watch_from`], then either drive it yourself with
+/// [`poll`](Self::poll) or turn it into a stream with
+/// [`into_stream`](Self::into_stream).
+pub struct EventWatcher<P, E> {
+    filter: TronEventFilter<P, E>,
+    next_block: i64,
+    confirmations: i64,
+    max_blocks: i64,
+    interval: Duration,
+    caught_up: bool,
+}
+
+/// The last block a single poll may scan, or `None` when nothing is confirmed
+/// past the cursor yet.
+fn poll_target(next_block: i64, last_confirmed: i64, max_blocks: i64) -> Option<i64> {
+    (last_confirmed >= next_block)
+        .then(|| last_confirmed.min(next_block.saturating_add(max_blocks - 1)))
+}
+
+impl<P: TronProvider, E: SolEvent> EventWatcher<P, E> {
+    /// How far behind the head to stay, so that reverted blocks are not
+    /// reported. Defaults to 19, the point at which TRON solidifies a block.
+    ///
+    /// Set to 0 to report events from the unconfirmed head, which is faster but
+    /// can surface events that never make it into the chain.
+    #[inline]
+    pub fn confirmations(mut self, blocks: i64) -> Self {
+        self.confirmations = blocks.max(0);
+        self
+    }
+
+    /// How far a single [`poll`](Self::poll) may advance, which bounds both the
+    /// requests it makes and the batch it returns. Defaults to 1000; values
+    /// below 1 are treated as 1.
+    ///
+    /// This is what keeps resuming from a long-stale block from turning into one
+    /// enormous scan: the watcher closes the gap a window at a time.
+    #[inline]
+    pub fn max_blocks_per_poll(mut self, blocks: i64) -> Self {
+        self.max_blocks = blocks.max(1);
+        self
+    }
+
+    /// How long [`into_stream`](Self::into_stream) waits once it has caught up.
+    /// Has no effect on [`poll`](Self::poll).
+    #[inline]
+    pub fn poll_interval(mut self, interval: Duration) -> Self {
+        self.interval = interval;
+        self
+    }
+
+    /// The next block this watcher will scan. Persist it to resume later.
+    #[inline]
+    pub fn next_block(&self) -> i64 {
+        self.next_block
+    }
+
+    /// Whether the last [`poll`](Self::poll) reached the confirmed head.
+    ///
+    /// While this is `false` the watcher is still working through a backlog, so
+    /// poll again immediately instead of waiting. An empty batch on its own does
+    /// not mean there is nothing left — a window can simply hold no matching
+    /// event.
+    #[inline]
+    pub fn caught_up(&self) -> bool {
+        self.caught_up
+    }
+
+    /// Scan the next window of confirmed blocks and return the events found.
+    ///
+    /// Advances at most [`max_blocks_per_poll`](Self::max_blocks_per_poll)
+    /// blocks, and returns nothing when no new block is confirmed yet. The
+    /// cursor only moves once a scan succeeds, so a failed poll is safe to retry
+    /// without losing events.
+    pub async fn poll(&mut self) -> Result<Vec<E>> {
+        let last_confirmed = self.filter.head().await? - self.confirmations;
+        let Some(target) = poll_target(self.next_block, last_confirmed, self.max_blocks) else {
+            self.caught_up = true;
+            return Ok(Vec::new());
+        };
+        let events = self.filter.query_range(self.next_block, target).await?;
+        self.next_block = target + 1;
+        self.caught_up = target == last_confirmed;
+        Ok(events)
+    }
+
+    /// Turn the watcher into an endless stream of events, waiting
+    /// [`poll_interval`](Self::poll_interval) whenever it catches up.
+    ///
+    /// A failed poll yields `Err` straight away and is retried one interval
+    /// later, so a node outage neither hides the error nor turns into a hot
+    /// retry loop. The stream never ends on its own; stop by dropping it or
+    /// breaking out of the loop.
+    pub fn into_stream(self) -> impl Stream<Item = Result<E>> + Unpin {
+        Box::pin(stream::unfold(
+            (self, VecDeque::new(), false),
+            |(mut watcher, mut pending, failed)| async move {
+                let mut throttle = failed;
+                loop {
+                    if let Some(event) = pending.pop_front() {
+                        return Some((Ok(event), (watcher, pending, false)));
+                    }
+                    if throttle {
+                        tokio::time::sleep(watcher.interval).await;
+                        throttle = false;
+                    }
+                    match watcher.poll().await {
+                        Ok(batch) if batch.is_empty() && watcher.caught_up => {
+                            tokio::time::sleep(watcher.interval).await;
+                        }
+                        Ok(batch) => pending.extend(batch),
+                        Err(e) => return Some((Err(e), (watcher, pending, true))),
+                    }
+                }
+            },
+        ))
     }
 }
 
@@ -92,8 +300,8 @@ mod tests {
     use super::*;
 
     sol! {
-        // Transfer(address indexed from, address indexed to, uint256 value)
         event Transfer(address indexed from, address indexed to, uint256 value);
+        event AnonymousValue(address indexed who, uint256 value) anonymous;
     }
 
     fn addr(b: u8) -> Address {
@@ -110,7 +318,6 @@ mod tests {
         TronEventFilter::new(RootProvider::new(MockTransport::new()), address)
     }
 
-    // Constructs a valid Transfer log: from/to are indexed (topics), value is data.
     fn transfer_log(contract: Address, from: Address, to: Address, value: u64) -> Log {
         let mut t1 = [0u8; 32];
         t1[12..].copy_from_slice(from.as_evm_bytes());
@@ -126,6 +333,14 @@ mod tests {
         .unwrap()
     }
 
+    fn anonymous_value_log(contract: Address, who: Address, value: u64) -> Log {
+        let mut topic = [0u8; 32];
+        topic[12..].copy_from_slice(who.as_evm_bytes());
+        let mut data = [0u8; 32];
+        data[24..].copy_from_slice(&value.to_be_bytes());
+        Log::new(contract, vec![B256::from(topic)], data.to_vec()).unwrap()
+    }
+
     #[test]
     fn no_address_filter_accepts_any_emitter() {
         let filter = make_filter(None);
@@ -133,7 +348,7 @@ mod tests {
             transfer_log(addr(1), addr(10), addr(11), 1),
             transfer_log(addr(2), addr(10), addr(11), 2),
         ];
-        assert_eq!(filter.decode_logs(&logs).len(), 2);
+        assert_eq!(filter.decode_logs(&logs).unwrap().len(), 2);
     }
 
     #[test]
@@ -144,7 +359,7 @@ mod tests {
             transfer_log(contract, addr(10), addr(11), 100),
             transfer_log(addr(2), addr(10), addr(11), 200),
         ];
-        let events = filter.decode_logs(&logs);
+        let events = filter.decode_logs(&logs).unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].value, alloy_primitives::U256::from(100u64));
     }
@@ -154,21 +369,116 @@ mod tests {
         let filter = make_filter(None);
         let mut log = transfer_log(addr(1), addr(2), addr(3), 42);
         log.topics_mut()[0] = B256::ZERO;
-        assert!(filter.decode_logs(&[log]).is_empty());
+        assert!(filter.decode_logs(&[log]).unwrap().is_empty());
     }
 
     #[test]
     fn no_topics_is_skipped() {
         let filter = make_filter(None);
         let log = Log::new(addr(1), vec![], vec![]).unwrap();
-        assert!(filter.decode_logs(&[log]).is_empty());
+        assert!(filter.decode_logs(&[log]).unwrap().is_empty());
     }
 
     #[test]
-    fn missing_indexed_topic_silently_skipped() {
-        // topic0 matches but from/to topics are absent — decode_raw_log fails.
+    fn anonymous_event_uses_first_topic_as_an_indexed_parameter() {
+        let contract = addr(1);
+        let who = addr(2);
+        let filter = TronEventFilter::<_, AnonymousValue>::new(
+            RootProvider::new(MockTransport::new()),
+            None,
+        );
+        let events = filter.decode_logs(&[anonymous_value_log(contract, who, 42)]).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].who, alloy_primitives::Address::from(who));
+        assert_eq!(events[0].value, alloy_primitives::U256::from(42u64));
+    }
+
+    #[test]
+    fn malformed_anonymous_event_returns_decode_error() {
+        let filter = TronEventFilter::<_, AnonymousValue>::new(
+            RootProvider::new(MockTransport::new()),
+            None,
+        );
+        let log = Log::new(addr(1), vec![], [0u8; 32].to_vec()).unwrap();
+
+        assert!(matches!(filter.decode_logs(&[log]), Err(ContractError::Abi(_))));
+    }
+
+    #[tokio::test]
+    async fn an_inverted_range_yields_nothing_without_asking_the_node() {
+        let filter = make_filter(None);
+        assert!(filter.query_range(10, 9).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failed_poll_leaves_the_cursor_where_it_was() {
+        let mock = MockTransport::new();
+        mock.push_err::<tronz_provider::types::BlockInfo>(
+            "get_now_block",
+            tronz_provider::TransportErrorKind::Custom("offline".into()),
+        );
+        let mut watcher =
+            TronEventFilter::<_, Transfer>::new(RootProvider::new(mock), None).watch_from(100);
+
+        assert!(watcher.poll().await.is_err());
+        assert_eq!(watcher.next_block(), 100, "a retry must not skip block 100");
+    }
+
+    #[tokio::test]
+    async fn the_stream_reports_a_failure_without_waiting_first() {
+        let mock = MockTransport::new();
+        mock.push_err::<tronz_provider::types::BlockInfo>(
+            "get_now_block",
+            tronz_provider::TransportErrorKind::Custom("offline".into()),
+        );
+        let mut stream = TronEventFilter::<_, Transfer>::new(RootProvider::new(mock), None)
+            .watch_from(1)
+            .into_stream();
+
+        assert!(matches!(stream.next().await, Some(Err(_))));
+    }
+
+    #[test]
+    fn watch_from_starts_at_the_given_block() {
+        let watcher = make_filter(None).watch_from(42);
+        assert_eq!(watcher.next_block(), 42);
+    }
+
+    #[test]
+    fn the_knobs_clamp_nonsensical_values() {
+        assert_eq!(make_filter(None).concurrency(0).concurrency, 1);
+        let watcher = make_filter(None).watch_from(0);
+        assert_eq!(watcher.confirmations(-5).confirmations, 0);
+        assert_eq!(make_filter(None).watch_from(0).max_blocks_per_poll(0).max_blocks, 1);
+    }
+
+    #[test]
+    fn nothing_confirmed_past_the_cursor_is_no_work() {
+        assert_eq!(poll_target(100, 99, 1000), None);
+    }
+
+    #[test]
+    fn a_short_backlog_is_scanned_in_one_go() {
+        assert_eq!(poll_target(100, 150, 1000), Some(150));
+        assert_eq!(poll_target(100, 100, 1000), Some(100));
+    }
+
+    #[test]
+    fn a_long_backlog_is_capped_to_one_window() {
+        assert_eq!(poll_target(1, 60_000_000, 1000), Some(1000));
+        assert_eq!(poll_target(1, 60_000_000, 1).unwrap(), 1);
+    }
+
+    #[test]
+    fn a_cursor_near_the_end_of_the_range_does_not_overflow() {
+        assert_eq!(poll_target(i64::MAX - 1, i64::MAX, 1000), Some(i64::MAX));
+    }
+
+    #[test]
+    fn missing_indexed_topic_returns_decode_error() {
         let filter = make_filter(None);
         let log = Log::new(addr(1), vec![Transfer::SIGNATURE_HASH], [0u8; 32].to_vec()).unwrap();
-        assert!(filter.decode_logs(&[log]).is_empty());
+        assert!(matches!(filter.decode_logs(&[log]), Err(ContractError::Abi(_))));
     }
 }

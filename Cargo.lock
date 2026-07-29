@@ -3521,12 +3521,14 @@ dependencies = [
  "alloy-primitives",
  "alloy-sol-macro",
  "alloy-sol-types",
+ "futures",
  "hex",
  "thiserror 2.0.18",
  "tokio",
  "tronz-abi",
  "tronz-primitives",
  "tronz-provider",
+ "tronz-signer",
  "tronz-sol-macro",
 ]
 

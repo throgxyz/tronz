@@ -91,7 +91,6 @@ mod tests {
 
     #[test]
     fn transfer_selector_matches_erc20() {
-        // keccak256("transfer(address,uint256)")[..4] == 0xa9059cbb
         let data = encode_transfer(addr(), U256::from(1u64));
         assert_eq!(&data[..4], &[0xa9, 0x05, 0x9c, 0xbb]);
         assert_eq!(ITRC20::transferCall::SELECTOR, [0xa9, 0x05, 0x9c, 0xbb]);
@@ -99,7 +98,6 @@ mod tests {
 
     #[test]
     fn balance_of_selector() {
-        // keccak256("balanceOf(address)")[..4] == 0x70a08231
         let data = encode_balance_of(addr());
         assert_eq!(&data[..4], &[0x70, 0xa0, 0x82, 0x31]);
     }
@@ -107,8 +105,6 @@ mod tests {
     #[test]
     fn transfer_encodes_evm_address_not_tron() {
         let data = encode_transfer(addr(), U256::from(0u64));
-        // The address argument occupies bytes [4..36]; the low 20 bytes must be
-        // the EVM body (0x41 prefix stripped), left-padded to 32 bytes.
         let arg = &data[4..36];
         assert_eq!(&arg[..12], &[0u8; 12], "address must be left-padded");
         assert_eq!(&arg[12..], addr().as_evm_bytes());
@@ -129,7 +125,6 @@ mod tests {
 
     #[test]
     fn decimals_return_roundtrip() {
-        // abi-encoded uint8 is a left-padded 32-byte word.
         let mut encoded = [0u8; 32];
         encoded[31] = 6;
         assert_eq!(decode_decimals_return(&encoded).unwrap(), 6u8);

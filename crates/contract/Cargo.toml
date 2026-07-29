@@ -24,6 +24,8 @@ alloy-sol-macro  = { workspace = true }
 alloy-dyn-abi    = { workspace = true, optional = true }
 alloy-json-abi   = { workspace = true, optional = true }
 thiserror        = { workspace = true, optional = true }
+futures          = { workspace = true, optional = true }
+tokio            = { workspace = true, optional = true }
 
 [features]
 # Provider-bound contract instances: ContractInstance, Trc20Instance, etc.
@@ -34,6 +36,8 @@ provider = [
     "dep:alloy-primitives",
     "dep:alloy-dyn-abi",
     "dep:alloy-json-abi",
+    "dep:futures",
+    "dep:tokio",
 ]
 
 [dev-dependencies]
@@ -41,3 +45,5 @@ hex            = { workspace = true }
 alloy-primitives = { workspace = true }
 tokio          = { workspace = true }
 tronz-provider = { workspace = true, features = ["mock"] }
+tronz-signer   = { workspace = true }
+futures        = { workspace = true }

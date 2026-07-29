@@ -2,26 +2,9 @@
 //!
 //! # Static decoding
 //!
-//! When you have a `sol!`-generated event type, use the free functions:
-//!
-//! ```ignore
-//! use alloy_sol_types::sol;
-//! use tronz_contract::event::{decode_log, decode_logs, log_matches};
-//!
-//! sol! {
-//!     event Transfer(address indexed from, address indexed to, uint256 value);
-//! }
-//!
-//! // Check whether a log matches before decoding
-//! if log_matches::<Transfer>(&log) {
-//!     let Transfer { from, to, value } = decode_log::<Transfer>(&log)?;
-//! }
-//!
-//! // Or decode all matching logs from a receipt in one pass
-//! for transfer in decode_logs::<Transfer>(&receipt.logs) {
-//!     let Transfer { from, to, value } = transfer?;
-//! }
-//! ```
+//! When you have a `sol!`-generated event type, use the free functions
+//! [`log_matches`] and [`decode_log`] for a single log, or [`decode_logs`] to
+//! walk a receipt in one pass.
 //!
 //! # Dynamic decoding
 //!
@@ -59,6 +42,28 @@ pub fn log_matches<E: SolEvent>(log: &Log) -> bool {
 ///
 /// Logs that do not match the event signature are silently skipped.
 /// Logs that match but fail to decode yield an `Err`.
+///
+/// ```
+/// use alloy_sol_types::sol;
+/// use tronz_contract::event::{decode_log, decode_logs, log_matches};
+///
+/// sol! {
+///     event Transfer(address indexed from, address indexed to, uint256 value);
+/// }
+///
+/// # fn run(log: &tronz_primitives::Log, logs: &[tronz_primitives::Log])
+/// # -> tronz_contract::Result<()> {
+/// // Decode every matching log in a receipt
+/// for transfer in decode_logs::<Transfer>(logs) {
+///     let Transfer { from, to, value } = transfer?;
+/// }
+///
+/// // Or check a single log before decoding it
+/// if log_matches::<Transfer>(log) {
+///     let Transfer { from, to, value } = decode_log::<Transfer>(log)?;
+/// }
+/// # Ok(()) }
+/// ```
 #[cfg(feature = "provider")]
 pub fn decode_logs<'a, E: SolEvent + 'a>(logs: &'a [Log]) -> impl Iterator<Item = Result<E>> + 'a {
     logs.iter().filter(|log| log_matches::<E>(log)).map(decode_log::<E>)

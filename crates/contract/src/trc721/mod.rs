@@ -15,7 +15,6 @@ use tronz_primitives::{Address, Bytes, U256};
 sol! {
     #[derive(Debug, PartialEq, Eq)]
     interface ITRC721 {
-        // ── Core ERC721 ──────────────────────────────────────────────────────
         function balanceOf(address owner)                                    external view returns (uint256);
         function ownerOf(uint256 tokenId)                                    external view returns (address);
         function transferFrom(address from, address to, uint256 tokenId)     external;
@@ -26,12 +25,10 @@ sol! {
         function safeTransferFrom(address from, address to, uint256 tokenId) external;
         function safeTransferFrom(address from, address to, uint256 tokenId, bytes data) external;
 
-        // ── ERC721Metadata ───────────────────────────────────────────────────
         function name()                         external view returns (string);
         function symbol()                       external view returns (string);
         function tokenURI(uint256 tokenId)      external view returns (string);
 
-        // ── Events ───────────────────────────────────────────────────────────
         event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
         event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
         event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
@@ -50,6 +47,19 @@ pub fn encode_transfer_from(from: Address, to: Address, token_id: U256) -> Bytes
 pub fn encode_safe_transfer_from(from: Address, to: Address, token_id: U256) -> Bytes {
     use alloy_sol_types::SolCall as _;
     ITRC721::safeTransferFrom_0Call { from: from.into(), to: to.into(), tokenId: token_id }
+        .abi_encode()
+        .into()
+}
+
+/// ABI-encode the `safeTransferFrom(from, to, tokenId, data)` overload.
+pub fn encode_safe_transfer_from_with_data(
+    from: Address,
+    to: Address,
+    token_id: U256,
+    data: Bytes,
+) -> Bytes {
+    use alloy_sol_types::SolCall as _;
+    ITRC721::safeTransferFrom_1Call { from: from.into(), to: to.into(), tokenId: token_id, data }
         .abi_encode()
         .into()
 }
@@ -108,25 +118,28 @@ mod tests {
 
     #[test]
     fn transfer_from_selector() {
-        // keccak256("transferFrom(address,address,uint256)")[..4] == 0x23b872dd
         assert_eq!(ITRC721::transferFromCall::SELECTOR, [0x23, 0xb8, 0x72, 0xdd]);
     }
 
     #[test]
     fn safe_transfer_from_selector() {
-        // keccak256("safeTransferFrom(address,address,uint256)")[..4] == 0x42842e0e
         assert_eq!(ITRC721::safeTransferFrom_0Call::SELECTOR, [0x42, 0x84, 0x2e, 0x0e]);
     }
 
     #[test]
+    fn safe_transfer_from_with_data_selector() {
+        let data = encode_safe_transfer_from_with_data(addr(), addr(), U256::ZERO, Bytes::new());
+        assert_eq!(&data[..4], &[0xb8, 0x8d, 0x4f, 0xde]);
+        assert_eq!(ITRC721::safeTransferFrom_1Call::SELECTOR, [0xb8, 0x8d, 0x4f, 0xde]);
+    }
+
+    #[test]
     fn balance_of_selector() {
-        // keccak256("balanceOf(address)")[..4] == 0x70a08231
         assert_eq!(ITRC721::balanceOfCall::SELECTOR, [0x70, 0xa0, 0x82, 0x31]);
     }
 
     #[test]
     fn owner_of_selector() {
-        // keccak256("ownerOf(uint256)")[..4] == 0x6352211e
         assert_eq!(ITRC721::ownerOfCall::SELECTOR, [0x63, 0x52, 0x21, 0x1e]);
     }
 

@@ -1,4 +1,5 @@
-#![doc = include_str!("../README.md")]
+#![cfg_attr(not(doctest), doc = include_str!("../README.md"))]
+#![cfg_attr(all(doctest, feature = "provider"), doc = include_str!("../README.md"))]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
@@ -64,7 +65,7 @@ pub use sol_call::TronCallBuilder;
 #[cfg(feature = "provider")]
 mod event_filter;
 #[cfg(feature = "provider")]
-pub use event_filter::TronEventFilter;
+pub use event_filter::{EventWatcher, TronEventFilter};
 
 /// Internal re-exports referenced by [`tron_sol!`]-generated code. Not a stable API.
 #[cfg(feature = "provider")]

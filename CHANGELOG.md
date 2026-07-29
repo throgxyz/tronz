@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AwsSigner::sign_digest`, `sign_digest_with_key`, and an `aws_sdk_kms` re-export.
 - `tronz::tron_sol!` at the facade root, matching `alloy::sol!`.
 - `TronAbi` lookups (`functions`, `functions_by_name`, …) and `TronAbiEntry::signature`.
+- Event ranges via `TronEventFilter::query_range`, and `watch` for an `EventWatcher` stream.
 - PBKDF2-HMAC-SHA256 keystore decryption.
 - `ProviderBuilder::connect_grpc` and `connect_grpc_with_key`.
 - More conversions for `Address`, `RecoverableSignature`, `Log`, and `ResourceCode`.
@@ -27,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keystore decryption rejects an invalid `dklen` instead of panicking.
 - `tron_sol!` matches `sol!` on parameter types, attribute passthrough, and name resolution.
 - `tron_sol!` reads the bytecode carried by a Forge artifact, enabling `deploy` from it.
+- Contract calls support a per-transaction `fee_limit`, including typed `tron_sol!` calls.
+- Dynamic contract instances provide `send` and `send_with_selector` convenience methods.
+- Typed event queries report matching-log decode failures instead of silently dropping them.
+- Typed event filters support Solidity anonymous events, whose first topic is an indexed argument.
+- TRC20/TRC721 convenience instances expose typed `*_call` builders for fee limits,
+  energy estimation, unsigned builds, and multisig permissions.
+- TRC721 bindings include the four-argument `safeTransferFrom` overload with callback data.
 
 ### Changed (Breaking)
 

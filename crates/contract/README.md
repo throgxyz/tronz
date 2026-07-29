@@ -18,18 +18,29 @@ bindings from Solidity syntax or a JSON ABI.
 
 Load a JSON ABI at runtime and call any function by name:
 
-```rust,ignore
-use tronz_contract::{Interface, JsonAbi, instance::ContractExt};
+```rust,no_run
+use tronz_contract::{ContractExt as _, Interface, JsonAbi};
 
-let abi: JsonAbi = serde_json::from_str(ABI_JSON).unwrap();
-let contract = provider.contract(address, abi.into()).caller(account);
+# use alloy_dyn_abi::DynSolValue;
+# use tronz_primitives::{Address, U256};
+# async fn run(
+#     provider: impl tronz_provider::TronProvider + Clone,
+#     abi: JsonAbi,
+#     address: Address,
+#     account: Address,
+#     to: Address,
+#     amount: U256,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+let contract = provider.contract(address, Interface::new(abi)).caller(account);
 
 // read-only call
-let values = contract.call("balanceOf", &[account.into()]).await?;
+let values = contract.call("balanceOf", &[DynSolValue::Address(account.into())]).await?;
 
 // state-changing call
-let pending = contract.send("transfer", &[to.into(), amount.into()]).await?;
+let args = [DynSolValue::Address(to.into()), DynSolValue::Uint(amount, 256)];
+let pending = contract.send("transfer", &args).await?;
 let receipt = pending.get_receipt().await?;
+# Ok(()) }
 ```
 
 ## Deploying with ABI metadata
@@ -37,26 +48,34 @@ let receipt = pending.get_receipt().await?;
 `DeployBuilder` accepts Alloy's typed `JsonAbi` and converts it to native
 `TronAbi` metadata before sending the protobuf request:
 
-```rust,ignore
+```rust,no_run
 use tronz_contract::{ContractExt as _, JsonAbi};
 
-let abi: JsonAbi = serde_json::from_str(ABI_JSON)?;
-let pending = provider
-    .deploy(bytecode)
-    .abi(abi)
-    .name("MyContract")
-    .send()
-    .await?;
+# use tronz_primitives::Bytes;
+# async fn run(
+#     provider: impl tronz_provider::TronProvider + Clone,
+#     abi: JsonAbi,
+#     bytecode: Bytes,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+let pending = provider.deploy(bytecode).abi(abi).name("MyContract").send().await?;
+# Ok(()) }
 ```
 
 Provider queries return native `TronAbi` so all node metadata remains readable,
 including unknown entry types and incomplete tuples. Convert explicitly when a
 dynamic Alloy interface is needed:
 
-```rust,ignore
+```rust,no_run
+# use tronz_contract::{ContractExt as _, Interface};
+# use tronz_primitives::Address;
+# async fn run(
+#     provider: impl tronz_provider::TronProvider + Clone,
+#     address: Address,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let info = provider.get_contract_info(address).await?;
 let json_abi = info.abi.try_to_json_abi()?;
 let contract = provider.contract(address, Interface::new(json_abi));
+# Ok(()) }
 ```
 
 Use `.tron_abi(abi)` instead of `.abi(abi)` to deploy already-native metadata
@@ -68,7 +87,19 @@ Contract calls and deployments expose the same unsigned transaction flow as
 provider builders. Set the multisig account and active permission, then call
 `.build()` to collect the required signatures before broadcasting:
 
-```rust,ignore
+```rust,no_run
+# use tronz_contract::ContractInstance;
+# use tronz_primitives::{Address, Bytes};
+# use tronz_provider::{TronProvider, types::SignedTransaction};
+# use tronz_signer::{TronNetworkWallet, TronWallet};
+# async fn run(
+#     provider: impl TronProvider + Clone,
+#     contract: ContractInstance<impl TronProvider + Clone>,
+#     calldata: Bytes,
+#     multisig_account: Address,
+#     wallet: TronWallet,
+#     keys: Vec<Address>,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let raw = contract
     .call_raw(calldata)
     .caller(multisig_account)
@@ -79,6 +110,7 @@ let raw = contract
 let signatures = wallet.sign_hash_with_many(&keys, &raw.tx_id()).await?;
 let signed = SignedTransaction { raw, signatures };
 provider.broadcast(signed).await?;
+# Ok(()) }
 ```
 
 For deployments, use `.from(multisig_account).permission_id(2).build()`.
@@ -88,25 +120,64 @@ For deployments, use `.from(multisig_account).permission_id(2).build()`.
 
 Use the typed wrappers for well-known standards:
 
-```rust,ignore
+```rust,no_run
 use tronz_contract::trc20::Trc20Ext;
 
+# use tronz_primitives::{Address, U256};
+# async fn run(
+#     provider: impl tronz_provider::TronProvider + Clone,
+#     usdt_address: Address,
+#     my_address: Address,
+#     recipient: Address,
+#     amount: U256,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let token = provider.trc20(usdt_address).caller(my_address);
 println!("name    : {}", token.name().await?);
 println!("balance : {}", token.balance_of(my_address).await?);
 
 let pending = token.transfer(recipient, amount).await?;
 let receipt = pending.get_receipt().await?;
+# Ok(()) }
+```
+
+Every convenience method also has a typed `*_call` form when the transaction
+needs configuration or an unsigned build:
+
+```rust,no_run
+# use tronz_contract::trc20::Trc20Ext;
+# use tronz_primitives::{Address, U256, parse_trx};
+# async fn run(
+#     provider: impl tronz_provider::TronProvider + Clone,
+#     usdt_address: Address,
+#     recipient: Address,
+#     amount: U256,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+# let token = provider.trc20(usdt_address);
+let raw = token
+    .transfer_call(recipient, amount)
+    .fee_limit(parse_trx("100")?)
+    .permission_id(2)
+    .build()
+    .await?;
+# Ok(()) }
 ```
 
 `Trc721Instance` provides the equivalent typed interface for NFT metadata,
 ownership, transfers, approvals, and operators:
 
-```rust,ignore
+```rust,no_run
 use tronz_contract::trc721::Trc721Ext;
 
+# use tronz_primitives::{Address, U256};
+# async fn run(
+#     provider: impl tronz_provider::ContractReadProvider + Clone,
+#     contract_address: Address,
+#     my_address: Address,
+#     token_id: U256,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let nft = provider.trc721(contract_address).caller(my_address);
 let owner = nft.owner_of(token_id).await?;
+# Ok(()) }
 ```
 
 ### Reading solidified contract state
@@ -115,11 +186,19 @@ The same contract bindings accept a read-only `SolidityProvider`. Set a caller
 when no signer-backed FullNode provider is attached so contracts that inspect
 `msg.sender` execute with the intended address:
 
-```rust,ignore
+```rust,no_run
 use tronz_contract::trc20::Trc20Ext;
 
+# use tronz_primitives::Address;
+# use tronz_provider::{SolidityProvider, transport::SolidityTransport};
+# async fn run(
+#     solidity_provider: SolidityProvider<impl SolidityTransport>,
+#     usdt_address: Address,
+#     my_address: Address,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let token = solidity_provider.trc20(usdt_address).caller(my_address);
 let balance = token.balance_of(my_address).await?;
+# Ok(()) }
 ```
 
 Constant calls, energy estimation, and event queries are available over either
@@ -130,21 +209,78 @@ provider. Sending and deploying still require a signer-backed `TronProvider`.
 `tron_sol!` accepts Solidity syntax or a JSON ABI path and generates typed call
 and event builders bound to a TRON provider:
 
-```rust,ignore
+```rust,no_run
 use tronz_contract::tron_sol;
 
 tron_sol! {
     #[sol(rpc)]
+#   #[tron_sol(tronz_crate = ::tronz_contract)]
     interface IToken {
         function balanceOf(address owner) external view returns (uint256);
         event Transfer(address indexed from, address indexed to, uint256 value);
     }
 }
 
+# use tronz_primitives::Address;
+# async fn run(
+#     provider: impl tronz_provider::TronProvider + Clone,
+#     contract_address: Address,
+#     my_address: Address,
+#     owner: Address,
+#     block_number: i64,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let token = IToken::new(contract_address, provider).caller(my_address);
-let balance = token.balance_of(owner).call().await?;
+let balance = token.balanceOf(owner).call().await?;
 let transfers = token.Transfer_filter().query_block(block_number).await?;
+# Ok(()) }
+# fn main() {}
 ```
+
+## Events
+
+TRON has no `eth_getLogs` and no log subscription, so logs are read per
+transaction or per block and filtered locally. `query_range` walks a block range
+concurrently, and `watch` follows the chain by polling:
+
+```rust,no_run
+use futures::StreamExt;
+
+# use tronz_contract::tron_sol;
+# tron_sol! {
+#     #[sol(rpc)]
+#     #[tron_sol(tronz_crate = ::tronz_contract)]
+#     interface IToken {
+#         event Transfer(address indexed from, address indexed to, uint256 value);
+#     }
+# }
+# use tronz_primitives::Address;
+# async fn run(
+#     provider: impl tronz_provider::TronProvider + Clone,
+#     contract_address: Address,
+#     from: i64,
+#     to: i64,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+# let token = IToken::new(contract_address, provider);
+// Scan history, eight blocks at a time.
+let past = token.Transfer_filter().concurrency(8).query_range(from, to).await?;
+
+// Follow new transfers, trailing the head far enough to skip reverted blocks.
+let mut stream = token.Transfer_filter().watch().await?.into_stream();
+while let Some(transfer) = stream.next().await {
+    let transfer = transfer?;
+    println!("{} -> {}: {}", transfer.from, transfer.to, transfer.value);
+}
+# Ok(()) }
+# fn main() {}
+```
+
+The watcher defaults to 19 confirmations, the point at which TRON solidifies a
+block. Drive it with [`EventWatcher::poll`] instead of a stream to control the
+pacing yourself or to persist [`EventWatcher::next_block`] and resume later.
+
+Resuming from a stale block is safe: each poll advances at most
+[`EventWatcher::max_blocks_per_poll`] blocks, so a long backlog is closed one
+window at a time rather than in a single unbounded scan.
 
 ## Crate layout
 

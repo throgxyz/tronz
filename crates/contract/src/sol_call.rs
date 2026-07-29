@@ -1,4 +1,4 @@
-//! [`TronCallBuilder`] — a typed contract call produced by [`tron_sol!`].
+//! Typed contract call builder.
 //!
 //! Wraps a raw [`CallBuilder`] together with the originating [`SolCall`] type so
 //! that [`call`](TronCallBuilder::call) can decode the return value into the
@@ -56,6 +56,12 @@ impl<P: ContractReadProvider, C: SolCall> TronCallBuilder<P, C> {
     #[inline]
     pub fn caller(self, caller: Address) -> Self {
         Self { inner: self.inner.caller(caller), _call: PhantomData }
+    }
+
+    /// Override the energy fee limit for this transaction.
+    #[inline]
+    pub fn fee_limit(self, limit: Trx) -> Self {
+        Self { inner: self.inner.fee_limit(limit), _call: PhantomData }
     }
 
     /// Estimate the energy this call would consume.

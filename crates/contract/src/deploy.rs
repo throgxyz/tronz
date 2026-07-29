@@ -1,4 +1,4 @@
-//! [`DeployBuilder`] — a lazy smart-contract deployment transaction.
+//! Contract deployment builder.
 //!
 //! Mirrors the role of alloy's `ContractDeployer`: wraps a
 //! [`CreateSmartContract`] request with a fluent builder API.
@@ -167,9 +167,6 @@ impl<P: TronProvider> DeployBuilder<P> {
     /// use [`send`](Self::send) instead.
     pub async fn deploy(self) -> Result<Address> {
         let pending = self.send().await?;
-        // `?` uses `From<PendingTransactionError> for ContractError`:
-        // Transport errors → ContractError::Provider,
-        // timeout → ContractError::ConfirmationTimeout.
         let info = pending.get_receipt().await?;
         info.contract_address.ok_or(ContractError::ContractNotDeployed)
     }

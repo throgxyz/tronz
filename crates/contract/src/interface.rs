@@ -1,4 +1,4 @@
-//! [`Interface`] — a parsed JSON ABI with O(1) selector lookup.
+//! Dynamic contract interface.
 
 use std::collections::HashMap;
 
@@ -19,12 +19,15 @@ use crate::{
 ///
 /// Construct from a [`JsonAbi`]:
 ///
-/// ```ignore
+/// ```
 /// use alloy_json_abi::JsonAbi;
 /// use tronz_contract::Interface;
 ///
-/// let abi: JsonAbi = serde_json::from_str(r#"[...]"#).unwrap();
+/// let abi = JsonAbi::parse(["function balanceOf(address owner) returns (uint256)"])?;
 /// let interface = Interface::new(abi);
+///
+/// assert_eq!(interface.abi().functions().count(), 1);
+/// # Ok::<(), alloy_json_abi::parser::Error>(())
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct Interface {
@@ -64,8 +67,6 @@ impl Interface {
         self.abi
     }
 
-    // ── encode ────────────────────────────────────────────────────────────────
-
     /// ABI-encode the inputs for the function named `fn_name`.
     pub fn encode_input(&self, fn_name: &str, args: &[DynSolValue]) -> Result<Bytes> {
         Ok(self.get_by_name(fn_name)?.abi_encode_input(args)?.into())
@@ -80,8 +81,6 @@ impl Interface {
         Ok(self.get_by_selector(selector)?.abi_encode_input(args)?.into())
     }
 
-    // ── decode input ──────────────────────────────────────────────────────────
-
     /// ABI-decode the calldata (without the 4-byte selector) for `fn_name`.
     pub fn decode_input(&self, fn_name: &str, data: &[u8]) -> Result<Vec<DynSolValue>> {
         Ok(self.get_by_name(fn_name)?.abi_decode_input(data)?)
@@ -95,8 +94,6 @@ impl Interface {
     ) -> Result<Vec<DynSolValue>> {
         Ok(self.get_by_selector(selector)?.abi_decode_input(data)?)
     }
-
-    // ── decode output ─────────────────────────────────────────────────────────
 
     /// ABI-decode the return data for `fn_name`.
     pub fn decode_output(&self, fn_name: &str, data: &[u8]) -> Result<Vec<DynSolValue>> {
@@ -115,8 +112,6 @@ impl Interface {
         let name = f.name.as_str();
         f.abi_decode_output(data).map_err(|e| ContractError::decode_err(name, data, e))
     }
-
-    // ── decode log ────────────────────────────────────────────────────────────
 
     /// Decode a [`Log`] dynamically using the ABI.
     ///
@@ -151,8 +146,6 @@ impl Interface {
         })
     }
 
-    // ── connect ───────────────────────────────────────────────────────────────
-
     /// Bind this interface to a contract at `address`, returning a [`ContractInstance`].
     ///
     /// Equivalent to `ContractInstance::new(address, provider, interface)`.
@@ -162,8 +155,6 @@ impl Interface {
     {
         ContractInstance::new(address, provider, self)
     }
-
-    // ── internal ──────────────────────────────────────────────────────────────
 
     pub(crate) fn get_by_name(&self, name: &str) -> Result<&Function> {
         self.abi

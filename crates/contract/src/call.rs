@@ -1,4 +1,4 @@
-//! [`CallBuilder`] — a lazy contract call that can be simulated or broadcast.
+//! Contract call builder.
 
 use tronz_primitives::{Address, Bytes, Trx};
 use tronz_provider::{
@@ -15,21 +15,25 @@ use crate::error::{ContractError, Result};
 ///
 /// Optionally attach TRX or TRC10 tokens before executing:
 ///
-/// ```ignore
+/// ```no_run
 /// use tronz_primitives::parse_trx;
 ///
+/// # use tronz_contract::ContractInstance;
+/// # use tronz_primitives::{Address, Bytes};
+/// # async fn run(
+/// #     contract: ContractInstance<impl tronz_provider::TronProvider + Clone>,
+/// #     calldata: Bytes,
+/// #     caller: Address,
+/// # ) -> Result<(), Box<dyn std::error::Error>> {
 /// // Read-only simulation (trigger_constant_contract)
-/// let output = contract.call_raw(calldata).caller(caller).call().await?;
+/// let output = contract.call_raw(calldata.clone()).caller(caller).call().await?;
 ///
 /// // State-changing broadcast (trigger_smart_contract → sign → broadcast)
-/// let pending = contract.call_raw(calldata).send().await?;
+/// let pending = contract.call_raw(calldata.clone()).send().await?;
 ///
 /// // Payable call — send 1 TRX alongside
-/// let pending = contract
-///     .call_raw(calldata)
-///     .value(parse_trx("1")?)
-///     .send()
-///     .await?;
+/// let pending = contract.call_raw(calldata).value(parse_trx("1")?).send().await?;
+/// # Ok(()) }
 /// ```
 ///
 /// [`ContractInstance::call_raw`]: crate::instance::ContractInstance::call_raw
@@ -44,6 +48,7 @@ pub struct CallBuilder<P> {
     call_value: Trx,
     call_token_value: Trx,
     token_id: i64,
+    fee_limit: Option<Trx>,
     permission_id: Option<i32>,
 }
 
@@ -57,6 +62,7 @@ impl<P: ContractReadProvider> CallBuilder<P> {
             call_value: Trx::ZERO,
             call_token_value: Trx::ZERO,
             token_id: 0,
+            fee_limit: None,
             permission_id: None,
         }
     }
@@ -80,6 +86,18 @@ impl<P: ContractReadProvider> CallBuilder<P> {
     #[inline]
     pub fn caller(mut self, caller: Address) -> Self {
         self.caller = Some(caller);
+        self
+    }
+
+    /// Override the energy fee limit for this transaction.
+    ///
+    /// If not set, the provider's [`FeeLimitFiller`] supplies its configured
+    /// default when the transaction is built or sent.
+    ///
+    /// [`FeeLimitFiller`]: tronz_provider::fillers::FeeLimitFiller
+    #[inline]
+    pub fn fee_limit(mut self, limit: Trx) -> Self {
+        self.fee_limit = Some(limit);
         self
     }
 
@@ -146,7 +164,7 @@ impl<P: TronProvider> CallBuilder<P> {
             .ok_or_else(ProviderError::no_signer)
             .map_err(ContractError::Provider)?;
 
-        Ok(TransactionRequest {
+        let mut request = TransactionRequest {
             contract: Some(ContractType::TriggerSmartContract(TriggerSmartContract {
                 owner_address: owner,
                 contract_address: self.address,
@@ -157,7 +175,11 @@ impl<P: TronProvider> CallBuilder<P> {
             })),
             permission_id: self.permission_id,
             ..Default::default()
-        })
+        };
+        if let Some(limit) = self.fee_limit {
+            request = request.with_fee_limit(limit);
+        }
+        Ok(request)
     }
 
     /// Execute as a **state-changing call** (`trigger_smart_contract`).
@@ -173,5 +195,25 @@ impl<P: TronProvider> CallBuilder<P> {
     pub async fn build(self) -> Result<RawTransaction> {
         let provider = self.provider.clone();
         Ok(provider.build_transaction(self.into_request()?).await?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tronz_provider::{RootProvider, transport::mock::MockTransport};
+
+    use super::*;
+
+    #[test]
+    fn fee_limit_is_written_to_transaction_request() {
+        let provider = RootProvider::new(MockTransport::new());
+        let limit = Trx::from_sun(42_000_000).unwrap();
+        let request = CallBuilder::new(provider, Address::ZERO, Bytes::new())
+            .caller(Address::ZERO)
+            .fee_limit(limit)
+            .into_request()
+            .unwrap();
+
+        assert_eq!(request.fee_limit, Some(limit));
     }
 }
