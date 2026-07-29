@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2](https://github.com/throgxyz/tronz/compare/v0.4.1...v0.4.2) - 2026-07-29
+
+### Added
+
+- *(tronz)* restructure facade re-exports and the full feature
+- *(signer)* align signer APIs with Alloy
+- add Alloy-style wallets and TRON multisig support
+- align public API with alloy conventions
+- *(signer)* add signMessageV2-compatible message signing
+- *(abi)* add ABI lookup and signature helpers
+- *(contract)* add event range queries and a polling watcher
+
+### Fixed
+
+- *(sol-macro)* align tron_sol! with sol! on types, attributes, and artifacts
+
+### Other
+
+- fix examples link and tidy v0.4.1 changelog
+- streamline lint allowances and documentation
+- add gRPC codec tests, fixture replay, and coverage CI
+
 ### Added
 
 - `TronNetworkWallet` and `TronWallet`: multi-credential wallets with key routing.
