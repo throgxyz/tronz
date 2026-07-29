@@ -13,6 +13,7 @@ changelog_include = [
     "tronz-contract",
     "tronz-primitives",
     "tronz-provider",
+    "tronz-rpc-types",
     "tronz-signer",
     "tronz-signer-aws",
     "tronz-sol-macro",

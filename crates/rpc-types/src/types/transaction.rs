@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use tronz_primitives::{Bytes, RecoverableSignature, Trx, TxId};
 
-use crate::types::{BlockInfo, contract::ContractType};
+use crate::{
+    ResponseError,
+    types::{BlockInfo, contract::ContractType},
+};
 
 /// Builder-stage transaction: all fields optional, filled progressively by
 /// fillers before being finalized into a [`RawTransaction`].
@@ -18,8 +21,6 @@ pub struct TransactionRequest {
     pub memo: Option<Bytes>,
     /// Permission id for multisig (`Contract.Permission_id`).
     pub permission_id: Option<i32>,
-
-    // --- set by TaposFiller (only needed for client-built txs) ---
     /// Last 2 bytes of the reference block number.
     pub ref_block_bytes: Option<[u8; 2]>,
     /// Bytes 8..16 of the reference block hash.
@@ -60,14 +61,12 @@ impl TransactionRequest {
         self
     }
 
-    /// Fill TAPOS fields directly from a known block, bypassing [`TaposFiller`].
+    /// Fill TAPOS fields directly from a known block, bypassing `TaposFiller`.
     ///
     /// Use this when the caller already has a [`BlockInfo`] in hand — for
     /// example, an indexer that fetched the block to process it — so that no
-    /// additional `get_now_block` network call is needed.  [`TaposFiller`] will
+    /// additional `get_now_block` network call is needed. `TaposFiller` will
     /// detect that the fields are already set and skip its own fetch.
-    ///
-    /// [`TaposFiller`]: crate::fillers::TaposFiller
     pub fn with_tapos(mut self, block: &BlockInfo, expiry: Duration) -> Self {
         self.ref_block_bytes = Some(block.ref_block_bytes());
         self.ref_block_hash = Some(block.ref_block_hash());
@@ -88,34 +87,54 @@ pub struct RawTransaction {
     pub expiration: i64,
     /// Creation timestamp (unix ms).
     pub timestamp: i64,
-
-    // --- internal transport fields ---
     /// `sha256(prost_encode(Transaction.raw))` — the exact bytes to sign.
-    pub(crate) tx_id: TxId,
+    ///
+    /// Private, and derived rather than assigned: see [`Self::from_node_encoded`].
+    tx_id: TxId,
     /// Prost-encoded `Transaction` (no signatures yet). Used to build the
     /// broadcast message by appending signatures.
-    pub(crate) raw_proto: Bytes,
+    raw_proto: Bytes,
 }
 
 impl RawTransaction {
-    /// Construct from a `TransactionExtention` returned by the node.
-    pub(crate) fn from_proto_extention(
-        txid: Vec<u8>,
-        raw_proto: impl Into<Bytes>,
-        expiration: i64,
-        timestamp: i64,
-    ) -> Result<Self, crate::error::TransportErrorKind> {
-        use crate::error::TransportErrorKind;
+    /// Construct from the encoded `Transaction` a node built.
+    ///
+    /// The id is always computed here, from the bytes that will actually be
+    /// broadcast — never taken from the node. A node that also states an id must
+    /// agree with that computation, otherwise the signature would cover one
+    /// transaction while another went out on the wire, which is exactly the
+    /// signature the caller never agreed to give. Pass an empty `claimed_tx_id`
+    /// when the response carries no id of its own.
+    ///
+    /// Public because the transport crates construct these, hidden because they
+    /// are the only callers. It cannot be used to smuggle in an id of one's
+    /// choosing: the id is derived from `encoded` on every call.
+    #[doc(hidden)]
+    pub fn from_node_encoded(
+        encoded: impl Into<Bytes>,
+        claimed_tx_id: &[u8],
+    ) -> Result<Self, ResponseError> {
+        use prost::Message as _;
+        use sha2::{Digest, Sha256};
 
-        let tx_id_bytes: [u8; 32] = txid
-            .try_into()
-            .map_err(|_| TransportErrorKind::Malformed("txid must be 32 bytes".into()))?;
+        let raw_proto = encoded.into();
+        let raw_data = crate::proto::Transaction::decode(raw_proto.as_ref())?
+            .raw_data
+            .ok_or_else(|| ResponseError::Malformed("transaction has no raw_data".into()))?;
+
+        let tx_id_bytes: [u8; 32] = Sha256::digest(raw_data.encode_to_vec()).into();
+
+        if !claimed_tx_id.is_empty() && claimed_tx_id != tx_id_bytes {
+            return Err(ResponseError::Malformed(
+                "node txid does not match the transaction it returned".into(),
+            ));
+        }
 
         Ok(Self {
-            expiration,
-            timestamp,
+            expiration: raw_data.expiration,
+            timestamp: raw_data.timestamp,
             tx_id: TxId::from(tx_id_bytes),
-            raw_proto: raw_proto.into(),
+            raw_proto,
         })
     }
 
@@ -124,16 +143,29 @@ impl RawTransaction {
         self.tx_id
     }
 
+    /// The encoded `Transaction`, without signatures.
+    ///
+    /// These are the bytes [`Self::tx_id`] is derived from, and the ones a
+    /// transport appends signatures to in order to broadcast.
+    #[doc(hidden)]
+    pub fn encoded(&self) -> &[u8] {
+        self.raw_proto.as_ref()
+    }
+
     /// Apply fee, memo, permission, and optional TAPOS overrides from a filled
-    /// [`TransactionRequest`] to this raw transaction.
+    /// [`TransactionRequest`] to this raw transaction, and re-derive its id.
     ///
     /// When any field is set, the `Transaction.raw` proto bytes are decoded,
     /// modified, and re-encoded; the `tx_id` (`sha256` of the new raw bytes) is
     /// recomputed so that the signature covers the updated payload.
-    pub(crate) fn apply_request_fields(
+    ///
+    /// Checking that the node built the contract that was asked for is the job of
+    /// the transport that understands the response, not of this method.
+    #[doc(hidden)]
+    pub fn apply_request_fields(
         &mut self,
         request: &TransactionRequest,
-    ) -> Result<(), crate::error::TransportErrorKind> {
+    ) -> Result<(), ResponseError> {
         use prost::Message as _;
         use sha2::{Digest, Sha256};
 
@@ -157,9 +189,13 @@ impl RawTransaction {
             if let Some(memo) = &request.memo {
                 raw_data.data = memo.clone().into();
             }
-            if let Some(pid) = request.permission_id
-                && let Some(contract) = raw_data.contract.first_mut()
-            {
+            if let Some(pid) = request.permission_id {
+                let contract = raw_data.contract.first_mut().ok_or_else(|| {
+                    ResponseError::Malformed(
+                        "node returned a transaction with no contract to set permission_id on"
+                            .into(),
+                    )
+                })?;
                 contract.permission_id = pid;
             }
             if let Some(bytes) = request.ref_block_bytes {
@@ -175,18 +211,13 @@ impl RawTransaction {
                 raw_data.expiration = value;
             }
 
-            // Keep the public metadata in sync with the protobuf payload that
-            // is signed and broadcast.
             self.timestamp = raw_data.timestamp;
             self.expiration = raw_data.expiration;
 
-            // Recompute tx_id = sha256(encoded raw_data)
             let new_tx_id_bytes: [u8; 32] = Sha256::digest(raw_data.encode_to_vec()).into();
             self.tx_id = TxId::from(new_tx_id_bytes);
         } else {
-            return Err(crate::error::TransportErrorKind::Malformed(
-                "missing raw_data in Transaction".into(),
-            ));
+            return Err(ResponseError::Malformed("missing raw_data in Transaction".into()));
         }
 
         self.raw_proto = tx.encode_to_vec().into();
@@ -214,8 +245,6 @@ impl SignedTransaction {
 
         let mut proto_tx = match crate::proto::Transaction::decode(self.raw.raw_proto.as_ref()) {
             Ok(tx) => tx,
-            // raw_proto is always valid — it is constructed from a node response
-            // or re-encoded internally. A decode failure indicates a logic bug.
             Err(_) => {
                 debug_assert!(false, "SignedTransaction.raw_proto failed to decode");
                 return 0;
@@ -231,8 +260,68 @@ impl SignedTransaction {
 #[cfg(test)]
 mod tests {
     use prost::Message as _;
+    use sha2::Digest as _;
 
     use super::*;
+
+    fn node_tx(expiration: i64, timestamp: i64) -> Vec<u8> {
+        crate::proto::Transaction {
+            raw_data: Some(crate::proto::transaction::Raw {
+                expiration,
+                timestamp,
+                contract: vec![crate::proto::transaction::Contract::default()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+        .encode_to_vec()
+    }
+
+    #[test]
+    fn the_id_is_computed_from_the_bytes_that_will_be_broadcast() {
+        let raw = RawTransaction::from_node_encoded(node_tx(9, 8), &[]).unwrap();
+
+        let raw_data =
+            crate::proto::Transaction::decode(raw.raw_proto.as_ref()).unwrap().raw_data.unwrap();
+        let expected: [u8; 32] = sha2::Sha256::digest(raw_data.encode_to_vec()).into();
+
+        assert_eq!(raw.tx_id().as_slice(), expected);
+        assert_eq!((raw.expiration, raw.timestamp), (9, 8));
+    }
+
+    #[test]
+    fn a_node_claiming_an_id_it_did_not_build_is_rejected() {
+        let err = RawTransaction::from_node_encoded(node_tx(9, 8), &[7u8; 32]).unwrap_err();
+        assert!(matches!(err, ResponseError::Malformed(ref m) if m.contains("txid")));
+    }
+
+    #[test]
+    fn a_matching_claimed_id_is_accepted() {
+        let raw = RawTransaction::from_node_encoded(node_tx(9, 8), &[]).unwrap();
+        let again =
+            RawTransaction::from_node_encoded(node_tx(9, 8), raw.tx_id().as_slice()).unwrap();
+        assert_eq!(raw.tx_id(), again.tx_id());
+    }
+
+    #[test]
+    fn a_transaction_without_raw_data_has_nothing_to_sign() {
+        let empty = crate::proto::Transaction::default().encode_to_vec();
+        let err = RawTransaction::from_node_encoded(empty, &[]).unwrap_err();
+        assert!(matches!(err, ResponseError::Malformed(ref m) if m.contains("raw_data")));
+    }
+
+    #[test]
+    fn permission_id_is_never_dropped_on_the_floor() {
+        let tx = crate::proto::Transaction {
+            raw_data: Some(crate::proto::transaction::Raw::default()),
+            ..Default::default()
+        };
+        let mut raw = RawTransaction::from_node_encoded(tx.encode_to_vec(), &[]).unwrap();
+
+        let request = TransactionRequest { permission_id: Some(2), ..Default::default() };
+        let err = raw.apply_request_fields(&request).unwrap_err();
+        assert!(matches!(err, ResponseError::Malformed(ref m) if m.contains("permission_id")));
+    }
 
     #[test]
     fn applies_explicit_tapos_fields_to_node_built_transaction() {
@@ -244,8 +333,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let mut raw =
-            RawTransaction::from_proto_extention(vec![0; 32], tx.encode_to_vec(), 2, 1).unwrap();
+        let mut raw = RawTransaction::from_node_encoded(tx.encode_to_vec(), &[]).unwrap();
 
         let request = TransactionRequest {
             memo: Some(Bytes::from_static(b"memo")),

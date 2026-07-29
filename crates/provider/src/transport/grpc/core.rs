@@ -1,6 +1,14 @@
 //! Shared tonic connection, interception, and retry machinery.
 
-use std::{future::Future, time::Duration};
+use std::{
+    fmt,
+    future::Future,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
+    time::Duration,
+};
 
 use tonic::{
     GrpcMethod, Request,
@@ -11,8 +19,12 @@ use tonic::{
     transport::{Channel, Endpoint},
 };
 
+use super::{
+    map_connect, map_status,
+    middleware::{GrpcCall, GrpcMiddleware, GrpcOutcome},
+};
 use crate::{
-    error::TransportErrorKind,
+    error::{RpcStatusCode, TransportErrorKind},
     proto::{
         database_client::DatabaseClient, wallet_client::WalletClient,
         wallet_extension_client::WalletExtensionClient,
@@ -123,7 +135,7 @@ impl RetryConfig {
 ///
 /// Construct through a transport builder. Default retries can take roughly
 /// 92 seconds before surfacing an error.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct GrpcTransportConfig {
     /// Timeout for the initial TCP + TLS handshake. Default: 10 s.
@@ -144,6 +156,21 @@ pub struct GrpcTransportConfig {
     /// connect. All endpoints must serve the same API (and share the same TLS
     /// expectation). Default: empty.
     pub endpoints: Vec<String>,
+    /// Middleware wrapping every call, applied outermost first. Default: empty.
+    pub middleware: Vec<Arc<dyn GrpcMiddleware>>,
+}
+
+impl fmt::Debug for GrpcTransportConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GrpcTransportConfig")
+            .field("connect_timeout", &self.connect_timeout)
+            .field("request_timeout", &self.request_timeout)
+            .field("retry", &self.retry)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<set>"))
+            .field("endpoints", &self.endpoints)
+            .field("middleware", &self.middleware.len())
+            .finish()
+    }
 }
 
 impl Default for GrpcTransportConfig {
@@ -154,6 +181,7 @@ impl Default for GrpcTransportConfig {
             retry: RetryConfig::default(),
             api_key: None,
             endpoints: Vec::new(),
+            middleware: Vec::new(),
         }
     }
 }
@@ -166,6 +194,7 @@ pub(super) struct GrpcCore {
     channel: Channel,
     api_key: Option<String>,
     retry: RetryConfig,
+    middleware: Vec<Arc<dyn GrpcMiddleware>>,
 }
 
 impl GrpcCore {
@@ -193,7 +222,7 @@ impl GrpcCore {
         uris.extend(cfg.endpoints.iter().cloned());
 
         let channel = if uris.len() == 1 {
-            Self::build_endpoint(&uris[0], &cfg)?.connect().await?
+            Self::build_endpoint(&uris[0], &cfg)?.connect().await.map_err(map_connect)?
         } else {
             let endpoints = uris
                 .iter()
@@ -202,7 +231,7 @@ impl GrpcCore {
             Channel::balance_list(endpoints.into_iter())
         };
 
-        Ok(Self { channel, api_key: cfg.api_key, retry: cfg.retry })
+        Ok(Self { channel, api_key: cfg.api_key, retry: cfg.retry, middleware: cfg.middleware })
     }
 
     /// Build a tonic [`Endpoint`] from a URI, applying the connection timeouts
@@ -219,7 +248,7 @@ impl GrpcCore {
         #[cfg(feature = "grpc-tls")]
         let endpoint = endpoint
             .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-            .map_err(TransportErrorKind::Connect)?;
+            .map_err(map_connect)?;
 
         Ok(endpoint)
     }
@@ -233,7 +262,68 @@ impl GrpcCore {
     ///
     /// Broadcasts deliberately bypass this helper because a lost response
     /// leaves transaction acceptance ambiguous.
-    pub(super) async fn call_with_retry<F, Fut, T>(&self, f: F) -> Result<T, TransportErrorKind>
+    pub(super) async fn call_with_retry<F, Fut, T>(
+        &self,
+        method: &'static str,
+        f: F,
+    ) -> Result<T, TransportErrorKind>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = Result<T, TransportErrorKind>>,
+    {
+        if self.middleware.is_empty() {
+            return self.retry(f).await;
+        }
+
+        let call = GrpcCall::new(method);
+        let started = std::time::Instant::now();
+
+        // A middleware that ran `before` is owed its `after`, even when a later one
+        // refuses the call — otherwise its enter/exit stack never unwinds.
+        let mut entered = 0usize;
+        let mut refused = None;
+        for m in &self.middleware {
+            match m.before(call).await {
+                Ok(()) => entered += 1,
+                Err(e) => {
+                    refused = Some(e);
+                    break;
+                }
+            }
+        }
+
+        if let Some(error) = refused {
+            let outcome =
+                GrpcOutcome { elapsed: started.elapsed(), attempts: 0, error: Some(&error) };
+            for m in self.middleware[..entered].iter().rev() {
+                m.after(call, outcome).await;
+            }
+            return Err(error);
+        }
+
+        let attempts = AtomicU32::new(0);
+        let result = self
+            .retry(|| {
+                attempts.fetch_add(1, Ordering::Relaxed);
+                f()
+            })
+            .await;
+
+        let outcome = GrpcOutcome {
+            elapsed: started.elapsed(),
+            attempts: attempts.load(Ordering::Relaxed),
+            error: result.as_ref().err(),
+        };
+        // Outermost middleware ran `before` first, so it sees `after` last.
+        for m in self.middleware.iter().rev() {
+            m.after(call, outcome).await;
+        }
+
+        result
+    }
+
+    /// The retry loop itself.
+    async fn retry<F, Fut, T>(&self, f: F) -> Result<T, TransportErrorKind>
     where
         F: Fn() -> Fut,
         Fut: Future<Output = Result<T, TransportErrorKind>>,
@@ -306,12 +396,13 @@ impl GrpcCore {
         path: &'static str,
         service: &'static str,
         method: &'static str,
+        label: &'static str,
     ) -> Result<Res, TransportErrorKind>
     where
         Req: prost::Message + Default + Clone + Send + Sync + 'static,
         Res: prost::Message + Default + Send + Sync + 'static,
     {
-        self.call_with_retry(|| {
+        self.call_with_retry(label, || {
             let intercepted = tonic::codegen::InterceptedService::new(
                 self.channel.clone(),
                 ApiKeyInterceptor(self.api_key.clone()),
@@ -320,17 +411,18 @@ impl GrpcCore {
             async move {
                 let mut client = Grpc::new(intercepted);
                 client.ready().await.map_err(|e| {
-                    TransportErrorKind::Grpc(tonic::Status::unknown(format!(
-                        "service was not ready: {}",
-                        e
-                    )))
+                    TransportErrorKind::rpc(
+                        RpcStatusCode::Unavailable,
+                        format!("service was not ready: {e}"),
+                    )
                 })?;
                 let mut request = Request::new(req);
                 request.extensions_mut().insert(GrpcMethod::new(service, method));
                 let codec = tonic_prost::ProstCodec::default();
                 Ok(client
                     .unary(request, PathAndQuery::from_static(path), codec)
-                    .await?
+                    .await
+                    .map_err(map_status)?
                     .into_inner())
             }
         })

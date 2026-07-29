@@ -292,7 +292,7 @@ mod freeze_builder_tests {
         })
     }
 
-    fn mock_provider() -> RootProvider<MockTransport> {
+    fn mock_provider() -> RootProvider {
         RootProvider::new(MockTransport::new())
     }
 

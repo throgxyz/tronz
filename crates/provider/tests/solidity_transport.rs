@@ -65,7 +65,7 @@ async fn decodes_blocks() {
     assert_eq!(now.number, 42);
     assert_eq!(now.timestamp, 1_234);
 
-    let by_num = transport.get_block_by_number(7).await.unwrap();
+    let by_num = transport.get_block_by_number(7).await.unwrap().expect("block 7 exists");
     assert_eq!(by_num.number, 7);
     assert_eq!(handle.seen_methods(), vec!["GetNowBlock2", "GetBlockByNum2"]);
 }
@@ -83,12 +83,41 @@ async fn decodes_transaction_by_id() {
     }));
 
     let transport = connect(addr).await;
-    let transaction = transport.get_transaction_by_id(TxId::from([3u8; 32])).await.unwrap();
+    let transaction = transport
+        .get_transaction_by_id(TxId::from([3u8; 32]))
+        .await
+        .unwrap()
+        .expect("the node knows this one");
 
     assert_eq!(transaction.raw.expiration, 2_000);
     assert_eq!(transaction.raw.timestamp, 1_000);
     assert!(transaction.signatures.is_empty());
     assert_eq!(handle.seen_methods(), vec!["GetTransactionById"]);
+}
+
+/// TRON answers an id it does not know with an empty message, which is an absence
+/// rather than a node misbehaving.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unknown_transaction_id_is_absent_rather_than_an_error() {
+    let (addr, handle) = spawn().await;
+    handle.push_transaction(Ok(pb::Transaction::default()));
+
+    let transport = connect(addr).await;
+    let found = transport.get_transaction_by_id(TxId::from([9u8; 32])).await.unwrap();
+
+    assert!(found.is_none());
+}
+
+/// Likewise a height the chain has not reached.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_block_the_chain_has_not_reached_is_absent_rather_than_an_error() {
+    let (addr, handle) = spawn().await;
+    handle.push_block_by_num(Ok(pb::BlockExtention::default()));
+
+    let transport = connect(addr).await;
+    let found = transport.get_block_by_number(9_999_999).await.unwrap();
+
+    assert!(found.is_none());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -201,4 +230,125 @@ async fn does_not_retry_non_retryable_status() {
 
     assert!(err.to_string().contains("bad address"), "unexpected error: {err}");
     assert_eq!(handle.seen_methods(), vec!["GetAccount"]);
+}
+
+// ── middleware ────────────────────────────────────────────────────────────────
+
+/// Records what passed through it, and can refuse a call before it is made.
+#[derive(Default)]
+struct Recorder {
+    seen: std::sync::Mutex<Vec<(String, u32)>>,
+    refuse: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait::async_trait]
+impl tronz_provider::transport::grpc::GrpcMiddleware for Recorder {
+    async fn before(
+        &self,
+        call: tronz_provider::transport::grpc::GrpcCall<'_>,
+    ) -> Result<(), tronz_provider::TransportErrorKind> {
+        if self.refuse.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(tronz_provider::TransportErrorKind::Malformed(format!(
+                "{} not allowed",
+                call.method
+            )));
+        }
+        Ok(())
+    }
+
+    async fn after(
+        &self,
+        call: tronz_provider::transport::grpc::GrpcCall<'_>,
+        outcome: tronz_provider::transport::grpc::GrpcOutcome<'_>,
+    ) {
+        self.seen.lock().unwrap().push((call.method.to_owned(), outcome.attempts));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn middleware_sees_calls_on_both_paths() {
+    let (addr, handle) = spawn().await;
+    handle.push_now_block(Ok(block(5, 50)));
+    handle.push_account(Ok(pb::Account { balance: 3, ..Default::default() }));
+
+    let recorder = std::sync::Arc::new(Recorder::default());
+    let transport = SolidityGrpcTransport::builder()
+        .with_middleware(recorder.clone())
+        .connect(format!("http://{addr}"))
+        .await
+        .unwrap();
+
+    // One goes through the hand-rolled `unary`, the other through the generated
+    // client — middleware has to catch both.
+    transport.get_now_block().await.unwrap();
+    transport.get_account(Address::from_evm_bytes([9u8; 20])).await.unwrap();
+
+    let seen = recorder.seen.lock().unwrap().clone();
+    assert_eq!(seen, vec![("get_now_block".to_owned(), 1), ("get_account".to_owned(), 1)]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn middleware_can_refuse_a_call_before_it_is_made() {
+    let (addr, handle) = spawn().await;
+
+    let recorder = std::sync::Arc::new(Recorder::default());
+    recorder.refuse.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let transport = SolidityGrpcTransport::builder()
+        .with_middleware(recorder.clone())
+        .connect(format!("http://{addr}"))
+        .await
+        .unwrap();
+
+    let err = transport.get_account(Address::from_evm_bytes([9u8; 20])).await.unwrap_err();
+
+    assert!(err.to_string().contains("get_account not allowed"));
+    assert!(handle.seen_methods().is_empty());
+
+    // The one that refused is not owed an `after`, having never entered.
+    assert!(recorder.seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refusal_still_unwinds_the_middleware_that_ran() {
+    let (addr, handle) = spawn().await;
+
+    // The outer one lets the call through, the inner one refuses it.
+    let outer = std::sync::Arc::new(Recorder::default());
+    let inner = std::sync::Arc::new(Recorder::default());
+    inner.refuse.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    let transport = SolidityGrpcTransport::builder()
+        .with_middleware(outer.clone())
+        .with_middleware(inner.clone())
+        .connect(format!("http://{addr}"))
+        .await
+        .unwrap();
+
+    transport.get_account(Address::from_evm_bytes([9u8; 20])).await.unwrap_err();
+
+    assert!(handle.seen_methods().is_empty());
+    // The one that ran sees the outcome; the one that refused does not.
+    assert_eq!(*outer.seen.lock().unwrap(), vec![("get_account".to_owned(), 0)]);
+    assert!(inner.seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn middleware_reports_one_call_and_counts_its_attempts() {
+    let (addr, handle) = spawn().await;
+    handle.push_account(Err(Status::unavailable("try again")));
+    handle.push_account(Ok(pb::Account { balance: 7, ..Default::default() }));
+
+    let recorder = std::sync::Arc::new(Recorder::default());
+    let transport = SolidityGrpcTransport::builder()
+        .with_middleware(recorder.clone())
+        .connect(format!("http://{addr}"))
+        .await
+        .unwrap();
+
+    transport.get_account(Address::from_evm_bytes([9u8; 20])).await.unwrap();
+
+    // Two attempts reached the node; middleware saw one logical call that took two.
+    assert_eq!(handle.seen_methods(), vec!["GetAccount", "GetAccount"]);
+    assert_eq!(*recorder.seen.lock().unwrap(), vec![("get_account".to_owned(), 2)]);
 }

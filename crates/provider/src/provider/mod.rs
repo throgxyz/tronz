@@ -1,14 +1,17 @@
 //! The high-level [`TronProvider`] trait and its concrete implementations.
 
 pub mod builder;
+pub mod erased;
 pub mod pending;
 pub mod root;
 pub mod solidity;
 
-use core::future::Future;
 use std::collections::HashMap;
 
+use async_trait::async_trait;
+use auto_impl::auto_impl;
 pub use builder::{FilledProvider, ProviderBuilder};
+pub use erased::DynProvider;
 pub use pending::{PendingTransaction, PendingTransactionError};
 pub use root::RootProvider;
 pub use solidity::{SolidityProvider, SolidityProviderBuilder};
@@ -32,13 +35,18 @@ use crate::{
     },
 };
 
+/// The most recent price out of a `timestamp:sun,timestamp:sun,…` schedule.
+pub(crate) fn latest_price(schedule: &str) -> Option<i64> {
+    schedule.rsplit(',').find_map(|entry| entry.rsplit_once(':')?.1.trim().parse().ok())
+}
+
 /// Route a request's contract to the transport call that builds it, then apply
 /// the request-level overrides the node does not know about.
 ///
 /// Shared by [`TronProvider::build_transaction`] and `FilledProvider`'s
 /// filler-aware override.
-pub(crate) async fn build_via_transport<T: TronTransport>(
-    transport: &T,
+pub(crate) async fn build_via_transport(
+    transport: &dyn TronTransport,
     mut req: TransactionRequest,
 ) -> Result<RawTransaction> {
     use crate::types::ContractType;
@@ -86,21 +94,8 @@ pub(crate) async fn build_via_transport<T: TronTransport>(
     };
 
     let mut raw = raw_result.map_err(Error::transport)?;
-    raw.apply_request_fields(&req).map_err(Error::Transport)?;
+    raw.apply_request_fields(&req).map_err(|e| Error::Transport(e.into()))?;
     Ok(raw)
-}
-
-pub(crate) mod private {
-    /// Sealed marker: only this crate may implement [`TronProvider`](super::TronProvider).
-    ///
-    /// Sealing lets the SDK grow the provider surface (new reads, builders) in
-    /// minor releases without breaking downstream code, and keeps the
-    /// transport-delegation contract an internal detail. Tests compose the
-    /// in-crate providers over `MockTransport` (feature `mock`).
-    pub trait Sealed {}
-
-    /// Sealed marker for providers that support contract reads.
-    pub trait ContractReadSealed {}
 }
 
 /// The provider capabilities required for contract calls and event queries.
@@ -108,334 +103,482 @@ pub(crate) mod private {
 /// Both FullNode providers and [`SolidityProvider`] implement this trait.
 /// FullNode implementations read the latest available state, while SolidityNode
 /// implementations read solidified state.
-///
-/// This trait is **sealed** — only `tronz` may implement it.
-pub trait ContractReadProvider:
-    Clone + Send + Sync + 'static + private::ContractReadSealed
-{
+#[async_trait]
+#[auto_impl(&, Arc)]
+pub trait ContractReadProvider: Send + Sync + 'static {
+    /// Borrow the provider one step down the stack, if this one wraps another.
+    ///
+    /// The counterpart of [`TronProvider::inner`], and every method below asks it
+    /// first, so a wrapper supplies this one method and inherits the rest. A
+    /// provider at the bottom of a stack leaves it `None` and answers for itself.
+    fn inner_read(&self) -> Option<&dyn ContractReadProvider> {
+        None
+    }
+
     /// The default caller used to populate `owner_address`, if one is known.
     ///
     /// FullNode providers return their attached signer's address. Read-only
     /// providers may return `None`, in which case a caller must be supplied by
     /// the contract call builder.
     fn default_caller(&self) -> Option<Address> {
-        None
+        self.inner_read().and_then(ContractReadProvider::default_caller)
     }
 
     /// Execute a constant contract call.
-    fn call_contract(
-        &self,
-        params: TriggerSmartContract,
-    ) -> impl Future<Output = Result<ConstantCallResult>> + Send;
+    async fn call_contract(&self, params: TriggerSmartContract) -> Result<ConstantCallResult> {
+        match self.inner_read() {
+            Some(inner) => inner.call_contract(params).await,
+            None => Err(bottom_of_the_stack("call_contract")),
+        }
+    }
 
     /// Estimate the energy consumed by a contract call.
-    fn estimate_contract_energy(
-        &self,
-        params: TriggerSmartContract,
-    ) -> impl Future<Output = Result<i64>> + Send;
+    async fn estimate_contract_energy(&self, params: TriggerSmartContract) -> Result<i64> {
+        match self.inner_read() {
+            Some(inner) => inner.estimate_contract_energy(params).await,
+            None => Err(bottom_of_the_stack("estimate_contract_energy")),
+        }
+    }
 
     /// Fetch a transaction's receipt for event decoding.
-    fn transaction_info(
-        &self,
-        tx_id: TxId,
-    ) -> impl Future<Output = Result<Option<TransactionInfo>>> + Send;
+    async fn transaction_info(&self, tx_id: TxId) -> Result<Option<TransactionInfo>> {
+        match self.inner_read() {
+            Some(inner) => inner.transaction_info(tx_id).await,
+            None => Err(bottom_of_the_stack("transaction_info")),
+        }
+    }
 
     /// Fetch all transaction receipts in a block for event decoding.
-    fn transaction_infos_by_block(
-        &self,
-        block_num: i64,
-    ) -> impl Future<Output = Result<Vec<TransactionInfo>>> + Send;
+    async fn transaction_infos_by_block(&self, block_num: i64) -> Result<Vec<TransactionInfo>> {
+        match self.inner_read() {
+            Some(inner) => inner.transaction_infos_by_block(block_num).await,
+            None => Err(bottom_of_the_stack("transaction_infos_by_block")),
+        }
+    }
+}
+
+/// A provider that wraps nothing has to answer the contract reads itself.
+///
+/// Only reachable from a hand-written provider that neither implements a read nor
+/// reports an [`inner_read`](ContractReadProvider::inner_read) to pass it to;
+/// [`RootProvider`] and [`SolidityProvider`] both answer all four.
+fn bottom_of_the_stack(method: &'static str) -> Error {
+    Error::local_usage_str(&format!(
+        "`{method}` reached a provider that implements neither it nor `inner_read`"
+    ))
 }
 
 /// The primary user-facing interface: reads, lazy operation builders, and
 /// low-level send/broadcast.
 ///
-/// This trait is **sealed** — only `tronz` may implement it. To test against a
-/// provider, build one of the concrete providers over the `MockTransport`
-/// available under the `mock` feature.
-pub trait TronProvider: ContractReadProvider + private::Sealed {
-    /// The underlying transport type.
-    type Transport: TronTransport;
+/// Downstream crates may implement this to wrap a provider — see
+/// [`ProviderLayer`](crate::ProviderLayer). A wrapper supplies [`root`](Self::root)
+/// and [`inner`](Self::inner) and overrides only what it cares about; everything
+/// else travels down the stack and reaches the node at the bottom.
+#[async_trait]
+pub trait TronProvider: ContractReadProvider {
+    /// Borrow the provider this one is ultimately built on.
+    ///
+    /// This is the only method an implementation must supply. A wrapper forwards it
+    /// to what it wraps.
+    fn root(&self) -> &RootProvider;
 
-    /// Borrow the transport.
-    fn transport(&self) -> &Self::Transport;
-
-    /// The attached signer's address, if any.
-    fn signer_address(&self) -> Option<Address>;
-
-    // ---------- Reads ----------
-
-    /// Fetch the latest block.
-    fn get_now_block(&self) -> impl Future<Output = Result<BlockInfo>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_now_block().await.map_err(Error::transport) }
+    /// Borrow the provider one step down the stack, if this one wraps another.
+    ///
+    /// Every default method below asks this first and only reaches the transport
+    /// once nothing is left underneath. So a wrapper — metrics, caching, rate
+    /// limiting — supplies `inner` and overrides just the handful of methods it
+    /// cares about: the rest keep going down the stack on their own rather than
+    /// jumping to the root and stepping over whatever it wraps.
+    ///
+    /// Each wrapper costs one dynamic dispatch per call.
+    fn inner(&self) -> Option<&dyn TronProvider> {
+        None
     }
 
-    /// Fetch a block by height.
-    fn get_block_by_number(&self, num: i64) -> impl Future<Output = Result<BlockInfo>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_block_by_number(num).await.map_err(Error::transport) }
+    /// Borrow the transport, through [`root`](Self::root).
+    fn transport(&self) -> &dyn TronTransport {
+        self.root().transport()
+    }
+
+    /// The attached signer's address, if any.
+    fn signer_address(&self) -> Option<Address> {
+        match self.inner() {
+            Some(inner) => inner.signer_address(),
+            None => self.root().signer_address(),
+        }
+    }
+
+    /// Erase this provider's type.
+    ///
+    /// See [`DynProvider`] for when that is worth an extra pointer hop per call.
+    fn erased(self) -> DynProvider
+    where
+        Self: Sized,
+    {
+        DynProvider::new(self)
+    }
+
+    /// Fetch the latest block.
+    async fn get_now_block(&self) -> Result<BlockInfo> {
+        match self.inner() {
+            Some(inner) => inner.get_now_block().await,
+            None => self.transport().get_now_block().await.map_err(Error::transport),
+        }
+    }
+
+    /// Fetch a block by height, or `None` if the chain has not reached it.
+    async fn get_block_by_number(&self, num: i64) -> Result<Option<BlockInfo>> {
+        match self.inner() {
+            Some(inner) => inner.get_block_by_number(num).await,
+            None => self.transport().get_block_by_number(num).await.map_err(Error::transport),
+        }
     }
 
     /// Fetch on-chain account state.
-    fn get_account(&self, address: Address) -> impl Future<Output = Result<AccountInfo>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_account(address).await.map_err(Error::transport) }
+    async fn get_account(&self, address: Address) -> Result<AccountInfo> {
+        match self.inner() {
+            Some(inner) => inner.get_account(address).await,
+            None => self.transport().get_account(address).await.map_err(Error::transport),
+        }
     }
 
     /// Fetch account resource usage.
-    fn get_account_resource(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<AccountResource>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_account_resource(address).await.map_err(Error::transport) }
+    async fn get_account_resource(&self, address: Address) -> Result<AccountResource> {
+        match self.inner() {
+            Some(inner) => inner.get_account_resource(address).await,
+            None => self.transport().get_account_resource(address).await.map_err(Error::transport),
+        }
     }
 
-    /// Fetch a transaction by id.
-    fn get_transaction(
-        &self,
-        tx_id: TxId,
-    ) -> impl Future<Output = Result<SignedTransaction>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_transaction_by_id(tx_id).await.map_err(Error::transport) }
+    /// Fetch a transaction by id, or `None` if the node has never seen it.
+    async fn get_transaction(&self, tx_id: TxId) -> Result<Option<SignedTransaction>> {
+        match self.inner() {
+            Some(inner) => inner.get_transaction(tx_id).await,
+            None => self.transport().get_transaction_by_id(tx_id).await.map_err(Error::transport),
+        }
     }
 
     /// Fetch a transaction's receipt/info.
     ///
     /// Returns `None` if the node has not yet indexed the transaction.
     /// Use [`PendingTransaction::get_receipt`] to poll until confirmed.
-    fn get_transaction_info(
-        &self,
-        tx_id: TxId,
-    ) -> impl Future<Output = Result<Option<TransactionInfo>>> + Send {
-        self.transaction_info(tx_id)
+    async fn get_transaction_info(&self, tx_id: TxId) -> Result<Option<TransactionInfo>> {
+        self.transaction_info(tx_id).await
     }
 
     /// Query delegations between two accounts (Stake 1.0, legacy).
-    fn get_delegated_resource_v1(
+    async fn get_delegated_resource_v1(
         &self,
         from: Address,
         to: Address,
-    ) -> impl Future<Output = Result<Vec<DelegatedResource>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_delegated_resource_v1(from, to).await.map_err(Error::transport) }
+    ) -> Result<Vec<DelegatedResource>> {
+        match self.inner() {
+            Some(inner) => inner.get_delegated_resource_v1(from, to).await,
+            None => {
+                self.transport().get_delegated_resource_v1(from, to).await.map_err(Error::transport)
+            }
+        }
     }
 
     /// Query the delegation index for an account (Stake 1.0, legacy).
-    fn get_delegated_resource_index_v1(
+    async fn get_delegated_resource_index_v1(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<DelegatedResourceIndex>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_delegated_resource_index_v1(address).await.map_err(Error::transport) }
+    ) -> Result<DelegatedResourceIndex> {
+        match self.inner() {
+            Some(inner) => inner.get_delegated_resource_index_v1(address).await,
+            None => self
+                .transport()
+                .get_delegated_resource_index_v1(address)
+                .await
+                .map_err(Error::transport),
+        }
     }
 
     /// Query delegations between two accounts (Stake 2.0).
-    fn get_delegated_resource(
+    async fn get_delegated_resource(
         &self,
         from: Address,
         to: Address,
-    ) -> impl Future<Output = Result<Vec<DelegatedResource>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_delegated_resource(from, to).await.map_err(Error::transport) }
+    ) -> Result<Vec<DelegatedResource>> {
+        match self.inner() {
+            Some(inner) => inner.get_delegated_resource(from, to).await,
+            None => {
+                self.transport().get_delegated_resource(from, to).await.map_err(Error::transport)
+            }
+        }
     }
 
     /// Query the delegation index for an account (Stake 2.0).
-    fn get_delegated_resource_index(
+    async fn get_delegated_resource_index(
         &self,
         address: Address,
-    ) -> impl Future<Output = Result<DelegatedResourceIndex>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_delegated_resource_index(address).await.map_err(Error::transport) }
+    ) -> Result<DelegatedResourceIndex> {
+        match self.inner() {
+            Some(inner) => inner.get_delegated_resource_index(address).await,
+            None => self
+                .transport()
+                .get_delegated_resource_index(address)
+                .await
+                .map_err(Error::transport),
+        }
     }
 
     /// Query the max amount still delegatable for a resource.
-    fn get_can_delegate_max(
-        &self,
-        address: Address,
-        resource: ResourceCode,
-    ) -> impl Future<Output = Result<Trx>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_can_delegate_max(address, resource).await.map_err(Error::transport) }
+    async fn get_can_delegate_max(&self, address: Address, resource: ResourceCode) -> Result<Trx> {
+        match self.inner() {
+            Some(inner) => inner.get_can_delegate_max(address, resource).await,
+            None => self
+                .transport()
+                .get_can_delegate_max(address, resource)
+                .await
+                .map_err(Error::transport),
+        }
     }
 
     /// Query the pending (unclaimed) reward.
-    fn get_reward(&self, address: Address) -> impl Future<Output = Result<Trx>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_reward(address).await.map_err(Error::transport) }
+    async fn get_reward(&self, address: Address) -> Result<Trx> {
+        match self.inner() {
+            Some(inner) => inner.get_reward(address).await,
+            None => self.transport().get_reward(address).await.map_err(Error::transport),
+        }
     }
 
     /// Fetch chain parameters.
-    fn chain_parameters(&self) -> impl Future<Output = Result<HashMap<String, i64>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_chain_parameters().await.map_err(Error::transport) }
+    async fn chain_parameters(&self) -> Result<HashMap<String, i64>> {
+        match self.inner() {
+            Some(inner) => inner.chain_parameters().await,
+            None => self.transport().get_chain_parameters().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch contract metadata including the deployed runtime bytecode.
-    fn get_contract_info(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<SmartContractInfo>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_contract_info(address).await.map_err(Error::transport) }
+    async fn get_contract_info(&self, address: Address) -> Result<SmartContractInfo> {
+        match self.inner() {
+            Some(inner) => inner.get_contract_info(address).await,
+            None => self.transport().get_contract_info(address).await.map_err(Error::transport),
+        }
     }
 
     /// List all super representatives and candidates.
-    fn list_witnesses(&self) -> impl Future<Output = Result<Vec<WitnessInfo>>> + Send {
-        let t = self.transport().clone();
-        async move { t.list_witnesses().await.map_err(Error::transport) }
+    async fn list_witnesses(&self) -> Result<Vec<WitnessInfo>> {
+        match self.inner() {
+            Some(inner) => inner.list_witnesses().await,
+            None => self.transport().list_witnesses().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch a paginated list of witnesses sorted by real-time vote count.
-    fn get_paginated_now_witness_list(
+    async fn get_paginated_now_witness_list(
         &self,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<WitnessInfo>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_paginated_now_witness_list(offset, limit).await.map_err(Error::transport) }
+    ) -> Result<Vec<WitnessInfo>> {
+        match self.inner() {
+            Some(inner) => inner.get_paginated_now_witness_list(offset, limit).await,
+            None => self
+                .transport()
+                .get_paginated_now_witness_list(offset, limit)
+                .await
+                .map_err(Error::transport),
+        }
     }
 
-    // ---------- New pure query methods ----------
-
     /// Fetch the bandwidth price schedule string.
-    fn get_bandwidth_prices(&self) -> impl Future<Output = Result<String>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_bandwidth_prices().await.map_err(Error::transport) }
+    async fn get_bandwidth_prices(&self) -> Result<String> {
+        match self.inner() {
+            Some(inner) => inner.get_bandwidth_prices().await,
+            None => self.transport().get_bandwidth_prices().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch the energy price schedule string.
-    fn get_energy_prices(&self) -> impl Future<Output = Result<String>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_energy_prices().await.map_err(Error::transport) }
+    ///
+    /// The node returns the whole history, as `timestamp:sun` pairs. For the price
+    /// in force now, use [`get_energy_price`](Self::get_energy_price).
+    async fn get_energy_prices(&self) -> Result<String> {
+        match self.inner() {
+            Some(inner) => inner.get_energy_prices().await,
+            None => self.transport().get_energy_prices().await.map_err(Error::transport),
+        }
+    }
+
+    /// The energy price in force now, in sun per unit of energy.
+    ///
+    /// Reads the last entry of the schedule from
+    /// [`get_energy_prices`](Self::get_energy_prices).
+    async fn get_energy_price(&self) -> Result<i64> {
+        let schedule = self.get_energy_prices().await?;
+        latest_price(&schedule).ok_or_else(|| {
+            Error::Transport(crate::error::TransportErrorKind::Malformed(format!(
+                "cannot read an energy price out of {schedule:?}"
+            )))
+        })
     }
 
     /// Fetch the memo fee schedule.
-    fn get_memo_fee(&self) -> impl Future<Output = Result<u64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_memo_fee().await.map_err(Error::transport) }
+    async fn get_memo_fee(&self) -> Result<u64> {
+        match self.inner() {
+            Some(inner) => inner.get_memo_fee().await,
+            None => self.transport().get_memo_fee().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch the next maintenance time (unix ms).
-    fn get_next_maintenance_time(&self) -> impl Future<Output = Result<i64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_next_maintenance_time().await.map_err(Error::transport) }
+    async fn get_next_maintenance_time(&self) -> Result<i64> {
+        match self.inner() {
+            Some(inner) => inner.get_next_maintenance_time().await,
+            None => self.transport().get_next_maintenance_time().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch the total amount of TRX burned.
-    fn get_burn_trx(&self) -> impl Future<Output = Result<u64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_burn_trx().await.map_err(Error::transport) }
+    async fn get_burn_trx(&self) -> Result<u64> {
+        match self.inner() {
+            Some(inner) => inner.get_burn_trx().await,
+            None => self.transport().get_burn_trx().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch the total number of transactions ever processed.
-    fn get_total_transactions(&self) -> impl Future<Output = Result<u64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_total_transactions().await.map_err(Error::transport) }
+    async fn get_total_transactions(&self) -> Result<u64> {
+        match self.inner() {
+            Some(inner) => inner.get_total_transactions().await,
+            None => self.transport().get_total_transactions().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch basic info about the connected node.
-    fn get_node_info(&self) -> impl Future<Output = Result<NodeInfo>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_node_info().await.map_err(Error::transport) }
+    async fn get_node_info(&self) -> Result<NodeInfo> {
+        match self.inner() {
+            Some(inner) => inner.get_node_info().await,
+            None => self.transport().get_node_info().await.map_err(Error::transport),
+        }
     }
 
     /// List known gossip-network peer addresses.
-    fn list_nodes(&self) -> impl Future<Output = Result<Vec<NodeAddress>>> + Send {
-        let t = self.transport().clone();
-        async move { t.list_nodes().await.map_err(Error::transport) }
+    async fn list_nodes(&self) -> Result<Vec<NodeAddress>> {
+        match self.inner() {
+            Some(inner) => inner.list_nodes().await,
+            None => self.transport().list_nodes().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch dynamic chain properties.
-    fn get_dynamic_properties(&self) -> impl Future<Output = Result<ChainProperties>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_dynamic_properties().await.map_err(Error::transport) }
+    async fn get_dynamic_properties(&self) -> Result<ChainProperties> {
+        match self.inner() {
+            Some(inner) => inner.get_dynamic_properties().await,
+            None => self.transport().get_dynamic_properties().await.map_err(Error::transport),
+        }
     }
 
-    /// Fetch a block by its hash.
-    fn get_block_by_id(&self, block_id: B256) -> impl Future<Output = Result<BlockInfo>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_block_by_id(block_id).await.map_err(Error::transport) }
+    /// Fetch a block by its hash, or `None` if the node has no such block.
+    async fn get_block_by_id(&self, block_id: B256) -> Result<Option<BlockInfo>> {
+        match self.inner() {
+            Some(inner) => inner.get_block_by_id(block_id).await,
+            None => self.transport().get_block_by_id(block_id).await.map_err(Error::transport),
+        }
     }
 
     /// Fetch the `count` most recent blocks.
-    fn get_blocks_by_latest_num(
-        &self,
-        count: i64,
-    ) -> impl Future<Output = Result<Vec<BlockInfo>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_blocks_by_latest_num(count).await.map_err(Error::transport) }
+    async fn get_blocks_by_latest_num(&self, count: i64) -> Result<Vec<BlockInfo>> {
+        match self.inner() {
+            Some(inner) => inner.get_blocks_by_latest_num(count).await,
+            None => {
+                self.transport().get_blocks_by_latest_num(count).await.map_err(Error::transport)
+            }
+        }
     }
 
     /// Fetch blocks in the range `[start, end)`.
-    fn get_blocks_by_limit(
-        &self,
-        start: i64,
-        end: i64,
-    ) -> impl Future<Output = Result<Vec<BlockInfo>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_blocks_by_limit(start, end).await.map_err(Error::transport) }
+    async fn get_blocks_by_limit(&self, start: i64, end: i64) -> Result<Vec<BlockInfo>> {
+        match self.inner() {
+            Some(inner) => inner.get_blocks_by_limit(start, end).await,
+            None => {
+                self.transport().get_blocks_by_limit(start, end).await.map_err(Error::transport)
+            }
+        }
     }
 
     /// Count transactions in a block by block number.
-    fn get_transaction_count_by_block_num(
-        &self,
-        block_num: i64,
-    ) -> impl Future<Output = Result<u64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_transaction_count_by_block_num(block_num).await.map_err(Error::transport) }
+    async fn get_transaction_count_by_block_num(&self, block_num: i64) -> Result<u64> {
+        match self.inner() {
+            Some(inner) => inner.get_transaction_count_by_block_num(block_num).await,
+            None => self
+                .transport()
+                .get_transaction_count_by_block_num(block_num)
+                .await
+                .map_err(Error::transport),
+        }
     }
 
     /// Fetch paginated transactions sent *from* an address.
-    fn get_transactions_from(
+    async fn get_transactions_from(
         &self,
         address: Address,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_transactions_from(address, offset, limit).await.map_err(Error::transport) }
+    ) -> Result<Vec<RawTransaction>> {
+        match self.inner() {
+            Some(inner) => inner.get_transactions_from(address, offset, limit).await,
+            None => self
+                .transport()
+                .get_transactions_from(address, offset, limit)
+                .await
+                .map_err(Error::transport),
+        }
     }
 
     /// Fetch paginated transactions sent *to* an address.
-    fn get_transactions_to(
+    async fn get_transactions_to(
         &self,
         address: Address,
         offset: i64,
         limit: i64,
-    ) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_transactions_to(address, offset, limit).await.map_err(Error::transport) }
+    ) -> Result<Vec<RawTransaction>> {
+        match self.inner() {
+            Some(inner) => inner.get_transactions_to(address, offset, limit).await,
+            None => self
+                .transport()
+                .get_transactions_to(address, offset, limit)
+                .await
+                .map_err(Error::transport),
+        }
     }
 
     /// Fetch transaction infos for all transactions in a block.
-    fn get_transaction_info_by_block_num(
+    async fn get_transaction_info_by_block_num(
         &self,
         block_num: i64,
-    ) -> impl Future<Output = Result<Vec<TransactionInfo>>> + Send {
-        self.transaction_infos_by_block(block_num)
+    ) -> Result<Vec<TransactionInfo>> {
+        self.transaction_infos_by_block(block_num).await
     }
 
     /// Fetch the number of pending transactions.
-    fn get_pending_size(&self) -> impl Future<Output = Result<u64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_pending_size().await.map_err(Error::transport) }
+    async fn get_pending_size(&self) -> Result<u64> {
+        match self.inner() {
+            Some(inner) => inner.get_pending_size().await,
+            None => self.transport().get_pending_size().await.map_err(Error::transport),
+        }
     }
 
     /// Fetch a single pending transaction by id.
-    fn get_transaction_from_pending(
-        &self,
-        tx_id: TxId,
-    ) -> impl Future<Output = Result<RawTransaction>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_transaction_from_pending(tx_id).await.map_err(Error::transport) }
+    async fn get_transaction_from_pending(&self, tx_id: TxId) -> Result<RawTransaction> {
+        match self.inner() {
+            Some(inner) => inner.get_transaction_from_pending(tx_id).await,
+            None => {
+                self.transport().get_transaction_from_pending(tx_id).await.map_err(Error::transport)
+            }
+        }
     }
 
     /// Fetch all pending transactions.
-    fn get_pending_transactions(&self) -> impl Future<Output = Result<Vec<RawTransaction>>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_pending_transactions().await.map_err(Error::transport) }
+    async fn get_pending_transactions(&self) -> Result<Vec<RawTransaction>> {
+        match self.inner() {
+            Some(inner) => inner.get_pending_transactions().await,
+            None => self.transport().get_pending_transactions().await.map_err(Error::transport),
+        }
     }
 
     /// Query sign-weight for a transaction: how much signature weight has been
@@ -443,44 +586,48 @@ pub trait TronProvider: ContractReadProvider + private::Sealed {
     ///
     /// Pass the partially- or fully-signed [`SignedTransaction`] so the node can
     /// count the already-attached signatures.
-    fn get_transaction_sign_weight(
-        &self,
-        tx: &SignedTransaction,
-    ) -> impl Future<Output = Result<SignWeight>> + Send {
-        let t = self.transport().clone();
-        let tx = tx.clone();
-        async move { t.get_transaction_sign_weight(&tx).await.map_err(Error::transport) }
+    async fn get_transaction_sign_weight(&self, tx: &SignedTransaction) -> Result<SignWeight> {
+        match self.inner() {
+            Some(inner) => inner.get_transaction_sign_weight(tx).await,
+            None => {
+                self.transport().get_transaction_sign_weight(tx).await.map_err(Error::transport)
+            }
+        }
     }
 
     /// Fetch addresses that have already signed a transaction.
-    fn get_transaction_approved_list(
-        &self,
-        tx: &SignedTransaction,
-    ) -> impl Future<Output = Result<Vec<Address>>> + Send {
-        let t = self.transport().clone();
-        let tx = tx.clone();
-        async move { t.get_transaction_approved_list(&tx).await.map_err(Error::transport) }
+    async fn get_transaction_approved_list(&self, tx: &SignedTransaction) -> Result<Vec<Address>> {
+        match self.inner() {
+            Some(inner) => inner.get_transaction_approved_list(tx).await,
+            None => {
+                self.transport().get_transaction_approved_list(tx).await.map_err(Error::transport)
+            }
+        }
     }
 
     /// Fetch bandwidth/energy net-usage for an account.
-    fn get_account_net(&self, address: Address) -> impl Future<Output = Result<AccountNet>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_account_net(address).await.map_err(Error::transport) }
+    async fn get_account_net(&self, address: Address) -> Result<AccountNet> {
+        match self.inner() {
+            Some(inner) => inner.get_account_net(address).await,
+            None => self.transport().get_account_net(address).await.map_err(Error::transport),
+        }
     }
 
     /// Fetch the brokerage ratio for a super representative.
-    fn get_brokerage(&self, address: Address) -> impl Future<Output = Result<u64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_brokerage(address).await.map_err(Error::transport) }
+    async fn get_brokerage(&self, address: Address) -> Result<u64> {
+        match self.inner() {
+            Some(inner) => inner.get_brokerage(address).await,
+            None => self.transport().get_brokerage(address).await.map_err(Error::transport),
+        }
     }
 
     /// Fetch the unclaimed reward (raw sun) for an address.
-    fn get_reward_info(&self, address: Address) -> impl Future<Output = Result<u64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_reward_info(address).await.map_err(Error::transport) }
+    async fn get_reward_info(&self, address: Address) -> Result<u64> {
+        match self.inner() {
+            Some(inner) => inner.get_reward_info(address).await,
+            None => self.transport().get_reward_info(address).await.map_err(Error::transport),
+        }
     }
-
-    // ---------- Transaction builders (lazy — no I/O until `.send()`) ----------
 
     /// Build a TRX transfer.
     fn send_trx(&self) -> TransferBuilder<'_, Self>
@@ -570,34 +717,37 @@ pub trait TronProvider: ContractReadProvider + private::Sealed {
         AccountPermissionUpdateBuilder::new(self)
     }
 
-    // ---------- Smart contracts ----------
-
     /// Query how much TRX can be withdrawn from expired unfreeze windows.
     ///
     /// `timestamp_ms` is the reference time (unix milliseconds).
     /// Pass the current time to check what is withdrawable right now.
-    fn get_can_withdraw_unfreeze_amount(
+    async fn get_can_withdraw_unfreeze_amount(
         &self,
         address: Address,
         timestamp_ms: i64,
-    ) -> impl Future<Output = Result<Trx>> + Send {
-        let t = self.transport().clone();
-        async move {
-            t.get_can_withdraw_unfreeze_amount(address, timestamp_ms)
+    ) -> Result<Trx> {
+        match self.inner() {
+            Some(inner) => inner.get_can_withdraw_unfreeze_amount(address, timestamp_ms).await,
+            None => self
+                .transport()
+                .get_can_withdraw_unfreeze_amount(address, timestamp_ms)
                 .await
-                .map_err(Error::transport)
+                .map_err(Error::transport),
         }
     }
 
     /// Query how many more unfreeze operations the account can still initiate.
     ///
     /// TRON allows at most 32 concurrent unfreeze windows per account.
-    fn get_available_unfreeze_count(
-        &self,
-        address: Address,
-    ) -> impl Future<Output = Result<i64>> + Send {
-        let t = self.transport().clone();
-        async move { t.get_available_unfreeze_count(address).await.map_err(Error::transport) }
+    async fn get_available_unfreeze_count(&self, address: Address) -> Result<i64> {
+        match self.inner() {
+            Some(inner) => inner.get_available_unfreeze_count(address).await,
+            None => self
+                .transport()
+                .get_available_unfreeze_count(address)
+                .await
+                .map_err(Error::transport),
+        }
     }
 
     /// Activate a new account on-chain.
@@ -680,14 +830,9 @@ pub trait TronProvider: ContractReadProvider + private::Sealed {
     ///
     /// [`estimate_gas`]: https://alloy.rs
     /// [`send_transaction`]: TronProvider::send_transaction
-    fn estimate_energy(
-        &self,
-        params: TriggerSmartContract,
-    ) -> impl Future<Output = Result<i64>> + Send {
-        self.estimate_contract_energy(params)
+    async fn estimate_energy(&self, params: TriggerSmartContract) -> Result<i64> {
+        self.estimate_contract_energy(params).await
     }
-
-    // ---------- Low-level ----------
 
     /// Estimate the bandwidth (bytes) a signed transaction will consume on-chain.
     ///
@@ -701,14 +846,11 @@ pub trait TronProvider: ContractReadProvider + private::Sealed {
     ///
     /// The default implementation returns [`Error::no_signer`] — a signer filler
     /// (e.g. `WalletFiller`) must be in the filler chain for this to succeed.
-    fn send_transaction(
-        &self,
-        _req: TransactionRequest,
-    ) -> impl Future<Output = Result<PendingTransaction<Self>>> + Send
-    where
-        Self: Sized,
-    {
-        async move { Err(Error::no_signer()) }
+    async fn send_transaction(&self, req: TransactionRequest) -> Result<PendingTransaction> {
+        match self.inner() {
+            Some(inner) => inner.send_transaction(req).await,
+            None => Err(Error::no_signer()),
+        }
     }
 
     /// Ask the node to construct the transaction **without signing or
@@ -723,31 +865,28 @@ pub trait TronProvider: ContractReadProvider + private::Sealed {
     /// The default implementation runs no fillers, so a client-side fee limit or
     /// TAPOS override must already be present on `req`. `FilledProvider` runs its
     /// filler chain first.
-    fn build_transaction(
-        &self,
-        req: TransactionRequest,
-    ) -> impl Future<Output = Result<RawTransaction>> + Send
-    where
-        Self: Sized,
-    {
-        let transport = self.transport().clone();
-        async move { build_via_transport(&transport, req).await }
+    async fn build_transaction(&self, req: TransactionRequest) -> Result<RawTransaction> {
+        match self.inner() {
+            Some(inner) => inner.build_transaction(req).await,
+            None => build_via_transport(self.transport(), req).await,
+        }
     }
 
     /// Broadcast an already-signed transaction.
-    fn broadcast(
-        &self,
-        tx: SignedTransaction,
-    ) -> impl Future<Output = Result<PendingTransaction<Self>>> + Send
-    where
-        Self: Sized,
-    {
-        let t = self.transport().clone();
-        let this = self.clone();
-        async move {
-            let tx_id = tx.raw.tx_id();
-            t.broadcast_transaction(&tx).await.map_err(Error::transport)?;
-            Ok(PendingTransaction::new(this, tx_id))
+    ///
+    /// A broadcast whose outcome is left open reports [`Error::Broadcast`], carrying
+    /// the transaction's id — the same as
+    /// [`send_transaction`](Self::send_transaction) does.
+    async fn broadcast(&self, tx: SignedTransaction) -> Result<PendingTransaction> {
+        if let Some(inner) = self.inner() {
+            return inner.broadcast(tx).await;
         }
+
+        let tx_id = tx.raw.tx_id();
+        self.transport()
+            .broadcast_transaction(&tx)
+            .await
+            .map_err(|source| Error::broadcast(tx_id, source))?;
+        Ok(PendingTransaction::new(self.root().clone(), tx_id))
     }
 }

@@ -1,12 +1,12 @@
 [workspace]
-members  = ["crates/*"]
+members  = ["crates/*", "xtask"]
 # Test-only gRPC server crate; a path dev-dependency of tronz-provider, kept out
 # of the workspace so its protobuf/server generation never runs on normal builds.
 exclude  = ["crates/provider/tests/support"]
 resolver = "2"
 
 [workspace.package]
-version      = "0.4.1"
+version      = "0.5.0"
 edition      = "2024"
 rust-version = "1.91.1"
 license      = "MIT OR Apache-2.0"
@@ -15,13 +15,14 @@ readme       = "README.md"
 
 [workspace.dependencies]
 # internal
-tronz-primitives  = { path = "crates/primitives", version = "0.4.1", default-features = false }
-tronz-abi         = { path = "crates/abi", version = "0.4.1", default-features = false }
-tronz-signer      = { path = "crates/signer", version = "0.4.1", default-features = false }
-tronz-signer-aws  = { path = "crates/signer-aws", version = "0.4.1", default-features = false }
-tronz-provider    = { path = "crates/provider", version = "0.4.1", default-features = false }
-tronz-contract    = { path = "crates/contract", version = "0.4.1", default-features = false }
-tronz-sol-macro   = { path = "crates/sol-macro", version = "0.4.1" }
+tronz-primitives  = { path = "crates/primitives", version = "0.5.0", default-features = false }
+tronz-abi         = { path = "crates/abi", version = "0.5.0", default-features = false }
+tronz-signer      = { path = "crates/signer", version = "0.5.0", default-features = false }
+tronz-signer-aws  = { path = "crates/signer-aws", version = "0.5.0", default-features = false }
+tronz-rpc-types   = { path = "crates/rpc-types", version = "0.5.0", default-features = false }
+tronz-provider    = { path = "crates/provider", version = "0.5.0", default-features = false }
+tronz-contract    = { path = "crates/contract", version = "0.5.0", default-features = false }
+tronz-sol-macro   = { path = "crates/sol-macro", version = "0.5.0" }
 
 # alloy (reused directly)
 alloy-primitives = { version = "1", default-features = false, features = ["std", "serde"] }

@@ -2,19 +2,100 @@
 
 use std::{error::Error as StdError, fmt};
 
+use tronz_primitives::TxId;
+
+/// What a node said about a call, in terms no one transport defines.
+///
+/// The canonical status set, which a transport maps *onto* rather than into: the
+/// gRPC transport turns `tonic::Code` into these, and an HTTP one would turn its
+/// own status codes into the same set, so the classifications built on top —
+/// whether a call is worth retrying, whether a broadcast was definitely refused —
+/// are written once and hold for both.
+///
+/// There is deliberately no `Other(i32)`: a bare integer here would be a gRPC code
+/// in all but name, which is the coupling this type exists to remove. Anything
+/// unrecognised is [`Unknown`](Self::Unknown). Nor is there an `Ok`: the type only
+/// ever describes a failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RpcStatusCode {
+    /// The call was cancelled, typically by the caller.
+    Cancelled,
+    /// No more specific status applies, or the transport reported one this set has
+    /// no name for.
+    Unknown,
+    /// The request was rejected as malformed or nonsensical.
+    InvalidArgument,
+    /// The call outlived its deadline.
+    DeadlineExceeded,
+    /// The thing asked for does not exist.
+    NotFound,
+    /// The thing being created already exists.
+    AlreadyExists,
+    /// The caller is not allowed to do this.
+    PermissionDenied,
+    /// A quota or rate limit is exhausted.
+    ResourceExhausted,
+    /// The system is not in a state where this call can succeed.
+    FailedPrecondition,
+    /// The call was aborted, often over a concurrency conflict.
+    Aborted,
+    /// An argument was outside the range the node can serve.
+    OutOfRange,
+    /// The node does not implement this call.
+    Unimplemented,
+    /// The node hit an internal error.
+    Internal,
+    /// The node is unreachable or not currently serving.
+    Unavailable,
+    /// Data was lost or corrupted irrecoverably.
+    DataLoss,
+    /// The caller did not authenticate.
+    Unauthenticated,
+}
+
+impl fmt::Display for RpcStatusCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Cancelled => "cancelled",
+            Self::Unknown => "unknown",
+            Self::InvalidArgument => "invalid argument",
+            Self::DeadlineExceeded => "deadline exceeded",
+            Self::NotFound => "not found",
+            Self::AlreadyExists => "already exists",
+            Self::PermissionDenied => "permission denied",
+            Self::ResourceExhausted => "resource exhausted",
+            Self::FailedPrecondition => "failed precondition",
+            Self::Aborted => "aborted",
+            Self::OutOfRange => "out of range",
+            Self::Unimplemented => "unimplemented",
+            Self::Internal => "internal",
+            Self::Unavailable => "unavailable",
+            Self::DataLoss => "data loss",
+            Self::Unauthenticated => "unauthenticated",
+        };
+        f.write_str(name)
+    }
+}
+
 /// Raw I/O and decoding failures from the transport layer.
 ///
 /// `#[non_exhaustive]`: new transport backends may add variants in minor versions.
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum TransportErrorKind {
-    /// The gRPC channel returned an error status.
-    #[error("gRPC status {}: {}", .0.code(), .0.message())]
-    Grpc(#[from] tonic::Status),
+    /// A status the node answered with, in terms this crate defines.
+    #[error("rpc status {code}: {message}")]
+    Rpc {
+        /// What kind of failure the node reported.
+        code: RpcStatusCode,
+        /// What the node said about it.
+        message: String,
+    },
 
-    /// Failed to establish or configure the gRPC channel.
-    #[error("gRPC transport error: {0}")]
-    Connect(#[from] tonic::transport::Error),
+    /// The channel could not be established, or was lost.
+    #[error("transport error: {0}")]
+    Connect(#[source] Box<dyn StdError + Send + Sync + 'static>),
 
     /// A protobuf payload failed to decode.
     #[error("protobuf decode error: {0}")]
@@ -30,6 +111,15 @@ pub enum TransportErrorKind {
     #[error("node error: {0}")]
     NodeError(String),
 
+    /// The node does not offer this RPC.
+    ///
+    /// Several TRON endpoints are opt-in — `EstimateEnergy` needs
+    /// `vm.estimateEnergy`, for one — and a node that has not enabled one says so
+    /// rather than answering. Distinct from a call that failed, so a caller can fall
+    /// back to another endpoint without mistaking a timeout for a missing feature.
+    #[error("node does not support this call: {0}")]
+    Unsupported(String),
+
     /// Custom or third-party transport error.
     #[error("{0}")]
     Custom(#[source] Box<dyn StdError + Send + Sync + 'static>),
@@ -37,6 +127,20 @@ pub enum TransportErrorKind {
     /// Deterministic, terminal failure that retry loops must not retry.
     #[error("{0}")]
     NonRetryable(#[source] Box<dyn StdError + Send + Sync + 'static>),
+}
+
+impl From<tronz_rpc_types::ResponseError> for TransportErrorKind {
+    /// The three ways a response can be unusable carry over one for one; the
+    /// transport adds the ways a call can fail before there is a response at all.
+    fn from(err: tronz_rpc_types::ResponseError) -> Self {
+        use tronz_rpc_types::ResponseError;
+
+        match err {
+            ResponseError::Decode(err) => Self::Proto(err),
+            ResponseError::Malformed(msg) => Self::Malformed(msg),
+            ResponseError::NodeError(msg) => Self::NodeError(msg),
+        }
+    }
 }
 
 impl TransportErrorKind {
@@ -70,24 +174,44 @@ impl TransportErrorKind {
         Self::NonRetryable(err.to_string().into())
     }
 
+    /// A status the node reported, however the transport phrased it.
+    #[cold]
+    pub fn rpc(code: RpcStatusCode, message: impl Into<String>) -> Self {
+        Self::Rpc { code, message: message.into() }
+    }
+
+    /// Wrap a channel-level failure as [`Connect`](Self::Connect).
+    #[cold]
+    pub fn connect(err: impl StdError + Send + Sync + 'static) -> Self {
+        Self::Connect(Box::new(err))
+    }
+
     /// Returns `true` if the error is likely transient and may be retried.
     pub fn is_retryable(&self) -> bool {
         match self {
             // `DeadlineExceeded` is intentionally excluded: with channel-level
             // `Endpoint::timeout()` it is almost always the client's own
             // request timeout firing, so retrying just multiplies latency.
-            Self::Grpc(s) => matches!(
-                s.code(),
-                tonic::Code::Unavailable | tonic::Code::ResourceExhausted | tonic::Code::Aborted
+            Self::Rpc { code, .. } => matches!(
+                code,
+                RpcStatusCode::Unavailable
+                    | RpcStatusCode::ResourceExhausted
+                    | RpcStatusCode::Aborted
             ),
             _ => false,
         }
     }
 
-    /// Returns `true` if this is [`Grpc`](Self::Grpc).
+    /// Returns `true` if this is [`Rpc`](Self::Rpc).
     #[inline]
-    pub const fn is_grpc(&self) -> bool {
-        matches!(self, Self::Grpc(_))
+    pub const fn is_rpc(&self) -> bool {
+        matches!(self, Self::Rpc { .. })
+    }
+
+    /// The status the node reported, if this is [`Rpc`](Self::Rpc).
+    #[inline]
+    pub const fn status_code(&self) -> Option<RpcStatusCode> {
+        if let Self::Rpc { code, .. } = self { Some(*code) } else { None }
     }
 
     /// Returns `true` if this is [`Connect`](Self::Connect).
@@ -177,6 +301,46 @@ where
     /// that `RpcError<E>` stays generic over concrete signer/primitive crates.
     #[error("local usage error: {0}")]
     LocalUsageError(#[source] Box<dyn StdError + Send + Sync + 'static>),
+
+    /// A signed transaction went out, but the node's answer did not come back.
+    ///
+    /// Whether the transaction was accepted is unknown: the broadcast may not have
+    /// arrived, or the reply may have been lost on the way back. Nothing is retried,
+    /// since a second broadcast cannot be told apart from a node that took the first
+    /// one — so the id is carried here instead, to be looked up.
+    ///
+    /// A node that answers with the transaction settles the question. A node that has
+    /// never heard of it does not: it may not have indexed it yet, may be behind, or
+    /// may not be the node the transaction reached. The way out is the expiry the
+    /// transaction was built with — once it has passed, the transaction can no longer
+    /// be included by anyone, and only then is building a replacement safe. Before
+    /// then, keep asking, and prefer re-broadcasting the same signed bytes to signing
+    /// a new transaction that could be included alongside the first.
+    ///
+    /// ```no_run
+    /// # async fn recover(
+    /// #     provider: &impl tronz_provider::TronProvider,
+    /// #     err: tronz_provider::ProviderError,
+    /// # ) -> tronz_provider::Result<()> {
+    /// if let Some(tx_id) = err.tx_id() {
+    ///     match provider.get_transaction(tx_id).await? {
+    ///         Some(_) => println!("the node took it after all"),
+    ///         // Not an answer yet — keep asking until the transaction expires.
+    ///         None => println!("still unknown"),
+    ///     }
+    /// }
+    /// # Ok(()) }
+    /// ```
+    #[error("transaction {tx_id} was broadcast but not acknowledged: {source}")]
+    Broadcast {
+        /// The id the transaction was signed under, computed locally before it was
+        /// sent.
+        tx_id: TxId,
+
+        /// Why the broadcast did not complete.
+        #[source]
+        source: E,
+    },
 }
 
 /// Promotes [`TransportErrorKind::NodeError`] to [`RpcError::NodeError`];
@@ -244,6 +408,14 @@ impl<E: StdError + 'static> RpcError<E> {
     pub const fn as_transport_err(&self) -> Option<&E> {
         if let Self::Transport(e) = self { Some(e) } else { None }
     }
+
+    /// The id of a transaction that was sent without being acknowledged.
+    ///
+    /// Present only on [`Broadcast`](Self::Broadcast), the one error that leaves a
+    /// transaction's fate unknown.
+    pub const fn tx_id(&self) -> Option<TxId> {
+        if let Self::Broadcast { tx_id, .. } = self { Some(*tx_id) } else { None }
+    }
 }
 
 impl RpcError<TransportErrorKind> {
@@ -251,6 +423,36 @@ impl RpcError<TransportErrorKind> {
     #[inline]
     pub(crate) fn transport<E: Into<TransportErrorKind>>(e: E) -> Self {
         Self::from(e.into())
+    }
+
+    /// Classify a failed broadcast of the transaction with this id.
+    ///
+    /// Only a failure that leaves the outcome open becomes
+    /// [`Broadcast`](Self::Broadcast). A node that answered — refusing the signature,
+    /// the permission, the TAPOS reference — has told us it did not take the
+    /// transaction, and saying otherwise would send the caller looking for something
+    /// that was never there.
+    ///
+    /// Anything unclear is treated as unclear: mistaking a lost answer for a refusal
+    /// invites a second broadcast of a transaction the chain already has, while the
+    /// reverse costs only a lookup.
+    pub(crate) fn broadcast(tx_id: TxId, source: TransportErrorKind) -> Self {
+        let refused = match &source {
+            // The node replied `Return { result: false }`.
+            TransportErrorKind::NodeError(_) => true,
+            // Never reached the point of being applied.
+            TransportErrorKind::Rpc { code, .. } => matches!(
+                code,
+                RpcStatusCode::InvalidArgument
+                    | RpcStatusCode::PermissionDenied
+                    | RpcStatusCode::Unauthenticated
+                    | RpcStatusCode::Unimplemented
+            ),
+            TransportErrorKind::Unsupported(_) => true,
+            _ => false,
+        };
+
+        if refused { Self::from(source) } else { Self::Broadcast { tx_id, source } }
     }
 
     /// Returns `true` if the underlying transport error is retryable.
@@ -276,24 +478,27 @@ pub type TransportResult<T> = core::result::Result<T, TransportErrorKind>;
 mod tests {
     use super::*;
 
-    // ── TransportErrorKind helpers ────────────────────────────────────────────
-
     #[test]
-    fn retryable_grpc_codes() {
-        use tonic::Code;
-        for code in [Code::Unavailable, Code::ResourceExhausted, Code::Aborted] {
-            let err = TransportErrorKind::Grpc(tonic::Status::new(code, ""));
-            assert!(err.is_retryable(), "{code:?} should be retryable");
-            assert!(err.is_grpc());
+    fn a_node_that_may_answer_next_time_is_worth_retrying() {
+        for code in
+            [RpcStatusCode::Unavailable, RpcStatusCode::ResourceExhausted, RpcStatusCode::Aborted]
+        {
+            let err = TransportErrorKind::rpc(code, "");
+            assert!(err.is_retryable(), "{code} should be retryable");
+            assert!(err.is_rpc());
+            assert_eq!(err.status_code(), Some(code));
         }
     }
 
     #[test]
-    fn non_retryable_grpc_codes() {
-        use tonic::Code;
-        for code in [Code::DeadlineExceeded, Code::NotFound, Code::InvalidArgument] {
-            let err = TransportErrorKind::Grpc(tonic::Status::new(code, ""));
-            assert!(!err.is_retryable(), "{code:?} should not be retryable");
+    fn a_settled_answer_is_not_worth_retrying() {
+        for code in [
+            RpcStatusCode::DeadlineExceeded,
+            RpcStatusCode::NotFound,
+            RpcStatusCode::InvalidArgument,
+        ] {
+            let err = TransportErrorKind::rpc(code, "");
+            assert!(!err.is_retryable(), "{code} should not be retryable");
         }
     }
 
@@ -320,8 +525,6 @@ mod tests {
         assert!(err.is_non_retryable());
     }
 
-    // ── RpcError / ProviderError helpers ─────────────────────────────────────
-
     #[test]
     fn node_error_promoted_from_transport_kind() {
         let transport_err = TransportErrorKind::NodeError("contract failed".into());
@@ -342,7 +545,7 @@ mod tests {
     #[test]
     fn rpc_is_retryable_delegates_to_transport() {
         let err =
-            ProviderError::Transport(TransportErrorKind::Grpc(tonic::Status::unavailable("down")));
+            ProviderError::Transport(TransportErrorKind::rpc(RpcStatusCode::Unavailable, "down"));
         assert!(err.is_retryable());
     }
 
@@ -352,5 +555,35 @@ mod tests {
         assert!(err.is_local_usage_error());
         assert!(!err.is_transport_error());
         assert!(!err.is_retryable());
+    }
+    #[test]
+    fn a_refused_broadcast_is_not_left_open() {
+        let err = RpcError::broadcast(
+            TxId::from([1u8; 32]),
+            TransportErrorKind::NodeError("SIGERROR".into()),
+        );
+
+        assert!(matches!(err, RpcError::NodeError(_)), "{err}");
+        assert_eq!(err.tx_id(), None);
+    }
+
+    #[test]
+    fn a_rejected_request_is_not_left_open_either() {
+        let err = RpcError::broadcast(
+            TxId::from([1u8; 32]),
+            TransportErrorKind::rpc(RpcStatusCode::InvalidArgument, "bad message"),
+        );
+
+        assert_eq!(err.tx_id(), None);
+    }
+    #[test]
+    fn a_lost_broadcast_carries_the_id_to_look_up() {
+        let tx_id = TxId::from([2u8; 32]);
+        let err = RpcError::broadcast(
+            tx_id,
+            TransportErrorKind::rpc(RpcStatusCode::Unavailable, "connection reset"),
+        );
+
+        assert_eq!(err.tx_id(), Some(tx_id));
     }
 }

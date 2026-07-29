@@ -10,25 +10,37 @@ extern crate tracing;
 pub mod builders;
 pub mod ext;
 pub mod fillers;
+pub mod layers;
 pub mod transport;
-pub mod types;
+mod type_aliases;
+
+/// TRON's domain model, defined by [`tronz-rpc-types`] and re-exported here so
+/// that a provider is the only dependency needed to use it.
+///
+/// [`tronz-rpc-types`]: tronz_rpc_types
+pub mod types {
+    pub use tronz_rpc_types::{ResponseError, types::*};
+}
 
 mod error;
-pub use error::{ProviderError, Result, RpcError, TransportErrorKind, TransportResult};
+pub use error::{
+    ProviderError, Result, RpcError, RpcStatusCode, TransportErrorKind, TransportResult,
+};
 /// Backward-compatible alias — prefer [`ProviderError`] in new code.
 pub type Error = ProviderError;
 
 mod provider;
 pub use ext::{GovernanceApi, Trc10Api, WitnessApi};
 pub use fillers::{HasSigner, WalletFiller};
+pub use layers::{ProviderLayer, Stack};
 pub use provider::{
-    ContractReadProvider, FilledProvider, PendingTransaction, PendingTransactionError,
+    ContractReadProvider, DynProvider, FilledProvider, PendingTransaction, PendingTransactionError,
     ProviderBuilder, RootProvider, SolidityProvider, SolidityProviderBuilder, TronProvider,
 };
-pub use transport::{SolidityTransport, TronTransport};
+pub use transport::{DynSolidityTransport, DynTransport, SolidityTransport, TronTransport};
+pub use type_aliases::*;
 pub use types::{
     AccountNet, ChainProperties, NodeAddress, NodeInfo, ProposalInfo, ProposalState, SignWeight,
 };
 
-// Private: prost-generated code + codec conversions never leak publicly.
 pub(crate) mod proto;

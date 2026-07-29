@@ -8,7 +8,6 @@ use crate::{
     builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
-    transport::TronTransport as _,
     types::{
         ContractType, ExchangeCreateContract, ExchangeInfo, ExchangeInjectContract,
         ExchangeTransactionContract, ExchangeWithdrawContract, TransactionRequest,
@@ -106,8 +105,6 @@ impl<P: TronProvider> ExchangeApi for P {
     }
 }
 
-// ── ExchangeCreateBuilder ─────────────────────────────────────────────────────
-
 /// Builds a transaction that creates a new TRC10 exchange pair.
 ///
 /// Created by [`ExchangeApi::exchange_create`].
@@ -201,8 +198,6 @@ impl<'a, P: TronProvider> ExchangeCreateBuilder<'a, P> {
     builder_exits!();
 }
 
-// ── ExchangeInjectBuilder ─────────────────────────────────────────────────────
-
 /// Builds a liquidity injection transaction.
 ///
 /// Created by [`ExchangeApi::exchange_inject`].
@@ -283,8 +278,6 @@ impl<'a, P: TronProvider> ExchangeInjectBuilder<'a, P> {
     builder_exits!();
 }
 
-// ── ExchangeWithdrawBuilder ───────────────────────────────────────────────────
-
 /// Builds a liquidity withdrawal transaction.
 ///
 /// Created by [`ExchangeApi::exchange_withdraw`].
@@ -364,8 +357,6 @@ impl<'a, P: TronProvider> ExchangeWithdrawBuilder<'a, P> {
 
     builder_exits!();
 }
-
-// ── ExchangeTradeBuilder ──────────────────────────────────────────────────────
 
 /// Builds a swap (trade) transaction on an exchange pair.
 ///
@@ -459,33 +450,20 @@ impl<'a, P: TronProvider> ExchangeTradeBuilder<'a, P> {
 
 #[cfg(test)]
 mod tests {
-    use tronz_primitives::Address;
 
     use super::*;
     use crate::{provider::RootProvider, transport::mock::MockTransport, types::ExchangeInfo};
-
-    fn mock_provider() -> RootProvider<MockTransport> {
-        RootProvider::new(MockTransport::new())
+    fn mock_provider() -> (RootProvider, MockTransport) {
+        let mock = MockTransport::new();
+        (RootProvider::new(mock.clone()), mock)
     }
 
-    fn exchange(id: i64) -> ExchangeInfo {
-        ExchangeInfo {
-            exchange_id: id,
-            creator_address: Address::from_evm_bytes([0u8; 20]),
-            create_time: 0,
-            first_token_id: "_".into(),
-            first_token_balance: 1_000_000,
-            second_token_id: "1000001".into(),
-            second_token_balance: 500_000,
-        }
-    }
+    use tronz_rpc_types::test_utils::exchange;
 
     #[tokio::test]
     async fn list_exchanges_returns_pushed_list() {
-        let provider = mock_provider();
-        provider
-            .transport()
-            .push_ok::<Vec<ExchangeInfo>>("list_exchanges", vec![exchange(1), exchange(2)]);
+        let (provider, mock) = mock_provider();
+        mock.push_ok::<Vec<ExchangeInfo>>("list_exchanges", vec![exchange(1), exchange(2)]);
         let result = provider.list_exchanges().await.unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].exchange_id, 1);
@@ -494,18 +472,16 @@ mod tests {
 
     #[tokio::test]
     async fn get_exchange_by_id_found() {
-        let provider = mock_provider();
-        provider
-            .transport()
-            .push_ok::<Option<ExchangeInfo>>("get_exchange_by_id", Some(exchange(7)));
+        let (provider, mock) = mock_provider();
+        mock.push_ok::<Option<ExchangeInfo>>("get_exchange_by_id", Some(exchange(7)));
         let result = provider.get_exchange_by_id(7).await.unwrap();
         assert_eq!(result.unwrap().exchange_id, 7);
     }
 
     #[tokio::test]
     async fn get_exchange_by_id_not_found() {
-        let provider = mock_provider();
-        provider.transport().push_ok::<Option<ExchangeInfo>>("get_exchange_by_id", None);
+        let (provider, mock) = mock_provider();
+        mock.push_ok::<Option<ExchangeInfo>>("get_exchange_by_id", None);
         let result = provider.get_exchange_by_id(99).await.unwrap();
         assert!(result.is_none());
     }

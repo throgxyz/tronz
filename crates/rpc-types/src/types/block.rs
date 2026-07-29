@@ -15,6 +15,17 @@ pub struct BlockInfo {
 }
 
 impl BlockInfo {
+    /// A block a caller already knows about.
+    ///
+    /// Normally these come from a node, but an indexer that has already fetched a
+    /// block can pass one to [`TransactionRequest::with_tapos`] and save the
+    /// round trip.
+    ///
+    /// [`TransactionRequest::with_tapos`]: crate::TransactionRequest::with_tapos
+    pub const fn new(number: i64, hash: B256, timestamp: i64) -> Self {
+        Self { number, hash, timestamp }
+    }
+
     /// `ref_block_bytes` = last 2 bytes of the big-endian block number.
     pub fn ref_block_bytes(&self) -> [u8; 2] {
         let bytes = self.number.to_be_bytes();

@@ -1,21 +1,26 @@
-//! Proto ↔ domain type conversions for the gRPC transport.
+//! Proto ↔ domain type conversions.
 //!
-//! All functions are `pub(super)` — only the gRPC transport module needs them.
+//! Pure data mapping between the two representations this crate owns: no
+//! transport, no gRPC. The transport crates call these to turn a node's messages
+//! into the domain model and back.
+
+mod abi;
 
 use prost::Message as _;
 use tronz_primitives::{Address, B256, Bytes, Log, RecoverableSignature, Trx, TxId};
 
 use crate::{
-    error::TransportErrorKind,
+    error::ResponseError,
     proto,
     types::{
-        AccountInfo, AccountPermissionUpdateContract, AccountPermissions, AccountResource,
-        AssetInfo, AssetIssueContract, ClearContractAbiContract, ConstantCallResult,
-        ContractResult, CreateAccountContract, CreateSmartContract, CreateWitnessContract,
-        DelegatedResource, DelegatedResourceIndex, ExchangeCreateContract, ExchangeInfo,
-        ExchangeInjectContract, ExchangeTransactionContract, ExchangeWithdrawContract, FreezeV2,
-        MarketCancelOrderContract, MarketOrderInfo, MarketOrderPair, MarketOrderState, MarketPrice,
-        MarketSellAssetContract, ParticipateAssetIssueContract, Permission, PermissionKey,
+        AccountInfo, AccountNet, AccountPermissionUpdateContract, AccountPermissions,
+        AccountResource, AssetInfo, AssetIssueContract, ChainProperties, ClearContractAbiContract,
+        ConstantCallResult, ContractResult, CreateAccountContract, CreateSmartContract,
+        CreateWitnessContract, DelegatedResource, DelegatedResourceIndex, ExchangeCreateContract,
+        ExchangeInfo, ExchangeInjectContract, ExchangeTransactionContract,
+        ExchangeWithdrawContract, FreezeV2, MarketCancelOrderContract, MarketOrderInfo,
+        MarketOrderPair, MarketOrderState, MarketPrice, MarketSellAssetContract, NodeAddress,
+        NodeInfo, ParticipateAssetIssueContract, Permission, PermissionKey,
         ProposalApproveContract, ProposalCreateContract, ProposalDeleteContract, ProposalInfo,
         ProposalState, RawTransaction, SetAccountIdContract, SignWeight, SignedTransaction,
         SmartContractInfo, TransactionInfo, TransferAssetContract, TransferContract,
@@ -25,15 +30,11 @@ use crate::{
     },
 };
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-pub(super) fn check_return(ret: Option<proto::Return>) -> Result<(), TransportErrorKind> {
+pub fn check_return(ret: Option<proto::Return>) -> Result<(), ResponseError> {
     if let Some(ret) = ret
         && !ret.result
     {
-        return Err(TransportErrorKind::NodeError(
-            String::from_utf8_lossy(&ret.message).into_owned(),
-        ));
+        return Err(ResponseError::NodeError(String::from_utf8_lossy(&ret.message).into_owned()));
     }
     Ok(())
 }
@@ -50,16 +51,15 @@ fn str_bytes(s: String) -> Vec<u8> {
     s.into_bytes()
 }
 
-fn addr(bytes: Vec<u8>) -> Result<Address, TransportErrorKind> {
-    Address::from_slice(&bytes)
-        .map_err(|e| TransportErrorKind::Malformed(format!("bad address: {e}")))
+fn addr(bytes: Vec<u8>) -> Result<Address, ResponseError> {
+    Address::from_slice(&bytes).map_err(|e| ResponseError::Malformed(format!("bad address: {e}")))
 }
 
 fn opt_addr(bytes: Vec<u8>) -> Option<Address> {
     if bytes.is_empty() { None } else { Address::from_slice(&bytes).ok() }
 }
 
-fn log_addr(bytes: Vec<u8>) -> Result<Address, TransportErrorKind> {
+fn log_addr(bytes: Vec<u8>) -> Result<Address, ResponseError> {
     match bytes.as_slice().try_into() {
         Ok(evm) => Ok(Address::from_evm_bytes(evm)),
         Err(_) => addr(bytes),
@@ -83,17 +83,15 @@ fn b256(bytes: Vec<u8>) -> B256 {
     }
 }
 
-// ── Account ───────────────────────────────────────────────────────────────────
-
 /// Convert a proto `Account` into `AccountInfo`.
 ///
 /// `queried` is the address that was requested — used as a fallback when the
 /// node returns an empty address field (happens for non-existent accounts on
 /// some TRON fullnode versions).
-pub(super) fn account_from_proto(
+pub fn account_from_proto(
     a: proto::Account,
     queried: Address,
-) -> Result<AccountInfo, TransportErrorKind> {
+) -> Result<AccountInfo, ResponseError> {
     let is_activated = !a.address.is_empty();
     let address = if a.address.is_empty() { queried } else { addr(a.address.clone())? };
 
@@ -164,7 +162,7 @@ pub(super) fn account_from_proto(
     })
 }
 
-fn permission_from_proto(p: proto::Permission) -> Result<Permission, TransportErrorKind> {
+fn permission_from_proto(p: proto::Permission) -> Result<Permission, ResponseError> {
     let keys = p
         .keys
         .into_iter()
@@ -178,7 +176,7 @@ fn permission_from_proto(p: proto::Permission) -> Result<Permission, TransportEr
     Ok(Permission { id: p.id, permission_name: p.permission_name, threshold: p.threshold, keys })
 }
 
-pub(super) fn account_resource_from_proto(r: proto::AccountResourceMessage) -> AccountResource {
+pub fn account_resource_from_proto(r: proto::AccountResourceMessage) -> AccountResource {
     AccountResource {
         free_bandwidth_used: r.free_net_used,
         free_bandwidth_limit: r.free_net_limit,
@@ -194,24 +192,23 @@ pub(super) fn account_resource_from_proto(r: proto::AccountResourceMessage) -> A
     }
 }
 
-// ── Transaction ───────────────────────────────────────────────────────────────
-
-pub(super) fn signed_tx_from_proto(
+/// A transaction the caller asked for by id, absent if the chain has no such
+/// transaction.
+///
+/// TRON answers an unknown id with an entirely empty message rather than an error.
+/// Only that counts as absent: a message carrying signatures or results but no
+/// `raw_data` is a broken answer, not a missing transaction.
+pub fn signed_tx_lookup(
     tx: proto::Transaction,
-) -> Result<SignedTransaction, TransportErrorKind> {
-    use sha2::{Digest, Sha256};
+) -> Result<Option<SignedTransaction>, ResponseError> {
+    if tx == proto::Transaction::default() {
+        return Ok(None);
+    }
 
-    let raw_data = tx
-        .raw_data
-        .as_ref()
-        .ok_or_else(|| TransportErrorKind::Malformed("Transaction has no raw_data".into()))?;
+    signed_tx_from_proto(tx).map(Some)
+}
 
-    let (expiration, timestamp) = (raw_data.expiration, raw_data.timestamp);
-
-    // Compute txid = sha256(raw_data encoded bytes)
-    let tx_id_bytes: [u8; 32] = Sha256::digest(raw_data.encode_to_vec()).into();
-    let tx_id = TxId::from(tx_id_bytes);
-
+pub fn signed_tx_from_proto(tx: proto::Transaction) -> Result<SignedTransaction, ResponseError> {
     let signatures: Vec<RecoverableSignature> = tx
         .signature
         .iter()
@@ -222,34 +219,24 @@ pub(super) fn signed_tx_from_proto(
         })
         .collect();
 
-    let raw_proto = tx.encode_to_vec();
-    let raw = RawTransaction::from_proto_extention(
-        tx_id.as_slice().to_vec(),
-        raw_proto,
-        expiration,
-        timestamp,
-    )?;
+    let raw = RawTransaction::from_node_encoded(tx.encode_to_vec(), &[])?;
 
     Ok(SignedTransaction { raw, signatures })
 }
 
-// ── Transaction info ───────────────────────────────────────────────────────────
-
 /// Returns `Ok(None)` when the node has not yet indexed the transaction
 /// (empty `id` field).  Callers that need to wait for confirmation should
 /// poll until they receive `Ok(Some(_))`.
-pub(super) fn transaction_info_from_proto(
+pub fn transaction_info_from_proto(
     info: proto::TransactionInfo,
-) -> Result<Option<TransactionInfo>, TransportErrorKind> {
+) -> Result<Option<TransactionInfo>, ResponseError> {
     if info.id.is_empty() {
         return Ok(None);
     }
 
     let tx_id = {
-        let bytes: [u8; 32] = info
-            .id
-            .try_into()
-            .map_err(|_| TransportErrorKind::Malformed("bad txid length".into()))?;
+        let bytes: [u8; 32] =
+            info.id.try_into().map_err(|_| ResponseError::Malformed("bad txid length".into()))?;
         TxId::from(bytes)
     };
 
@@ -286,7 +273,7 @@ pub(super) fn transaction_info_from_proto(
                 Bytes::from(l.data),
             ))
         })
-        .collect::<Result<Vec<_>, TransportErrorKind>>()?;
+        .collect::<Result<Vec<_>, ResponseError>>()?;
 
     let revert_reason = if info.res_message.is_empty() {
         None
@@ -310,11 +297,7 @@ pub(super) fn transaction_info_from_proto(
     }))
 }
 
-// ── Smart contract ─────────────────────────────────────────────────────────────
-
-pub(super) fn trigger_smart_contract_to_proto(
-    p: TriggerSmartContract,
-) -> proto::TriggerSmartContract {
+pub fn trigger_smart_contract_to_proto(p: TriggerSmartContract) -> proto::TriggerSmartContract {
     proto::TriggerSmartContract {
         owner_address: addr_bytes(p.owner_address),
         contract_address: addr_bytes(p.contract_address),
@@ -325,19 +308,17 @@ pub(super) fn trigger_smart_contract_to_proto(
     }
 }
 
-pub(super) fn constant_result_from_extention(
+pub fn constant_result_from_extention(
     ext: proto::TransactionExtention,
-) -> Result<ConstantCallResult, TransportErrorKind> {
+) -> Result<ConstantCallResult, ResponseError> {
     let output: Bytes = ext.constant_result.into_iter().next().unwrap_or_default().into();
 
     let revert_reason = if let Some(ref r) = ext.result {
         if !r.result {
             let msg = String::from_utf8_lossy(&r.message).into_owned();
             if output.is_empty() {
-                // Protocol-level failure with no EVM output — surface as an error.
-                return Err(TransportErrorKind::NodeError(msg));
+                return Err(ResponseError::NodeError(msg));
             }
-            // EVM reverted and left ABI-encoded revert data in output.
             Some(msg)
         } else {
             None
@@ -349,11 +330,11 @@ pub(super) fn constant_result_from_extention(
     Ok(ConstantCallResult { output, energy_used: ext.energy_used, revert_reason })
 }
 
-pub(super) fn smart_contract_from_proto(c: proto::SmartContract) -> SmartContractInfo {
+pub fn smart_contract_from_proto(c: proto::SmartContract) -> SmartContractInfo {
     SmartContractInfo {
         address: opt_addr(c.contract_address),
         origin_address: opt_addr(c.origin_address),
-        abi: c.abi.map(super::abi::from_proto).unwrap_or_default(),
+        abi: c.abi.map(abi::from_proto).unwrap_or_default(),
         bytecode: Bytes::from(c.bytecode),
         runtime_bytecode: None,
         name: c.name,
@@ -362,9 +343,7 @@ pub(super) fn smart_contract_from_proto(c: proto::SmartContract) -> SmartContrac
     }
 }
 
-pub(super) fn smart_contract_info_from_wrapper(
-    w: proto::SmartContractDataWrapper,
-) -> SmartContractInfo {
+pub fn smart_contract_info_from_wrapper(w: proto::SmartContractDataWrapper) -> SmartContractInfo {
     let mut info = w.smart_contract.map(smart_contract_from_proto).unwrap_or_default();
     if !w.runtimecode.is_empty() {
         info.runtime_bytecode = Some(Bytes::from(w.runtimecode));
@@ -372,7 +351,7 @@ pub(super) fn smart_contract_info_from_wrapper(
     info
 }
 
-pub(super) fn witness_from_proto(w: proto::Witness) -> Option<WitnessInfo> {
+pub fn witness_from_proto(w: proto::Witness) -> Option<WitnessInfo> {
     let address = opt_addr(w.address)?;
     Some(WitnessInfo {
         address,
@@ -384,11 +363,9 @@ pub(super) fn witness_from_proto(w: proto::Witness) -> Option<WitnessInfo> {
     })
 }
 
-// ── Delegated resource ─────────────────────────────────────────────────────────
-
-pub(super) fn delegated_resource_from_proto(
+pub fn delegated_resource_from_proto(
     d: proto::DelegatedResource,
-) -> Result<DelegatedResource, TransportErrorKind> {
+) -> Result<DelegatedResource, ResponseError> {
     Ok(DelegatedResource {
         from: addr(d.from)?,
         to: addr(d.to)?,
@@ -399,9 +376,7 @@ pub(super) fn delegated_resource_from_proto(
     })
 }
 
-// ── Native contracts (to proto) ────────────────────────────────────────────────
-
-pub(super) fn transfer_to_proto(p: TransferContract) -> proto::TransferContract {
+pub fn transfer_to_proto(p: TransferContract) -> proto::TransferContract {
     proto::TransferContract {
         owner_address: addr_bytes(p.owner_address),
         to_address: addr_bytes(p.to_address),
@@ -426,7 +401,7 @@ fn permission_to_proto(p: Permission) -> proto::Permission {
     }
 }
 
-pub(super) fn account_permission_update_to_proto(
+pub fn account_permission_update_to_proto(
     p: AccountPermissionUpdateContract,
 ) -> proto::AccountPermissionUpdateContract {
     use proto::permission::PermissionType;
@@ -490,13 +465,13 @@ pub(super) fn account_permission_update_to_proto(
     }
 }
 
-pub(super) fn create_smart_contract_to_proto(p: CreateSmartContract) -> proto::CreateSmartContract {
+pub fn create_smart_contract_to_proto(p: CreateSmartContract) -> proto::CreateSmartContract {
     proto::CreateSmartContract {
         owner_address: addr_bytes(p.owner_address),
         new_contract: Some(proto::SmartContract {
             origin_address: addr_bytes(p.owner_address),
             contract_address: vec![],
-            abi: Some(super::abi::to_proto(p.abi)),
+            abi: Some(abi::to_proto(p.abi)),
             bytecode: p.bytecode.into(),
             call_value: p.call_value.as_sun(),
             consume_user_resource_percent: p.consume_user_resource_percent,
@@ -511,9 +486,7 @@ pub(super) fn create_smart_contract_to_proto(p: CreateSmartContract) -> proto::C
     }
 }
 
-// ── TRC10 ─────────────────────────────────────────────────────────────────────
-
-pub(super) fn asset_issue_to_proto(p: AssetIssueContract) -> proto::AssetIssueContract {
+pub fn asset_issue_to_proto(p: AssetIssueContract) -> proto::AssetIssueContract {
     proto::AssetIssueContract {
         owner_address: addr_bytes(p.owner_address),
         name: str_bytes(p.name),
@@ -540,7 +513,7 @@ pub(super) fn asset_issue_to_proto(p: AssetIssueContract) -> proto::AssetIssueCo
     }
 }
 
-pub(super) fn transfer_asset_to_proto(p: TransferAssetContract) -> proto::TransferAssetContract {
+pub fn transfer_asset_to_proto(p: TransferAssetContract) -> proto::TransferAssetContract {
     proto::TransferAssetContract {
         // After the ALLOW_SAME_TOKEN_NAME proposal, asset_name holds the numeric ID as bytes.
         asset_name: str_bytes(p.token_id),
@@ -550,7 +523,7 @@ pub(super) fn transfer_asset_to_proto(p: TransferAssetContract) -> proto::Transf
     }
 }
 
-pub(super) fn participate_asset_issue_to_proto(
+pub fn participate_asset_issue_to_proto(
     p: ParticipateAssetIssueContract,
 ) -> proto::ParticipateAssetIssueContract {
     proto::ParticipateAssetIssueContract {
@@ -562,11 +535,11 @@ pub(super) fn participate_asset_issue_to_proto(
     }
 }
 
-pub(super) fn unfreeze_asset_to_proto(p: UnfreezeAssetContract) -> proto::UnfreezeAssetContract {
+pub fn unfreeze_asset_to_proto(p: UnfreezeAssetContract) -> proto::UnfreezeAssetContract {
     proto::UnfreezeAssetContract { owner_address: addr_bytes(p.owner_address) }
 }
 
-pub(super) fn update_asset_to_proto(p: UpdateAssetContract) -> proto::UpdateAssetContract {
+pub fn update_asset_to_proto(p: UpdateAssetContract) -> proto::UpdateAssetContract {
     proto::UpdateAssetContract {
         owner_address: addr_bytes(p.owner_address),
         description: str_bytes(p.description),
@@ -576,7 +549,7 @@ pub(super) fn update_asset_to_proto(p: UpdateAssetContract) -> proto::UpdateAsse
     }
 }
 
-pub(super) fn create_account_to_proto(p: CreateAccountContract) -> proto::AccountCreateContract {
+pub fn create_account_to_proto(p: CreateAccountContract) -> proto::AccountCreateContract {
     proto::AccountCreateContract {
         owner_address: addr_bytes(p.owner_address),
         account_address: addr_bytes(p.account_address),
@@ -584,7 +557,7 @@ pub(super) fn create_account_to_proto(p: CreateAccountContract) -> proto::Accoun
     }
 }
 
-pub(super) fn vote_witness_to_proto(p: VoteWitnessContract) -> proto::VoteWitnessContract {
+pub fn vote_witness_to_proto(p: VoteWitnessContract) -> proto::VoteWitnessContract {
     proto::VoteWitnessContract {
         owner_address: addr_bytes(p.owner_address),
         votes: p
@@ -599,7 +572,7 @@ pub(super) fn vote_witness_to_proto(p: VoteWitnessContract) -> proto::VoteWitnes
     }
 }
 
-pub(super) fn update_account_to_proto(p: UpdateAccountContract) -> proto::AccountUpdateContract {
+pub fn update_account_to_proto(p: UpdateAccountContract) -> proto::AccountUpdateContract {
     proto::AccountUpdateContract {
         account_name: str_bytes(p.name),
         owner_address: addr_bytes(p.owner_address),
@@ -607,9 +580,9 @@ pub(super) fn update_account_to_proto(p: UpdateAccountContract) -> proto::Accoun
 }
 
 /// Returns `Ok(None)` when the token was not found (empty `id` field).
-pub(super) fn asset_info_from_proto(
+pub fn asset_info_from_proto(
     a: proto::AssetIssueContract,
-) -> Result<Option<AssetInfo>, TransportErrorKind> {
+) -> Result<Option<AssetInfo>, ResponseError> {
     if a.id.is_empty() {
         return Ok(None);
     }
@@ -625,9 +598,9 @@ pub(super) fn asset_info_from_proto(
     }))
 }
 
-pub(super) fn delegated_resource_index_from_proto(
+pub fn delegated_resource_index_from_proto(
     idx: proto::DelegatedResourceAccountIndex,
-) -> Result<DelegatedResourceIndex, TransportErrorKind> {
+) -> Result<DelegatedResourceIndex, ResponseError> {
     Ok(DelegatedResourceIndex {
         account: addr(idx.account)?,
         from_accounts: idx.from_accounts.into_iter().filter_map(|b| addr(b).ok()).collect(),
@@ -635,18 +608,14 @@ pub(super) fn delegated_resource_index_from_proto(
     })
 }
 
-// ── Governance ────────────────────────────────────────────────────────────────
-
-pub(super) fn proposal_create_to_proto(p: ProposalCreateContract) -> proto::ProposalCreateContract {
+pub fn proposal_create_to_proto(p: ProposalCreateContract) -> proto::ProposalCreateContract {
     proto::ProposalCreateContract {
         owner_address: addr_bytes(p.owner_address),
         parameters: p.parameters,
     }
 }
 
-pub(super) fn proposal_approve_to_proto(
-    p: ProposalApproveContract,
-) -> proto::ProposalApproveContract {
+pub fn proposal_approve_to_proto(p: ProposalApproveContract) -> proto::ProposalApproveContract {
     proto::ProposalApproveContract {
         owner_address: addr_bytes(p.owner_address),
         proposal_id: p.proposal_id,
@@ -654,14 +623,14 @@ pub(super) fn proposal_approve_to_proto(
     }
 }
 
-pub(super) fn proposal_delete_to_proto(p: ProposalDeleteContract) -> proto::ProposalDeleteContract {
+pub fn proposal_delete_to_proto(p: ProposalDeleteContract) -> proto::ProposalDeleteContract {
     proto::ProposalDeleteContract {
         owner_address: addr_bytes(p.owner_address),
         proposal_id: p.proposal_id,
     }
 }
 
-pub(super) fn proposal_from_proto(p: proto::Proposal) -> ProposalInfo {
+pub fn proposal_from_proto(p: proto::Proposal) -> ProposalInfo {
     let proposer_address = if p.proposer_address.is_empty() {
         None
     } else {
@@ -679,48 +648,42 @@ pub(super) fn proposal_from_proto(p: proto::Proposal) -> ProposalInfo {
     }
 }
 
-// ── Witness ───────────────────────────────────────────────────────────────────
-
-pub(super) fn create_witness_to_proto(p: CreateWitnessContract) -> proto::WitnessCreateContract {
+pub fn create_witness_to_proto(p: CreateWitnessContract) -> proto::WitnessCreateContract {
     proto::WitnessCreateContract {
         owner_address: addr_bytes(p.owner_address),
         url: str_bytes(p.url),
     }
 }
 
-pub(super) fn update_witness_to_proto(p: UpdateWitnessContract) -> proto::WitnessUpdateContract {
+pub fn update_witness_to_proto(p: UpdateWitnessContract) -> proto::WitnessUpdateContract {
     proto::WitnessUpdateContract {
         owner_address: addr_bytes(p.owner_address),
         update_url: str_bytes(p.update_url),
     }
 }
 
-pub(super) fn update_brokerage_to_proto(
-    p: UpdateBrokerageContract,
-) -> proto::UpdateBrokerageContract {
+pub fn update_brokerage_to_proto(p: UpdateBrokerageContract) -> proto::UpdateBrokerageContract {
     proto::UpdateBrokerageContract {
         owner_address: addr_bytes(p.owner_address),
         brokerage: p.brokerage,
     }
 }
 
-// ── Smart contract management ─────────────────────────────────────────────────
-
-pub(super) fn set_account_id_to_proto(p: SetAccountIdContract) -> proto::SetAccountIdContract {
+pub fn set_account_id_to_proto(p: SetAccountIdContract) -> proto::SetAccountIdContract {
     proto::SetAccountIdContract {
         account_id: str_bytes(p.account_id),
         owner_address: addr_bytes(p.owner_address),
     }
 }
 
-pub(super) fn clear_contract_abi_to_proto(p: ClearContractAbiContract) -> proto::ClearAbiContract {
+pub fn clear_contract_abi_to_proto(p: ClearContractAbiContract) -> proto::ClearAbiContract {
     proto::ClearAbiContract {
         owner_address: addr_bytes(p.owner_address),
         contract_address: addr_bytes(p.contract_address),
     }
 }
 
-pub(super) fn update_setting_to_proto(p: UpdateSettingContract) -> proto::UpdateSettingContract {
+pub fn update_setting_to_proto(p: UpdateSettingContract) -> proto::UpdateSettingContract {
     proto::UpdateSettingContract {
         owner_address: addr_bytes(p.owner_address),
         contract_address: addr_bytes(p.contract_address),
@@ -728,7 +691,7 @@ pub(super) fn update_setting_to_proto(p: UpdateSettingContract) -> proto::Update
     }
 }
 
-pub(super) fn update_energy_limit_to_proto(
+pub fn update_energy_limit_to_proto(
     p: UpdateEnergyLimitContract,
 ) -> proto::UpdateEnergyLimitContract {
     proto::UpdateEnergyLimitContract {
@@ -738,29 +701,14 @@ pub(super) fn update_energy_limit_to_proto(
     }
 }
 
-// ── Raw transaction from plain Transaction proto ───────────────────────────────
-
 /// Convert a plain `Transaction` proto into a `RawTransaction`.
-pub(super) fn raw_from_plain(tx: proto::Transaction) -> Result<RawTransaction, TransportErrorKind> {
+pub fn raw_from_plain(tx: proto::Transaction) -> Result<RawTransaction, ResponseError> {
     use prost::Message as _;
-    use sha2::{Digest, Sha256};
 
-    let (expiration, timestamp) =
-        tx.raw_data.as_ref().map(|r| (r.expiration, r.timestamp)).unwrap_or((0, 0));
-
-    let tx_id_bytes: [u8; 32] = if let Some(ref raw) = tx.raw_data {
-        Sha256::digest(raw.encode_to_vec()).into()
-    } else {
-        [0u8; 32]
-    };
-
-    let raw_proto = tx.encode_to_vec();
-    RawTransaction::from_proto_extention(tx_id_bytes.to_vec(), raw_proto, expiration, timestamp)
+    RawTransaction::from_node_encoded(tx.encode_to_vec(), &[])
 }
 
-// ── DEX (Bancor exchange) ─────────────────────────────────────────────────────
-
-pub(super) fn exchange_create_to_proto(p: ExchangeCreateContract) -> proto::ExchangeCreateContract {
+pub fn exchange_create_to_proto(p: ExchangeCreateContract) -> proto::ExchangeCreateContract {
     proto::ExchangeCreateContract {
         owner_address: addr_bytes(p.owner_address),
         first_token_id: str_bytes(p.first_token_id),
@@ -770,7 +718,7 @@ pub(super) fn exchange_create_to_proto(p: ExchangeCreateContract) -> proto::Exch
     }
 }
 
-pub(super) fn exchange_inject_to_proto(p: ExchangeInjectContract) -> proto::ExchangeInjectContract {
+pub fn exchange_inject_to_proto(p: ExchangeInjectContract) -> proto::ExchangeInjectContract {
     proto::ExchangeInjectContract {
         owner_address: addr_bytes(p.owner_address),
         exchange_id: p.exchange_id,
@@ -779,9 +727,7 @@ pub(super) fn exchange_inject_to_proto(p: ExchangeInjectContract) -> proto::Exch
     }
 }
 
-pub(super) fn exchange_withdraw_to_proto(
-    p: ExchangeWithdrawContract,
-) -> proto::ExchangeWithdrawContract {
+pub fn exchange_withdraw_to_proto(p: ExchangeWithdrawContract) -> proto::ExchangeWithdrawContract {
     proto::ExchangeWithdrawContract {
         owner_address: addr_bytes(p.owner_address),
         exchange_id: p.exchange_id,
@@ -790,7 +736,7 @@ pub(super) fn exchange_withdraw_to_proto(
     }
 }
 
-pub(super) fn exchange_transaction_to_proto(
+pub fn exchange_transaction_to_proto(
     p: ExchangeTransactionContract,
 ) -> proto::ExchangeTransactionContract {
     proto::ExchangeTransactionContract {
@@ -802,9 +748,7 @@ pub(super) fn exchange_transaction_to_proto(
     }
 }
 
-pub(super) fn exchange_info_from_proto(
-    e: proto::Exchange,
-) -> Result<ExchangeInfo, TransportErrorKind> {
+pub fn exchange_info_from_proto(e: proto::Exchange) -> Result<ExchangeInfo, ResponseError> {
     Ok(ExchangeInfo {
         exchange_id: e.exchange_id,
         creator_address: addr(e.creator_address)?,
@@ -816,11 +760,7 @@ pub(super) fn exchange_info_from_proto(
     })
 }
 
-// ── Market (order-book DEX) ───────────────────────────────────────────────────
-
-pub(super) fn market_sell_asset_to_proto(
-    p: MarketSellAssetContract,
-) -> proto::MarketSellAssetContract {
+pub fn market_sell_asset_to_proto(p: MarketSellAssetContract) -> proto::MarketSellAssetContract {
     proto::MarketSellAssetContract {
         owner_address: addr_bytes(p.owner_address),
         sell_token_id: str_bytes(p.sell_token_id),
@@ -830,7 +770,7 @@ pub(super) fn market_sell_asset_to_proto(
     }
 }
 
-pub(super) fn market_cancel_order_to_proto(
+pub fn market_cancel_order_to_proto(
     p: MarketCancelOrderContract,
 ) -> proto::MarketCancelOrderContract {
     proto::MarketCancelOrderContract {
@@ -839,9 +779,7 @@ pub(super) fn market_cancel_order_to_proto(
     }
 }
 
-pub(super) fn market_order_from_proto(
-    o: proto::MarketOrder,
-) -> Result<MarketOrderInfo, TransportErrorKind> {
+pub fn market_order_from_proto(o: proto::MarketOrder) -> Result<MarketOrderInfo, ResponseError> {
     let state = match o.state {
         1 => MarketOrderState::Inactive,
         2 => MarketOrderState::Canceled,
@@ -850,7 +788,7 @@ pub(super) fn market_order_from_proto(
     let order_id: [u8; 32] = o
         .order_id
         .try_into()
-        .map_err(|_| TransportErrorKind::Malformed("market order id must be 32 bytes".into()))?;
+        .map_err(|_| ResponseError::Malformed("market order id must be 32 bytes".into()))?;
     Ok(MarketOrderInfo {
         order_id: B256::from(order_id),
         owner_address: addr(o.owner_address)?,
@@ -865,31 +803,29 @@ pub(super) fn market_order_from_proto(
     })
 }
 
-pub(super) fn market_order_pair_from_proto(p: proto::MarketOrderPair) -> MarketOrderPair {
+pub fn market_order_pair_from_proto(p: proto::MarketOrderPair) -> MarketOrderPair {
     MarketOrderPair {
         sell_token_id: String::from_utf8_lossy(&p.sell_token_id).into_owned(),
         buy_token_id: String::from_utf8_lossy(&p.buy_token_id).into_owned(),
     }
 }
 
-pub(super) fn market_price_from_proto(p: proto::MarketPrice) -> MarketPrice {
+pub fn market_price_from_proto(p: proto::MarketPrice) -> MarketPrice {
     MarketPrice {
         sell_token_quantity: p.sell_token_quantity,
         buy_token_quantity: p.buy_token_quantity,
     }
 }
 
-// ── Multi-sig ─────────────────────────────────────────────────────────────────
-
-pub(super) fn sign_weight_from_proto(
+pub fn sign_weight_from_proto(
     w: proto::TransactionSignWeight,
-) -> Result<SignWeight, TransportErrorKind> {
+) -> Result<SignWeight, ResponseError> {
     let approved_list = w
         .approved_list
         .into_iter()
         .map(|bytes| {
             Address::from_slice(&bytes)
-                .map_err(|e| TransportErrorKind::Malformed(format!("bad address: {e}")))
+                .map_err(|e| ResponseError::Malformed(format!("bad address: {e}")))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -898,6 +834,62 @@ pub(super) fn sign_weight_from_proto(
     let result = w.result.as_ref().map(|r| r.message.clone()).unwrap_or_default();
 
     Ok(SignWeight { approved_list, current_weight: w.current_weight, required_weight, result })
+}
+
+pub fn node_info_from_proto(info: proto::NodeInfo) -> NodeInfo {
+    NodeInfo {
+        block: info.block,
+        solidity_block: info.solidity_block,
+        peer_num: info.current_connect_count,
+    }
+}
+
+/// The reachable peers from a node list, skipping entries with no address.
+pub fn node_addresses_from_proto(list: proto::NodeList) -> Vec<NodeAddress> {
+    list.nodes
+        .into_iter()
+        .filter_map(|n| {
+            n.address.map(|a| NodeAddress {
+                host: String::from_utf8_lossy(&a.host).into_owned(),
+                port: a.port,
+            })
+        })
+        .collect()
+}
+
+/// `DynamicProperties` carries only the last solidified block number, so the
+/// head fields it has nothing to say about are left empty rather than guessed at.
+pub fn chain_properties_from_proto(props: proto::DynamicProperties) -> ChainProperties {
+    ChainProperties {
+        head_block_id: String::new(),
+        head_block_num: props.last_solidity_block_num,
+        head_block_time_stamp: 0,
+    }
+}
+
+/// `AccountNetMessage` covers bandwidth only; the energy fields belong to
+/// `AccountResourceMessage` and stay zero here.
+pub fn account_net_from_proto(msg: proto::AccountNetMessage) -> AccountNet {
+    AccountNet {
+        free_net_used: msg.free_net_used,
+        free_net_limit: msg.free_net_limit,
+        net_used: msg.net_used,
+        net_limit: msg.net_limit,
+        total_net_weight: msg.total_net_weight,
+        energy_used: 0,
+        energy_limit: 0,
+        total_energy_weight: 0,
+    }
+}
+
+/// Addresses from a witness or delegate listing.
+pub fn addresses_from_proto(raw: Vec<Vec<u8>>) -> Result<Vec<Address>, ResponseError> {
+    raw.into_iter()
+        .map(|bytes| {
+            Address::from_slice(&bytes)
+                .map_err(|e| ResponseError::Malformed(format!("bad address: {e}")))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1010,15 +1002,23 @@ mod tests {
         assert_eq!(decoded.contract_result, ContractResult::Default);
         assert!(decoded.is_success());
     }
-
-    /// A valid 21-byte TRON address with the `0x41` prefix and `fill` body.
     fn tron_addr(fill: u8) -> Address {
         let mut b = [fill; 21];
         b[0] = 0x41;
         Address::from_slice(&b).unwrap()
     }
 
-    // ── helpers ────────────────────────────────────────────────────────────
+    #[test]
+    fn an_empty_transaction_message_means_the_node_has_no_such_transaction() {
+        assert!(signed_tx_lookup(proto::Transaction::default()).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_transaction_with_signatures_but_no_raw_data_is_broken_not_missing() {
+        let tx = proto::Transaction { signature: vec![vec![7; 65].into()], ..Default::default() };
+
+        assert!(matches!(signed_tx_lookup(tx), Err(ResponseError::Malformed(_))));
+    }
 
     #[test]
     fn check_return_accepts_none_and_success() {
@@ -1031,7 +1031,7 @@ mod tests {
         let ret =
             proto::Return { result: false, message: b"bad sig".to_vec(), ..Default::default() };
         match check_return(Some(ret)) {
-            Err(TransportErrorKind::NodeError(msg)) => assert_eq!(msg, "bad sig"),
+            Err(ResponseError::NodeError(msg)) => assert_eq!(msg, "bad sig"),
             other => panic!("expected NodeError, got {other:?}"),
         }
     }
@@ -1039,7 +1039,6 @@ mod tests {
     #[test]
     fn b256_requires_exactly_32_bytes() {
         assert_eq!(b256(vec![9; 32]), B256::from([9u8; 32]));
-        // Wrong lengths fall back to ZERO instead of panicking.
         assert_eq!(b256(vec![1, 2, 3]), B256::ZERO);
         assert_eq!(b256(vec![9; 33]), B256::ZERO);
         assert_eq!(b256(Vec::new()), B256::ZERO);
@@ -1049,23 +1048,17 @@ mod tests {
     fn opt_addr_handles_empty_valid_and_malformed() {
         assert_eq!(opt_addr(Vec::new()), None);
         assert_eq!(opt_addr(tron_addr(0x11).as_bytes().to_vec()), Some(tron_addr(0x11)));
-        // Wrong prefix / wrong length are silently dropped.
         assert_eq!(opt_addr(vec![0x99; 21]), None);
         assert_eq!(opt_addr(vec![0x41; 5]), None);
     }
 
     #[test]
     fn log_addr_accepts_both_evm_and_tron_layouts() {
-        // 20-byte EVM body gets the 0x41 prefix prepended.
         assert_eq!(log_addr(vec![7; 20]).unwrap(), Address::from_evm_bytes([7; 20]));
-        // 21-byte TRON layout is parsed as-is.
         let a = tron_addr(0x22);
         assert_eq!(log_addr(a.as_bytes().to_vec()).unwrap(), a);
-        // Anything else is a hard error.
         assert!(log_addr(vec![1, 2, 3]).is_err());
     }
-
-    // ── account ────────────────────────────────────────────────────────────
 
     #[test]
     fn account_falls_back_to_queried_address_when_not_activated() {
@@ -1086,7 +1079,6 @@ mod tests {
             asset_v2: [("1000001".to_string(), 42i64)].into_iter().collect(),
             frozen_v2: vec![
                 proto::account::FreezeV2 { r#type: 1, amount: 100 },
-                // Unknown resource code is dropped by filter_map.
                 proto::account::FreezeV2 { r#type: 99, amount: 7 },
             ],
             unfrozen_v2: vec![proto::account::UnFreezeV2 {
@@ -1096,7 +1088,6 @@ mod tests {
             }],
             votes: vec![
                 proto::Vote { vote_address: voter.as_bytes().to_vec(), vote_count: 7 },
-                // Malformed vote address is skipped.
                 proto::Vote { vote_address: vec![1, 2, 3], vote_count: 9 },
             ],
             ..Default::default()
@@ -1134,12 +1125,9 @@ mod tests {
         let r = account_resource_from_proto(msg);
         assert_eq!(r.free_bandwidth_used, 1);
         assert_eq!(r.energy_limit, 6);
-        // TRON Power is reported in whole TRX; converted to sun (×1e6).
         assert_eq!(r.tron_power_used.as_sun(), 5_000_000);
         assert_eq!(r.tron_power_limit.as_sun(), 10_000_000);
     }
-
-    // ── transaction info ─────────────────────────────────────────────────────
 
     #[test]
     fn transaction_info_returns_none_for_unindexed_tx() {
@@ -1173,8 +1161,6 @@ mod tests {
         let info = proto::TransactionInfo { id: vec![1; 32], ..Default::default() };
         assert_eq!(transaction_info_from_proto(info).unwrap().unwrap().revert_reason, None);
     }
-
-    // ── constant call result ──────────────────────────────────────────────────
 
     #[test]
     fn constant_result_without_return_has_no_revert() {
@@ -1212,7 +1198,7 @@ mod tests {
             ..Default::default()
         };
         match constant_result_from_extention(ext) {
-            Err(TransportErrorKind::NodeError(msg)) => assert_eq!(msg, "boom"),
+            Err(ResponseError::NodeError(msg)) => assert_eq!(msg, "boom"),
             other => panic!("expected NodeError, got {other:?}"),
         }
     }
@@ -1232,8 +1218,6 @@ mod tests {
         assert_eq!(r.revert_reason.as_deref(), Some("reverted"));
         assert_eq!(r.output.as_ref(), &[0xde, 0xad]);
     }
-
-    // ── witness / delegation / asset ──────────────────────────────────────────
 
     #[test]
     fn witness_requires_address() {
@@ -1309,8 +1293,6 @@ mod tests {
         assert_eq!(info.decimals, 6);
         assert_eq!(info.owner, tron_addr(0x91));
     }
-
-    // ── governance / market / dex ──────────────────────────────────────────────
 
     #[test]
     fn proposal_decodes_state_and_filters_addresses() {
@@ -1390,16 +1372,12 @@ mod tests {
         assert_eq!(sw.current_weight, 3);
         assert_eq!(sw.required_weight, 0);
         assert_eq!(sw.result, "");
-
-        // A malformed approver address is a hard error.
         let bad = proto::TransactionSignWeight {
             approved_list: vec![vec![1, 2, 3]],
             ..Default::default()
         };
         assert!(sign_weight_from_proto(bad).is_err());
     }
-
-    // ── encode (to proto) ──────────────────────────────────────────────────────
 
     #[test]
     fn transfer_to_proto_maps_addresses_and_amount() {
@@ -1438,7 +1416,6 @@ mod tests {
 
         let active = &out.actives[0];
         assert_eq!(active.r#type, PermissionType::Active as i32);
-        // The 32-byte operations bitfield must match the hand-computed constant.
         assert_eq!(active.operations.len(), 32);
         assert_eq!(&active.operations[0..8], &[0x7f, 0xff, 0x1f, 0xc0, 0x03, 0x7e, 0xfb, 0x0f]);
         assert!(active.operations[8..].iter().all(|&b| b == 0));
@@ -1473,8 +1450,6 @@ mod tests {
         let info = smart_contract_info_from_wrapper(wrapper);
         assert_eq!(info.name, "Token");
         assert_eq!(info.runtime_bytecode.as_ref().map(|b| b.as_ref()), Some(&[0x60, 0x00][..]));
-
-        // Empty runtimecode leaves the field unset.
         let empty = proto::SmartContractDataWrapper {
             smart_contract: Some(proto::SmartContract::default()),
             runtimecode: Vec::<u8>::new().into(),
@@ -1484,12 +1459,9 @@ mod tests {
     }
 
     #[test]
-    fn raw_from_plain_handles_missing_raw_data() {
-        // No raw_data → zero txid, zero expiration/timestamp, still succeeds.
-        let raw = raw_from_plain(proto::Transaction::default()).unwrap();
-        assert_eq!(raw.tx_id().as_slice(), &[0u8; 32]);
-
-        // With raw_data the txid is a non-zero sha256 of the encoded raw_data.
+    fn raw_from_plain_rejects_a_transaction_with_no_raw_data() {
+        let err = raw_from_plain(proto::Transaction::default()).unwrap_err();
+        assert!(matches!(err, ResponseError::Malformed(ref m) if m.contains("raw_data")));
         let tx = proto::Transaction {
             raw_data: Some(proto::transaction::Raw {
                 expiration: 10,
@@ -1500,27 +1472,15 @@ mod tests {
         };
         let raw = raw_from_plain(tx).unwrap();
         assert_ne!(raw.tx_id().as_slice(), &[0u8; 32]);
+        assert_eq!((raw.expiration, raw.timestamp), (10, 20));
     }
-
-    // ── fixture replay ─────────────────────────────────────────────────────
-    //
-    // These decode real protobuf bytes captured from a live node (see the
-    // `capture` module) so CI validates the decode paths against genuine wire
-    // data. Each test is a no-op until the corresponding fixture is committed,
-    // then it becomes a real assertion — nothing to gate at compile time.
-
-    /// Mainnet USDT (TRC20) contract, used as the activated-account fixture.
     const USDT_MAINNET: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
-
-    /// The fixed never-activated address used by the capture tool.
     fn fresh_unused_address() -> Address {
         Address::from_evm_bytes([
             0xde, 0xad, 0xbe, 0xef, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99,
             0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
         ])
     }
-
-    /// Load a committed fixture, or `None` when it has not been captured yet.
     fn fixture(name: &str) -> Option<Vec<u8>> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("src/transport/grpc/fixtures")
@@ -1562,7 +1522,6 @@ mod tests {
     fn replay_account_never_activated() {
         use prost::Message as _;
         let Some(bytes) = fixture("account_never_activated.bin") else { return };
-        // The node returns an empty Account; the queried address is the fallback.
         let queried = fresh_unused_address();
         let account = proto::Account::decode(&bytes[..]).unwrap();
         let decoded = account_from_proto(account, queried).unwrap();
@@ -1576,7 +1535,6 @@ mod tests {
         let Some(bytes) = fixture("constant_call_balanceof.bin") else { return };
         let ext = proto::TransactionExtention::decode(&bytes[..]).unwrap();
         let result = constant_result_from_extention(ext).unwrap();
-        // balanceOf returns a single uint256 → 32 bytes of ABI output.
         assert_eq!(result.output.len(), 32);
     }
 }

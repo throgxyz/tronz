@@ -4,7 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // messages keep their exact field numbers.
     tonic_prost_build::configure().build_client(false).build_server(true).compile_protos(
         &["proto/wallet_solidity_test.proto"],
-        &["proto", "../../proto/tron", "../../proto"],
+        &["proto", "../../../rpc-types/proto/tron", "../../../rpc-types/proto"],
     )?;
     Ok(())
 }

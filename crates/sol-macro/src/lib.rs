@@ -298,8 +298,11 @@ impl TronSol {
         let alloy = quote!(#kpriv::alloy_sol_types);
         let aprim = quote!(#kpriv::alloy_primitives);
         let taddr = quote!(#kpriv::tronz_primitives::Address);
-        let read_provider_tr = quote!(#kpriv::tronz_provider::ContractReadProvider);
-        let provider_tr = quote!(#kpriv::tronz_provider::TronProvider);
+        // `Clone` is not a supertrait of either provider trait — that would cost
+        // them object safety — so the generated instances ask for it themselves.
+        let read_provider_tr =
+            quote!(#kpriv::tronz_provider::ContractReadProvider + ::core::clone::Clone);
+        let provider_tr = quote!(#kpriv::tronz_provider::TronProvider + ::core::clone::Clone);
         let cinst = quote!(#kpriv::ContractInstance);
         let tcb = quote!(#kpriv::TronCallBuilder);
         let tef = quote!(#kpriv::TronEventFilter);

@@ -10,8 +10,12 @@ use tronz_primitives::{Address, B256, Bytes, ResourceCode, Trx};
 ///
 /// Only the `v0` variants carry fully-defined parameter structs today; the
 /// remaining variants are reserved for later milestones.
+///
+/// Exhaustive, unlike the types a node returns: a provider routes every variant
+/// to the endpoint that builds it, and that table has to stop compiling when a
+/// variant is added without a route. Adding one is therefore a breaking change,
+/// which on TRON is a rare and visible event anyway.
 #[derive(Clone, Debug)]
-#[non_exhaustive]
 pub enum ContractType {
     // --- v0 ---
     /// Transfer TRX.
@@ -311,7 +315,7 @@ pub struct CreateSmartContract {
 ///
 /// After submission the token receives a numeric ID assigned by the network.
 /// Query it via
-/// [`Trc10Api::get_asset_issue_by_account`](crate::ext::Trc10Api::get_asset_issue_by_account).
+/// `Trc10Api::get_asset_issue_by_account`.
 #[derive(Clone, Debug)]
 pub struct AssetIssueContract {
     /// Issuer address.
@@ -944,7 +948,7 @@ pub struct SmartContractInfo {
     /// Creation bytecode (as supplied to `deploy_contract`).
     pub bytecode: Bytes,
     /// Deployed (runtime) bytecode — only populated by
-    /// [`get_contract_info`](crate::provider::TronProvider::get_contract_info).
+    /// `TronProvider::get_contract_info`.
     pub runtime_bytecode: Option<Bytes>,
     /// Contract name.
     pub name: String,

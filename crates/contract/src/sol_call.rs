@@ -33,7 +33,7 @@ pub struct TronCallBuilder<P, C> {
     _call: PhantomData<fn() -> C>,
 }
 
-impl<P: ContractReadProvider, C: SolCall> TronCallBuilder<P, C> {
+impl<P: ContractReadProvider + Clone, C: SolCall> TronCallBuilder<P, C> {
     /// Wrap a raw [`CallBuilder`].
     #[inline]
     pub fn new(inner: CallBuilder<P>) -> Self {
@@ -79,7 +79,7 @@ impl<P: ContractReadProvider, C: SolCall> TronCallBuilder<P, C> {
     }
 }
 
-impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
+impl<P: TronProvider + Clone, C: SolCall> TronCallBuilder<P, C> {
     /// Set the transaction permission id.
     #[inline]
     pub fn permission_id(self, id: i32) -> Self {
@@ -89,7 +89,7 @@ impl<P: TronProvider, C: SolCall> TronCallBuilder<P, C> {
     /// Broadcast the call as a state-changing transaction (`trigger_smart_contract`).
     ///
     /// Requires a signer attached to the provider.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
+    pub async fn send(self) -> Result<PendingTransaction> {
         self.inner.send().await
     }
 
@@ -121,8 +121,18 @@ mod tests {
         Address::from_evm_bytes([1u8; 20])
     }
 
-    fn make_builder<P: ContractReadProvider>(provider: P) -> TronCallBuilder<P, balanceOfCall> {
+    fn make_builder<P: ContractReadProvider + Clone>(
+        provider: P,
+    ) -> TronCallBuilder<P, balanceOfCall> {
         TronCallBuilder::new(CallBuilder::new(provider, addr(), Bytes::new())).caller(addr())
+    }
+
+    /// The mock is handed back alongside the provider: its call queues are shared
+    /// between clones, so the test can prime it after the provider has erased the
+    /// transport.
+    fn mock_provider() -> (RootProvider, MockTransport) {
+        let mock = MockTransport::new();
+        (RootProvider::new(mock.clone()), mock)
     }
 
     fn canned(output: Vec<u8>) -> ConstantCallResult {
@@ -131,8 +141,8 @@ mod tests {
 
     #[tokio::test]
     async fn empty_output_yields_zero_data_error() {
-        let provider = RootProvider::new(MockTransport::new());
-        provider.transport().push_ok("trigger_constant_contract", canned(vec![]));
+        let (provider, mock) = mock_provider();
+        mock.push_ok("trigger_constant_contract", canned(vec![]));
         let err = make_builder(provider).call().await.unwrap_err();
         assert!(
             matches!(&err, ContractError::ZeroData(name, _) if name == "balanceOf"),
@@ -142,18 +152,18 @@ mod tests {
 
     #[tokio::test]
     async fn valid_output_decodes_correctly() {
-        let provider = RootProvider::new(MockTransport::new());
+        let (provider, mock) = mock_provider();
         let mut out = [0u8; 32];
         out[31] = 99;
-        provider.transport().push_ok("trigger_constant_contract", canned(out.to_vec()));
+        mock.push_ok("trigger_constant_contract", canned(out.to_vec()));
         let value = make_builder(provider).call().await.unwrap();
         assert_eq!(value, U256::from(99u64));
     }
 
     #[tokio::test]
     async fn truncated_output_yields_abi_error() {
-        let provider = RootProvider::new(MockTransport::new());
-        provider.transport().push_ok("trigger_constant_contract", canned(vec![0xde, 0xad]));
+        let (provider, mock) = mock_provider();
+        mock.push_ok("trigger_constant_contract", canned(vec![0xde, 0xad]));
         let err = make_builder(provider).call().await.unwrap_err();
         assert!(matches!(err, ContractError::Abi(_)), "expected Abi(_), got {err:?}");
     }

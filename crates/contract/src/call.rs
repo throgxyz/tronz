@@ -52,7 +52,7 @@ pub struct CallBuilder<P> {
     permission_id: Option<i32>,
 }
 
-impl<P: ContractReadProvider> CallBuilder<P> {
+impl<P: ContractReadProvider + Clone> CallBuilder<P> {
     pub(crate) fn new(provider: P, address: Address, data: Bytes) -> Self {
         Self {
             provider,
@@ -148,7 +148,7 @@ impl<P: ContractReadProvider> CallBuilder<P> {
     }
 }
 
-impl<P: TronProvider> CallBuilder<P> {
+impl<P: TronProvider + Clone> CallBuilder<P> {
     /// Set the transaction permission id.
     #[inline]
     pub fn permission_id(mut self, id: i32) -> Self {
@@ -158,6 +158,12 @@ impl<P: TronProvider> CallBuilder<P> {
 
     /// The write request this builder describes, without contacting the node.
     pub fn into_request(self) -> Result<TransactionRequest> {
+        self.to_request()
+    }
+
+    /// As [`into_request`](Self::into_request), but leaves the provider in place
+    /// so `send` and `build` can still use it. Cloning `data` is a refcount bump.
+    fn to_request(&self) -> Result<TransactionRequest> {
         let owner = self
             .caller
             .or_else(|| self.provider.signer_address())
@@ -169,7 +175,7 @@ impl<P: TronProvider> CallBuilder<P> {
                 owner_address: owner,
                 contract_address: self.address,
                 call_value: self.call_value,
-                data: self.data,
+                data: self.data.clone(),
                 call_token_value: self.call_token_value,
                 token_id: self.token_id,
             })),
@@ -186,15 +192,15 @@ impl<P: TronProvider> CallBuilder<P> {
     ///
     /// Requires a signer to be attached to the provider. The transaction is
     /// filled (TAPOS, fee-limit), signed, and broadcast.
-    pub async fn send(self) -> Result<PendingTransaction<P>> {
-        let provider = self.provider.clone();
-        Ok(provider.send_transaction(self.into_request()?).await?)
+    pub async fn send(self) -> Result<PendingTransaction> {
+        let request = self.to_request()?;
+        Ok(self.provider.send_transaction(request).await?)
     }
 
     /// Build without signing or broadcasting.
     pub async fn build(self) -> Result<RawTransaction> {
-        let provider = self.provider.clone();
-        Ok(provider.build_transaction(self.into_request()?).await?)
+        let request = self.to_request()?;
+        Ok(self.provider.build_transaction(request).await?)
     }
 }
 

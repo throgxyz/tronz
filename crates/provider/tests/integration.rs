@@ -19,10 +19,7 @@ use tronz_primitives::{Address, TxId};
 use tronz_provider::{
     ProviderBuilder, SolidityProvider, TronProvider,
     ext::Trc10Api as _,
-    transport::{
-        TronTransport as _,
-        grpc::{TRONGRID_NILE, TRONGRID_NILE_SOLIDITY},
-    },
+    transport::grpc::{TRONGRID_NILE, TRONGRID_NILE_SOLIDITY},
 };
 
 // ── Well-known Nile fixtures ──────────────────────────────────────────────────
@@ -288,9 +285,15 @@ async fn test_trx_transfer_and_receipt() {
 
     eprintln!("Broadcast tx: {}", pending.tx_id());
 
+    // Configured once, then honoured by both the solidified and the FullNode read.
+    let pending = pending
+        .with_poll_interval(Duration::from_secs(3))
+        .with_timeout(Duration::from_secs(180))
+        .require_success();
+
     let solidity = solidity_provider().await;
     let solidified = pending
-        .await_solidified_success_with(&solidity, Duration::from_secs(3), 60)
+        .get_solidified_receipt(&solidity)
         .await
         .expect("transaction did not solidify successfully");
     eprintln!("Solidified: block #{}", solidified.block_number);

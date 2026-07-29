@@ -8,7 +8,6 @@ use crate::{
     builders::{builder_exits, resolve_owner},
     error::{Error, Result},
     provider::{PendingTransaction, TronProvider},
-    transport::TronTransport as _,
     types::{
         ContractType, CreateWitnessContract, TransactionRequest, UpdateBrokerageContract,
         UpdateWitnessContract, WitnessInfo,
@@ -92,8 +91,6 @@ impl<P: TronProvider> WitnessApi for P {
     }
 }
 
-// ── BecomeWitnessBuilder ──────────────────────────────────────────────────────
-
 /// Builds a become-SR-candidate transaction.
 ///
 /// The applicant must have at least 9,999 TRX to cover the SR deposit.
@@ -150,8 +147,6 @@ impl<'a, P: TronProvider> BecomeWitnessBuilder<'a, P> {
     builder_exits!();
 }
 
-// ── UpdateWitnessBuilder ──────────────────────────────────────────────────────
-
 /// Builds an update-SR-URL transaction.
 ///
 /// Created by [`WitnessApi::update_witness`].
@@ -205,8 +200,6 @@ impl<'a, P: TronProvider> UpdateWitnessBuilder<'a, P> {
 
     builder_exits!();
 }
-
-// ── UpdateBrokerageBuilder ────────────────────────────────────────────────────
 
 /// Builds a change-brokerage-ratio transaction.
 ///

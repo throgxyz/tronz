@@ -55,7 +55,7 @@ Or add it to your `Cargo.toml` manually:
 
 ```toml
 [dependencies]
-tronz = "0.4"
+tronz = "0.5"
 ```
 
 Optional features:
@@ -356,18 +356,20 @@ pending handle — pass the `SolidityProvider` to poll:
 
 ```rust,ignore
 let pending = provider.send_trx().to(to).amount(amount).send().await?;
-let receipt = pending.await_solidified_success(&solidity).await?; // waits for irreversibility
+// waits for irreversibility, and rejects a reverted transaction
+let receipt = pending.require_success().get_solidified_receipt(&solidity).await?;
 ```
 
 ## Crates
 
 | Crate | Description |
 |---|---|
-| [`tronz`](https://crates.io/crates/tronz) | Meta-crate — re-exports everything |
+| [`tronz`](https://crates.io/crates/tronz) | SDK facade for the commonly used crates and APIs |
 | [`tronz-primitives`](https://crates.io/crates/tronz-primitives) | `Address`, `Trx`, `ResourceCode`, `RecoverableSignature` |
 | [`tronz-abi`](https://crates.io/crates/tronz-abi) | Native TRON ABI metadata and optional Alloy `JsonAbi` conversion |
+| [`tronz-rpc-types`](https://crates.io/crates/tronz-rpc-types) | TRON's domain model and the protobuf messages behind it — no network stack |
 | [`tronz-signer`](https://crates.io/crates/tronz-signer) | `TronSigner`, `TronSignerSync`, `TronNetworkWallet`, `TronWallet`, and `LocalSigner` |
-| [`tronz-provider`](https://crates.io/crates/tronz-provider) | FullNode and SolidityNode transports/providers, fillers, domain types, extension traits |
+| [`tronz-provider`](https://crates.io/crates/tronz-provider) | FullNode and SolidityNode transports/providers, fillers, extension traits |
 | [`tronz-contract`](https://crates.io/crates/tronz-contract) | `ContractInstance`, `DeployBuilder`, TRC20 bindings, event decoding |
 | [`tronz-sol-macro`](https://crates.io/crates/tronz-sol-macro) | `tron_sol!` procedural macro |
 | [`tronz-signer-aws`](https://crates.io/crates/tronz-signer-aws) | AWS KMS signer (`signer-aws` feature) |

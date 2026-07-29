@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use tronz_primitives::Address;
 
-/// Summary of network node info returned by [`crate::provider::TronProvider::get_node_info`].
+/// Summary of network node info returned by `TronProvider::get_node_info`.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct NodeInfo {
@@ -28,7 +28,7 @@ pub struct NodeAddress {
 
 /// Selected fields from the chain's dynamic properties (head block info).
 ///
-/// Returned by [`crate::provider::TronProvider::get_dynamic_properties`].
+/// Returned by `TronProvider::get_dynamic_properties`.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct ChainProperties {
@@ -42,7 +42,7 @@ pub struct ChainProperties {
 
 /// Bandwidth and energy net usage for an account.
 ///
-/// Returned by [`crate::provider::TronProvider::get_account_net`].
+/// Returned by `TronProvider::get_account_net`.
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AccountNet {
@@ -93,7 +93,7 @@ impl From<i32> for ProposalState {
 
 /// An on-chain governance proposal.
 ///
-/// Returned by governance query methods on [`GovernanceApi`](crate::ext::GovernanceApi).
+/// Returned by the governance query methods on `GovernanceApi`.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct ProposalInfo {
@@ -134,7 +134,7 @@ mod tests {
 
 /// Multi-sig sign-weight query result.
 ///
-/// Returned by [`crate::provider::TronProvider::get_transaction_sign_weight`].
+/// Returned by `TronProvider::get_transaction_sign_weight`.
 #[derive(Clone, Debug)]
 pub struct SignWeight {
     /// Addresses that have already signed.

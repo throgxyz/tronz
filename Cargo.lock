@@ -3490,7 +3490,7 @@ dependencies = [
 
 [[package]]
 name = "tronz"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "tokio",
@@ -3498,13 +3498,14 @@ dependencies = [
  "tronz-contract",
  "tronz-primitives",
  "tronz-provider",
+ "tronz-rpc-types",
  "tronz-signer",
  "tronz-signer-aws",
 ]
 
 [[package]]
 name = "tronz-abi"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-json-abi",
  "serde",
@@ -3514,7 +3515,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-contract"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-json-abi",
@@ -3534,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-primitives"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-primitives",
  "bs58",
@@ -3546,22 +3547,22 @@ dependencies = [
 
 [[package]]
 name = "tronz-provider"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
+ "async-trait",
+ "auto_impl",
  "fastrand",
  "futures",
  "prost",
  "prost-types",
- "sha2 0.11.0",
  "thiserror 2.0.18",
  "tokio",
  "tonic",
  "tonic-prost",
- "tonic-prost-build",
  "tracing",
- "tronz-abi",
  "tronz-primitives",
  "tronz-provider-test-support",
+ "tronz-rpc-types",
  "tronz-signer",
 ]
 
@@ -3579,8 +3580,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "tronz-rpc-types"
+version = "0.5.0"
+dependencies = [
+ "prost",
+ "prost-types",
+ "sha2 0.11.0",
+ "thiserror 2.0.18",
+ "tracing",
+ "tronz-abi",
+ "tronz-primitives",
+]
+
+[[package]]
 name = "tronz-signer"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "aes",
  "alloy-dyn-abi",
@@ -3609,7 +3623,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-signer-aws"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -3626,7 +3640,7 @@ dependencies = [
 
 [[package]]
 name = "tronz-sol-macro"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "alloy-json-abi",
  "proc-macro2",
@@ -3955,6 +3969,14 @@ name = "xmlparser"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "prost-build",
+ "tonic-prost-build",
+]
 
 [[package]]
 name = "yoke"

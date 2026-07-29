@@ -86,7 +86,7 @@ mod tests {
         })
     }
 
-    fn mock_provider() -> RootProvider<MockTransport> {
+    fn mock_provider() -> RootProvider {
         RootProvider::new(MockTransport::new())
     }
 
@@ -110,10 +110,6 @@ mod tests {
         let err = provider.send_trx().from(addr(1)).to(addr(2)).send().await.err().unwrap();
         assert!(err.is_local_usage_error());
     }
-
-    /// The `permission_id` set on a fluent builder reaches the transaction the
-    /// node hands back, and `build` stops before signing or broadcasting — the
-    /// mock would fail on an unexpected broadcast.
     #[tokio::test]
     async fn build_carries_the_permission_id_and_leaves_the_transaction_unsigned() {
         use prost::Message as _;
@@ -130,8 +126,7 @@ mod tests {
         let transport = MockTransport::new();
         transport.push_ok(
             "transfer_trx",
-            RawTransaction::from_proto_extention(vec![0; 32], node_tx.encode_to_vec(), 0, 0)
-                .unwrap(),
+            RawTransaction::from_node_encoded(node_tx.encode_to_vec(), &[]).unwrap(),
         );
 
         let raw = RootProvider::new(transport)
@@ -144,7 +139,7 @@ mod tests {
             .await
             .unwrap();
 
-        let decoded = crate::proto::Transaction::decode(raw.raw_proto.as_ref()).unwrap();
+        let decoded = crate::proto::Transaction::decode(raw.encoded()).unwrap();
         assert_eq!(decoded.raw_data.unwrap().contract[0].permission_id, 2);
         assert!(decoded.signature.is_empty());
     }
