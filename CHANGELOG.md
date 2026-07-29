@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Keystore decryption rejects an invalid `dklen` instead of panicking.
+- `tron_sol!` matches `sol!` on parameter types, attribute passthrough, and name resolution.
+- `tron_sol!` reads the bytecode carried by a Forge artifact, enabling `deploy` from it.
 
 ### Changed (Breaking)
 

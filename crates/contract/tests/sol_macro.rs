@@ -72,7 +72,7 @@ fn _instance_is_debug<P: TronProvider>() {
     assert_debug::<IERC20::Instance<P>>();
 }
 
-// overloads + inheritance
+// overloads
 
 tron_sol! {
     #[sol(rpc)]
@@ -376,4 +376,214 @@ fn inner_attr_all_derives() {
     let call = IInnerAttr::balanceOfCall { owner: owner.into() };
     let _ = format!("{call:?}");
     let _ = call.clone();
+}
+
+// ── sol! parity: parameter shapes and type mapping ────────────────────────────
+
+tron_sol! {
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    interface IUnnamed {
+        function one(uint256) external;
+        function two(uint256, string) external;
+        function none() external;
+        function oneNamed(uint256 x) external;
+    }
+}
+
+#[test]
+fn single_unnamed_param_is_a_tuple_struct() {
+    // `sol!` deconstructs exactly this shape into `oneCall(pub U256)`; every
+    // other arity keeps named `_0`/`_1` fields.
+    let one = IUnnamed::oneCall(U256::ZERO);
+    assert_eq!(one.abi_encode().len(), 36);
+    let two = IUnnamed::twoCall { _0: U256::ZERO, _1: String::new() };
+    assert_eq!(&two.abi_encode()[..4], &IUnnamed::twoCall::SELECTOR);
+}
+
+async fn _unnamed_api<P: TronProvider + Clone>(provider: P, addr: Address) {
+    let c = IUnnamed::new(addr, provider);
+    let _ = c.one(U256::ZERO).send().await;
+    let _ = c.two(U256::ZERO, String::new()).send().await;
+    let _ = c.none().send().await;
+    let _ = c.oneNamed(U256::ZERO).send().await;
+}
+
+tron_sol! {
+    library L {
+        struct S { uint256 x; }
+    }
+
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    interface IQualified {
+        function f(L.S memory s) external;
+    }
+}
+
+async fn _qualified_custom_type<P: TronProvider + Clone>(provider: P, addr: Address) {
+    // The custom path must stay whole: `L.S` resolves to `L::S`, not `S`.
+    let _ = IQualified::new(addr, provider).f(L::S { x: U256::ZERO }).send().await;
+}
+
+tron_sol! {
+    interface IHeld {
+        function decimals() external view returns (uint8);
+    }
+
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    interface IHolderVault {
+        function setToken(IHeld token) external;
+        function setTokens(IHeld[] memory tokens) external;
+    }
+}
+
+async fn _contract_typed_params_are_addresses<P: TronProvider + Clone>(provider: P, addr: Address) {
+    // A contract-typed parameter is an `address` on the wire.
+    let v = IHolderVault::new(addr, provider);
+    let _ = v.setToken(addr).send().await;
+    let _ = v.setTokens(vec![addr.into()]).send().await;
+}
+
+tron_sol! {
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    interface ICallback {
+        function register(function() external cb) external;
+    }
+}
+
+async fn _function_type_param<P: TronProvider + Clone>(provider: P, addr: Address) {
+    let _ = ICallback::new(addr, provider).register(alloy_primitives::Function::ZERO).send().await;
+}
+
+// ── inheritance ───────────────────────────────────────────────────────────────
+
+tron_sol! {
+    interface IBaseDefined {
+        function baseFn() external view returns (uint256);
+    }
+
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    interface IDerived is IBaseDefined {
+        function ownFn() external view returns (uint256);
+    }
+}
+
+#[test]
+fn inherited_members_stay_in_the_base_module() {
+    // Like `sol!`, inheritance is not flattened: `IDerived` gets no `baseFnCall`
+    // and no `baseFn` instance method. Callers reach base members through the
+    // base interface.
+    let _ = IBaseDefined::baseFnCall {};
+    assert_eq!(IDerived::ownFnCall::SIGNATURE, "ownFn()");
+}
+
+async fn _derived_api<P: TronProvider + Clone>(provider: P, addr: Address) {
+    let _: U256 = IDerived::new(addr, provider).ownFn().call().await.unwrap();
+}
+
+// ── JSON ABI: outer alloy attributes ──────────────────────────────────────────
+
+tron_sol! {
+    #[derive(Debug)]
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    IOuterAttr, "tests/abi/erc20.json"
+}
+
+#[test]
+fn json_abi_keeps_outer_attributes() {
+    // Only the TRON-specific attributes are consumed; `#[derive(…)]` reaches `sol!`.
+    let _ = format!("{:?}", IOuterAttr::decimalsCall {});
+}
+
+// ── reserved instance methods ─────────────────────────────────────────────────
+
+tron_sol! {
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    interface IShadow {
+        function caller() external view returns (address);
+        function set_caller(address who) external;
+    }
+}
+
+async fn _caller_accessors_are_not_shadowed<P: TronProvider + Clone>(provider: P, addr: Address) {
+    // The instance's own `caller`/`set_caller` win; the Solidity functions of
+    // the same name are reached through the `_call` suffix.
+    let mut c = IShadow::new(addr, provider).caller(addr);
+    c.set_caller(addr);
+    let _ = c.caller_call().call().await;
+    let _ = c.set_caller_call(addr).send().await;
+}
+
+// ── bytecode without `#[sol(rpc)]` ────────────────────────────────────────────
+
+tron_sol! {
+    #[sol(bytecode = "0x60806040")]
+    #[sol(deployed_bytecode = "0x0102")]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    contract IPlain {
+        function ping() external;
+    }
+}
+
+#[test]
+fn bytecode_constants_do_not_need_rpc() {
+    // `sol!` emits these regardless of `rpc`; only the deploy helpers need it.
+    assert!(!IPlain::BYTECODE.is_empty());
+    assert!(!IPlain::DEPLOYED_BYTECODE.is_empty());
+}
+
+// ── a contract's own types vs a top-level contract of the same name ───────────
+
+tron_sol! {
+    contract Coin {}
+
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    contract CoinVault {
+        struct Coin { uint256 id; }
+
+        function store(Coin value) external;
+        function storeMany(Coin[] memory values) external;
+    }
+}
+
+#[test]
+fn a_top_level_contract_wins_over_a_same_named_local_type() {
+    // `sol!` resolves `Coin` to the top-level contract, so the field is an
+    // address rather than the local struct. The instance layer must agree.
+    let _: alloy_primitives::Address = CoinVault::storeCall { value: Address::ZERO.into() }.value;
+    // The shadowed local struct stays reachable by name.
+    let _ = CoinVault::Coin { id: U256::ZERO };
+}
+
+async fn _shadowed_params_are_addresses<P: TronProvider + Clone>(provider: P, addr: Address) {
+    let v = CoinVault::new(addr, provider);
+    let _ = v.store(addr).send().await;
+    let _ = v.storeMany(vec![addr.into()]).send().await;
+}
+
+// ── Forge artifact bytecode ───────────────────────────────────────────────────
+
+tron_sol! {
+    #[sol(rpc)]
+    #[tron_sol(tronz_crate = ::tronz_contract)]
+    IArtifact, "tests/abi/erc20_forge.json"
+}
+
+#[test]
+fn forge_artifact_bytecode_is_picked_up() {
+    // The artifact's `bytecode`/`deployedBytecode` reach the type layer without
+    // being restated as attributes, just as they do for `sol!`.
+    assert!(!IArtifact::BYTECODE.is_empty());
+    assert!(!IArtifact::DEPLOYED_BYTECODE.is_empty());
+}
+
+async fn _deploy_from_artifact<P: TronProvider + Clone>(provider: P) {
+    let _ = IArtifact::deploy(provider).await;
 }

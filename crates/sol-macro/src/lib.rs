@@ -1,65 +1,11 @@
-//! The [`tron_sol!`] procedural macro — a TRON-aware superset of alloy's `sol!`.
-//!
-//! `tron_sol!` forwards its entire input to `alloy_sol_types::sol!` to generate
-//! the Solidity type layer (`…Call` structs, events, errors, custom types,
-//! free-standing `struct`/`enum`/`type` definitions, …) and *additionally*
-//! generates a provider-bound `Instance` for every `contract`/`interface`
-//! carrying `#[sol(rpc)]`, wired to `tronz`'s `ContractReadProvider`.
-//!
-//! It also accepts a JSON ABI file path (or inline JSON) in the same
-//! `abigen`-style form that alloy's `sol!` supports:
-//!
-//! ```ignore
-//! // Load ABI from a file path (relative to the crate root).
-//! tron_sol! {
-//!     #[sol(rpc)]
-//!     MyContract, "abi/MyContract.json"
-//! }
-//!
-//! // Both raw ABI arrays `[...]` and Forge artifacts `{"abi":[...]}` are accepted.
-//! ```
-//!
-//! It accepts everything `sol!` does for the inline-Solidity form, including:
-//!
-//! - **multiple items in one invocation** (several contracts, or contracts mixed with bare
-//!   `struct`/`enum`/`error`/`event`/`type` definitions);
-//! - **attribute passthrough**: any attribute other than the TRON-specific ones (`#[sol(rpc)]`,
-//!   `#[sol(bytecode = …)]`, `#[sol(deployed_bytecode = …)]`, `#[tron_sol(…)]`) is forwarded
-//!   verbatim to `sol!` — so `#[derive(…)]`, `#[sol(all_derives)]`, `#[sol(extra_derives(…))]`, doc
-//!   comments, etc. all work on the generated type layer.
-//!
-//! TRON-specific attributes:
-//!
-//! - `#[sol(rpc)]` — also generate a `ContractReadProvider`-bound `Instance`.
-//! - `#[sol(bytecode = "0x…")]` — embed creation bytecode and generate `deploy_builder` / `deploy`
-//!   helpers (requires `#[sol(rpc)]`).
-//! - `#[sol(deployed_bytecode = "0x…")]` — embed the runtime bytecode as a `DEPLOYED_BYTECODE`
-//!   constant.
-//! - `#[tron_sol(tronz_crate = <path>)]` — override the runtime crate path.
-//!
-//! ```ignore
-//! // Type layer only (same as sol!) — bare types and multiple items are fine.
-//! tron_sol! {
-//!     struct Foo { uint256 x; }
-//!     enum Bar { A, B }
-//! }
-//!
-//! // Type layer + TRON RPC bindings, with derive passthrough.
-//! tron_sol! {
-//!     #[derive(Debug)]
-//!     #[sol(rpc)]
-//!     interface IERC20 {
-//!         function balanceOf(address owner) external view returns (uint256);
-//!         function transfer(address to, uint256 amount) external returns (bool);
-//!     }
-//! }
-//!
-//! let contract = IERC20::new(usdt_addr, provider).caller(owner);
-//! let balance = contract.balanceOf(owner).call().await?;
-//! ```
+#![doc = include_str!("../README.md")]
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher},
     iter::once,
 };
@@ -130,25 +76,7 @@ impl Parse for TronSol {
             items.push(input.parse::<SolItem>()?);
         }
 
-        // `#[tron_sol(tronz_crate = <path>)]` may appear on any item; the last
-        // one wins. Defaults to the umbrella crate's `contract` module.
-        let mut krate: TokenStream2 = quote!(::tronz::contract);
-        for item in &items {
-            let Some(attrs) = item.attrs() else { continue };
-            for attr in attrs {
-                if attr.path().is_ident("tron_sol") {
-                    attr.parse_nested_meta(|meta| {
-                        if meta.path.is_ident("tronz_crate") {
-                            let path: syn::Path = meta.value()?.parse()?;
-                            krate = quote!(#path);
-                            Ok(())
-                        } else {
-                            Err(meta.error("unknown `tron_sol` option; expected `tronz_crate`"))
-                        }
-                    })?;
-                }
-            }
-        }
+        let krate = tronz_crate_path(&items)?;
 
         Ok(Self { items, krate, pre_forwarded: None, include_path: None })
     }
@@ -202,9 +130,24 @@ impl TronSol {
         let obj = ContractObject::from_json(&json).map_err(|e| {
             syn::Error::new(path_lit.span(), format!("invalid JSON ABI in `{path_str}`: {e}"))
         })?;
-        let abi = obj.abi.ok_or_else(|| {
+        let ContractObject { abi, bytecode, deployed_bytecode } = obj;
+        let abi = abi.ok_or_else(|| {
             syn::Error::new(path_lit.span(), format!("`{path_str}` contains no `abi` field"))
         })?;
+
+        // A Forge artifact also carries the compiled bytecode; attach it the way
+        // `sol!` does, so the constants and deploy helpers work from an artifact.
+        // Unlinked bytecode has already been dropped by `from_json`.
+        let bytecode = bytecode.map(|b| {
+            let s = b.to_string();
+            quote!(bytecode = #s,)
+        });
+        let deployed_bytecode = deployed_bytecode.map(|b| {
+            let s = b.to_string();
+            quote!(deployed_bytecode = #s)
+        });
+        let bytecode_attr = (bytecode.is_some() || deployed_bytecode.is_some())
+            .then(|| quote!(#[sol(#bytecode #deployed_bytecode)]));
 
         // JSON ABI → Solidity interface string.
         let sol_ts: TokenStream2 = abi.to_sol(&name.to_string(), None).parse().map_err(|e| {
@@ -214,15 +157,15 @@ impl TronSol {
             )
         })?;
 
-        // `forwarded` goes to alloy's `sol!`: inner attrs first (e.g. a global
-        // `#![sol(alloy_sol_types = ...)]` override), then the generated interface.
-        // Outer attrs (`#[sol(rpc)]`, `#[tron_sol(...)]`) are intentionally omitted
-        // here — they are tronz concerns handled by `expand`, not alloy's.
-        let forwarded = quote! { #(#inner_attrs)* #sol_ts };
-
         // `full_ts` is re-parsed by tronz to build `SolItem`s — it needs both the
         // inner and outer attrs so `expand_contract` sees `#[sol(rpc)]` on the item.
-        let full_ts = quote! { #(#inner_attrs)* #(#attrs)* #sol_ts };
+        let full_ts = quote! { #(#inner_attrs)* #(#attrs)* #bytecode_attr #sol_ts };
+
+        // What goes to alloy's `sol!` is the same stream minus the TRON-only
+        // attributes, exactly as in the inline-Solidity path — so `#[derive(…)]`
+        // and other alloy attributes survive the JSON form too.
+        let forwarded = strip_tron_attrs(full_ts.clone());
+
         let file: SolFile = syn::parse2(full_ts).map_err(|e| {
             syn::Error::new(
                 path_lit.span(),
@@ -230,25 +173,7 @@ impl TronSol {
             )
         })?;
         let items = file.items;
-
-        // Extract tronz_crate override if present (same logic as the standard path).
-        let mut krate: TokenStream2 = quote!(::tronz::contract);
-        for item in &items {
-            let Some(item_attrs) = item.attrs() else { continue };
-            for attr in item_attrs {
-                if attr.path().is_ident("tron_sol") {
-                    attr.parse_nested_meta(|meta| {
-                        if meta.path.is_ident("tronz_crate") {
-                            let path: syn::Path = meta.value()?.parse()?;
-                            krate = quote!(#path);
-                            Ok(())
-                        } else {
-                            Err(meta.error("unknown `tron_sol` option; expected `tronz_crate`"))
-                        }
-                    })?;
-                }
-            }
-        }
+        let krate = tronz_crate_path(&items)?;
 
         Ok(Self { items, krate, pre_forwarded: Some(forwarded), include_path })
     }
@@ -315,9 +240,20 @@ impl TronSol {
         // when they happen to share the same first contract name.
         let types_mod = format_ident!("__tron_sol_types_{:x}", input_hash);
 
+        // A parameter whose type names a contract is an `address` on the wire,
+        // so the set of contracts declared here is needed for type mapping.
+        let contracts: HashSet<String> = self
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                SolItem::Contract(c) => Some(c.name.0.to_string()),
+                _ => None,
+            })
+            .collect();
+
         let mut instances = Vec::new();
         for c in &rpc_contracts {
-            instances.push(self.expand_contract(c, &kpriv, &types_mod)?);
+            instances.push(self.expand_contract(c, &kpriv, &types_mod, &contracts)?);
         }
 
         Ok(quote! {
@@ -346,6 +282,7 @@ impl TronSol {
         c: &ItemContract,
         kpriv: &TokenStream2,
         types_mod: &Ident,
+        contracts: &HashSet<String>,
     ) -> Result<TokenStream2> {
         let name = c.name.0.clone();
         let opts = contract_opts(&c.attrs)?;
@@ -368,6 +305,18 @@ impl TronSol {
         let tef = quote!(#kpriv::TronEventFilter);
         let deploy_builder_ty = quote!(#kpriv::DeployBuilder);
         let result_ty = quote!(#kpriv::Result);
+        // Types declared inside this contract, in declaration order.
+        let local_types: Vec<Ident2> = c
+            .body
+            .iter()
+            .filter_map(|i| match i {
+                SolItem::Struct(s) => Some(s.name.0.clone()),
+                SolItem::Enum(e) => Some(e.name.0.clone()),
+                SolItem::Udt(u) => Some(u.name.0.clone()),
+                _ => None,
+            })
+            .collect();
+        let cx = Cx { alloy: &alloy, aprim: &aprim, contracts };
 
         // Split the contract body into callable functions, constructor, and events.
         // Public state variables are converted to getter functions via
@@ -423,7 +372,7 @@ impl TronSol {
                 } else {
                     effective.clone()
                 };
-                expand_method(f, &effective, &method_name, &alloy, &aprim, &tcb)
+                expand_method(f, &effective, &method_name, &cx, &tcb)
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -451,7 +400,7 @@ impl TronSol {
 
                 let (ctor_decls, ctor_names, ctor_values) = match &constructor {
                     None => (vec![], vec![], vec![]),
-                    Some(c) => collect_params(&c.parameters, &alloy, &aprim)?,
+                    Some(c) => collect_params(&c.parameters, &cx)?,
                 };
 
                 let ctor_sig = quote!(#(, #ctor_decls)*);
@@ -558,6 +507,11 @@ impl TronSol {
                 // contracts' types) into scope so custom-type parameters resolve.
                 #[allow(unused_imports)]
                 use super::#types_mod::*;
+                // This contract's own types are named explicitly so they shadow a
+                // top-level contract of the same name, which the glob above would
+                // otherwise make ambiguous.
+                #[allow(unused_imports)]
+                pub use super::#types_mod::#name::{#(#local_types),*};
 
                 #deployed_bytecode_tokens
 
@@ -647,6 +601,30 @@ impl TronSol {
             }
         })
     }
+}
+
+/// Resolve the runtime crate path from `#[tron_sol(tronz_crate = <path>)]`,
+/// which may appear on any item; the last one wins. Defaults to the umbrella
+/// crate's `contract` module.
+fn tronz_crate_path(items: &[SolItem]) -> Result<TokenStream2> {
+    let mut krate: TokenStream2 = quote!(::tronz::contract);
+    for item in items {
+        let Some(attrs) = item.attrs() else { continue };
+        for attr in attrs {
+            if attr.path().is_ident("tron_sol") {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("tronz_crate") {
+                        let path: syn::Path = meta.value()?.parse()?;
+                        krate = quote!(#path);
+                        Ok(())
+                    } else {
+                        Err(meta.error("unknown `tron_sol` option; expected `tronz_crate`"))
+                    }
+                })?;
+            }
+        }
+    }
+    Ok(krate)
 }
 
 /// TRON-specific options parsed from a contract's `#[sol(...)]` attributes.
@@ -788,8 +766,12 @@ fn rewrite_attr(inner: TokenStream2) -> Option<TokenStream2> {
     }
 }
 
-/// Drop the `rpc` / `bytecode` / `deployed_bytecode` entries from the
-/// comma-separated meta list inside `#[sol(...)]`, preserving the rest.
+/// Drop the `rpc` entry from the comma-separated meta list inside `#[sol(...)]`,
+/// preserving the rest.
+///
+/// `bytecode` and `deployed_bytecode` are read by tronz for its deploy helpers
+/// but deliberately left in place, so that `sol!` still emits the `BYTECODE` and
+/// `DEPLOYED_BYTECODE` constants even for a contract without `#[sol(rpc)]`.
 fn filter_sol_meta(stream: TokenStream2) -> TokenStream2 {
     // Split into comma-separated items (commas inside nested groups are atomic).
     let mut items: Vec<Vec<TokenTree>> = vec![Vec::new()];
@@ -813,7 +795,7 @@ fn filter_sol_meta(stream: TokenStream2) -> TokenStream2 {
             Some(TokenTree::Ident(id)) => id.to_string(),
             _ => String::new(),
         };
-        if matches!(key.as_str(), "rpc" | "bytecode" | "deployed_bytecode") {
+        if key == "rpc" {
             continue;
         }
         if !first {
@@ -836,10 +818,23 @@ fn is_reserved_method(name: &str) -> bool {
             | "address"
             | "set_address"
             | "at"
+            | "caller"
+            | "set_caller"
             | "provider"
             | "call_builder"
             | "event_filter"
     )
+}
+
+/// Shared context for mapping Solidity types and parameter lists.
+struct Cx<'a> {
+    /// Path to `alloy_sol_types`.
+    alloy: &'a TokenStream2,
+    /// Path to `alloy_primitives`.
+    aprim: &'a TokenStream2,
+    /// Contracts declared in this invocation. A parameter typed by one of them
+    /// is an `address` on the wire, which is how `sol!` expands it.
+    contracts: &'a HashSet<String>,
 }
 
 /// Generates one typed instance method.
@@ -850,19 +845,27 @@ fn expand_method(
     f: &ItemFunction,
     call_base: &str,
     method_name: &str,
-    alloy: &TokenStream2,
-    aprim: &TokenStream2,
+    cx: &Cx<'_>,
     tcb: &TokenStream2,
 ) -> Result<TokenStream2> {
     let fn_ident = format_ident!("{}", method_name);
     let call_struct = format_ident!("{}Call", call_base);
 
-    let (decls, names, values) = collect_params(&f.parameters, alloy, aprim)?;
+    let (decls, names, values) = collect_params(&f.parameters, cx)?;
+
+    // `sol!` deconstructs a call taking exactly one unnamed parameter into a
+    // tuple struct (`fooCall(pub U256)`); every other shape gets named fields.
+    let params = &f.parameters;
+    let init = if params.len() == 1 && params.first().is_some_and(|p| p.name.is_none()) {
+        quote!(#call_struct(#(#values),*))
+    } else {
+        quote!(#call_struct { #(#names: #values),* })
+    };
 
     Ok(quote! {
         #[allow(non_snake_case, clippy::too_many_arguments)]
         pub fn #fn_ident(&self, #(#decls),*) -> #tcb<P, #call_struct> {
-            self.call_builder(&#call_struct { #(#names: #values),* })
+            self.call_builder(&#init)
         }
     })
 }
@@ -874,9 +877,9 @@ fn expand_method(
 ///   encoding
 fn collect_params(
     parameters: &syn_solidity::ParameterList,
-    alloy: &TokenStream2,
-    aprim: &TokenStream2,
+    cx: &Cx<'_>,
 ) -> Result<(Vec<TokenStream2>, Vec<Ident2>, Vec<TokenStream2>)> {
+    let aprim = cx.aprim;
     let mut decls = Vec::new();
     let mut names = Vec::new();
     let mut values = Vec::new();
@@ -889,13 +892,20 @@ fn collect_params(
             None => format_ident!("_{}", i),
         };
         match &var.ty {
+            // A contract-typed parameter is an `address` too, so both take
+            // anything convertible into one.
             SolType::Address(..) => {
                 decls.push(quote!(#field: impl ::core::convert::Into<#aprim::Address>));
                 names.push(field.clone());
                 values.push(quote!(::core::convert::Into::into(#field)));
             }
+            SolType::Custom(path) if names_a_contract(path, cx) => {
+                decls.push(quote!(#field: impl ::core::convert::Into<#aprim::Address>));
+                names.push(field.clone());
+                values.push(quote!(::core::convert::Into::into(#field)));
+            }
             other => {
-                let ty = rust_ty(other, alloy, aprim)?;
+                let ty = rust_ty(other, cx)?;
                 decls.push(quote!(#field: #ty));
                 names.push(field.clone());
                 values.push(quote!(#field));
@@ -905,10 +915,20 @@ fn collect_params(
     Ok((decls, names, values))
 }
 
+/// Whether an unqualified custom type names a contract declared in this
+/// invocation, which `sol!` expands to `address`.
+///
+/// This mirrors `sol!`: a top-level contract wins even over a same-named type
+/// declared inside the contract being expanded.
+fn names_a_contract(path: &syn_solidity::SolPath, cx: &Cx<'_>) -> bool {
+    path.len() == 1 && cx.contracts.contains(&path.last().0.to_string())
+}
+
 /// Maps a Solidity type to the Rust type used in the `…Call` struct field.
 ///
 /// Top-level `address` is handled by the caller as `impl Into<Address>`.
-fn rust_ty(ty: &SolType, alloy: &TokenStream2, aprim: &TokenStream2) -> Result<TokenStream2> {
+fn rust_ty(ty: &SolType, cx: &Cx<'_>) -> Result<TokenStream2> {
+    let (alloy, aprim) = (cx.alloy, cx.aprim);
     let ts = match ty {
         SolType::Bool(_) => quote!(bool),
         // Only nested addresses reach here; top-level is handled by the caller.
@@ -922,7 +942,7 @@ fn rust_ty(ty: &SolType, alloy: &TokenStream2, aprim: &TokenStream2) -> Result<T
         SolType::Uint(_, size) => int_ty(size.map(|s| s.get()).unwrap_or(256), false, aprim),
         SolType::Int(_, size) => int_ty(size.map(|s| s.get()).unwrap_or(256), true, aprim),
         SolType::Array(arr) => {
-            let inner = rust_ty(&arr.ty, alloy, aprim)?;
+            let inner = rust_ty(&arr.ty, cx)?;
             match (&arr.size, arr.size_lit()) {
                 (None, _) => quote!(::std::vec::Vec<#inner>),
                 (Some(_), Some(lit)) => {
@@ -943,22 +963,25 @@ fn rust_ty(ty: &SolType, alloy: &TokenStream2, aprim: &TokenStream2) -> Result<T
             }
         }
         SolType::Tuple(tuple) => {
-            let inners =
-                tuple.types.iter().map(|t| rust_ty(t, alloy, aprim)).collect::<Result<Vec<_>>>()?;
+            let inners = tuple.types.iter().map(|t| rust_ty(t, cx)).collect::<Result<Vec<_>>>()?;
             quote!((#(#inners,)*))
         }
+        // Nested contract types are addresses; only top-level ones are caught
+        // by `collect_params`.
+        SolType::Custom(path) if names_a_contract(path, cx) => quote!(#aprim::Address),
         SolType::Custom(path) => {
             // Defer to `<T as SolType>::RustType` so UDVTs resolve to their
             // underlying type (e.g. `type Foo is uint256` → `U256`), matching
-            // the field type `sol!` generates in the `…Call` struct.
-            let id = path.last().0.clone();
-            quote!(<#id as #alloy::SolType>::RustType)
+            // the field type `sol!` generates in the `…Call` struct. The path is
+            // kept whole so that qualified types such as `L.S` still resolve.
+            let segments = path.iter();
+            quote!(<#(#segments)::* as #alloy::SolType>::RustType)
         }
-        SolType::Function(_) | SolType::Mapping(_) => {
-            return Err(syn::Error::new(
-                ty.span(),
-                "`function` and `mapping` types are not supported as parameters",
-            ));
+        SolType::Function(_) => {
+            quote!(<#alloy::sol_data::Function as #alloy::SolType>::RustType)
+        }
+        SolType::Mapping(_) => {
+            return Err(syn::Error::new(ty.span(), "`mapping` types are not supported here"));
         }
     };
     Ok(ts)
