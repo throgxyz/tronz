@@ -32,7 +32,7 @@ alloy-dyn-abi    = { version = "1", default-features = false, features = ["std"]
 alloy-json-abi   = { version = "1", default-features = false, features = ["std"] }
 
 # proc-macro (for tron_sol!)
-syn          = { version = "2", features = ["full", "extra-traits"] }
+syn          = { version = "3", features = ["full", "extra-traits"] }
 syn-solidity = { version = "1" }
 quote        = { version = "1" }
 proc-macro2  = { version = "1" }
@@ -40,12 +40,12 @@ proc-macro2  = { version = "1" }
 # aws kms signer
 aws-sdk-kms = { version = "1", default-features = false }
 aws-config  = { version = "1", default-features = false }
-spki        = { version = "0.7", default-features = false, features = ["std"] }
+spki        = { version = "0.8", default-features = false, features = ["std"] }
 
 # crypto
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
 sha2 = { version = "0.11", default-features = false }
-sha3 = { version = "0.11", default-features = false }
+sha3 = { version = "0.12", default-features = false }
 bs58        = { version = "0.5",  features = ["check"] }
 coins-bip32 = { version = "0.13", default-features = false }
 coins-bip39 = { version = "0.13", default-features = false, features = ["english"] }
@@ -79,5 +79,5 @@ thiserror = { version = "2" }
 # misc
 tracing = { version = "0.1" }
 hex     = { version = "0.4" }
-rand    = { version = "0.9" }
+rand    = { version = "0.10" }
 fastrand = { version = "2" }
