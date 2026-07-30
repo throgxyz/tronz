@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use tronz_primitives::{Address, ResourceCode, Trx};
 
-use crate::types::contract::Permission;
+use crate::types::contract::{ContractKind, Permission};
 
 /// On-chain account state.
 #[derive(Clone, Debug)]
@@ -75,19 +75,43 @@ pub struct AccountPermissions {
 }
 
 impl AccountPermissions {
-    /// The permission a transaction's `permission_id` refers to.
-    ///
-    /// `0` is the owner permission, `1` the witness permission, and `2` upwards
-    /// the active ones. Note that ids are stored on the permissions themselves,
-    /// so active permissions are matched by [`Permission::id`] rather than by
-    /// their position in [`actives`](Self::actives).
-    pub fn by_id(&self, id: i32) -> Option<&Permission> {
+    fn locate(&self, id: i32) -> Option<PermissionRef<'_>> {
         match id {
-            0 => self.owner.as_ref(),
-            1 => self.witness.as_ref(),
-            _ => self.actives.iter().find(|permission| permission.id == id),
+            0 => self.owner.as_ref().map(PermissionRef::Owner),
+            1 => self.witness.as_ref().map(PermissionRef::Witness),
+            _ => self
+                .actives
+                .iter()
+                .find(|permission| permission.id == id)
+                .map(PermissionRef::Active),
         }
     }
+
+    /// Returns the permission for a transaction permission id.
+    pub fn by_id(&self, id: i32) -> Option<&Permission> {
+        match self.locate(id)? {
+            PermissionRef::Owner(permission)
+            | PermissionRef::Witness(permission)
+            | PermissionRef::Active(permission) => Some(permission),
+        }
+    }
+
+    /// Returns whether a permission authorizes a native contract operation.
+    ///
+    /// Missing and witness permissions return `false`.
+    pub fn allows(&self, permission_id: i32, kind: ContractKind) -> bool {
+        match self.locate(permission_id) {
+            Some(PermissionRef::Owner(_)) => true,
+            Some(PermissionRef::Witness(_)) | None => false,
+            Some(PermissionRef::Active(permission)) => permission.operations.contains(kind),
+        }
+    }
+}
+
+enum PermissionRef<'a> {
+    Owner(&'a Permission),
+    Witness(&'a Permission),
+    Active(&'a Permission),
 }
 
 /// Bandwidth + energy usage/limits and delegation totals for an account.
@@ -178,6 +202,7 @@ mod tests {
             permission_name: format!("permission{id}"),
             threshold: 1,
             keys: Vec::new(),
+            operations: crate::types::OperationSet::empty(),
         }
     }
 
@@ -193,5 +218,22 @@ mod tests {
         assert_eq!(permissions.by_id(1).map(|p| p.id), Some(1));
         assert_eq!(permissions.by_id(4).map(|p| p.id), Some(4));
         assert!(permissions.by_id(3).is_none());
+    }
+
+    #[test]
+    fn authorization_comes_from_the_permission_slot() {
+        let mut active = permission(2);
+        active.operations.insert(ContractKind::Transfer).unwrap();
+        let permissions = AccountPermissions {
+            owner: Some(permission(0)),
+            witness: Some(permission(1)),
+            actives: vec![active],
+        };
+
+        assert!(permissions.allows(0, ContractKind::AccountPermissionUpdate));
+        assert!(!permissions.allows(1, ContractKind::Transfer));
+        assert!(permissions.allows(2, ContractKind::Transfer));
+        assert!(!permissions.allows(2, ContractKind::TriggerSmartContract));
+        assert!(!permissions.allows(99, ContractKind::Transfer));
     }
 }

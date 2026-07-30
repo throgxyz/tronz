@@ -28,7 +28,9 @@ never assigned — it is derived from the encoding, every time, including after 
 filler changes a fee limit or a permission. A node that returns an id which
 disagrees with the transaction it built is rejected rather than signed. Keeping
 the type and the code that computes the id in one crate is what makes that
-guarantee hold; the fields are private so nothing else can break it.
+guarantee hold; the fields are private so nothing else can break it. Reading one
+goes through `details`, which decodes the encoding it holds on demand, so
+inspecting a transaction costs nothing on the path that only sends it.
 
 ## What is public but not an API
 

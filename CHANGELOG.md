@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added richer block, transaction, receipt, permission, and internal-call data.
+- Added raw and signed transaction inspection, decoding, and wire encoding.
+
+### Changed
+
+- Active permissions now require an explicit `OperationSet`.
+- Receipt energy fields and `ContractResult` now preserve their precise node semantics.
+- Transaction lookup now rejects malformed signatures and mismatched transaction IDs.
+
 ## [0.5.0](https://github.com/throgxyz/tronz/compare/v0.4.1...v0.5.0) - 2026-07-30
 
 ### Added

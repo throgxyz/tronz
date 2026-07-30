@@ -7,26 +7,27 @@
 mod abi;
 
 use prost::Message as _;
-use tronz_primitives::{Address, B256, Bytes, Log, RecoverableSignature, Trx, TxId};
+use tronz_primitives::{Address, B256, Bytes, Log, Trx, TxId};
 
 use crate::{
     error::ResponseError,
     proto,
     types::{
         AccountInfo, AccountNet, AccountPermissionUpdateContract, AccountPermissions,
-        AccountResource, AssetInfo, AssetIssueContract, ChainProperties, ClearContractAbiContract,
-        ConstantCallResult, ContractResult, CreateAccountContract, CreateSmartContract,
-        CreateWitnessContract, DelegatedResource, DelegatedResourceIndex, ExchangeCreateContract,
-        ExchangeInfo, ExchangeInjectContract, ExchangeTransactionContract,
-        ExchangeWithdrawContract, FreezeV2, MarketCancelOrderContract, MarketOrderInfo,
-        MarketOrderPair, MarketOrderState, MarketPrice, MarketSellAssetContract, NodeAddress,
-        NodeInfo, ParticipateAssetIssueContract, Permission, PermissionKey,
-        ProposalApproveContract, ProposalCreateContract, ProposalDeleteContract, ProposalInfo,
-        ProposalState, RawTransaction, SetAccountIdContract, SignWeight, SignedTransaction,
-        SmartContractInfo, TransactionInfo, TransferAssetContract, TransferContract,
-        TriggerSmartContract, TxStatus, UnfreezeAssetContract, UnfreezeV2, UpdateAccountContract,
-        UpdateAssetContract, UpdateBrokerageContract, UpdateEnergyLimitContract,
-        UpdateSettingContract, UpdateWitnessContract, Vote, VoteWitnessContract, WitnessInfo,
+        AccountResource, AssetInfo, AssetIssueContract, CallValue, ChainProperties,
+        ClearContractAbiContract, ConstantCallResult, ContractResult, CreateAccountContract,
+        CreateSmartContract, CreateWitnessContract, DelegatedResource, DelegatedResourceIndex,
+        ExchangeCreateContract, ExchangeInfo, ExchangeInjectContract, ExchangeTransactionContract,
+        ExchangeWithdrawContract, FreezeV2, InternalTransaction, MarketCancelOrderContract,
+        MarketOrderInfo, MarketOrderPair, MarketOrderState, MarketPrice, MarketSellAssetContract,
+        NodeAddress, NodeInfo, OperationSet, ParticipateAssetIssueContract, Permission,
+        PermissionKey, ProposalApproveContract, ProposalCreateContract, ProposalDeleteContract,
+        ProposalInfo, ProposalState, RawTransaction, ResourceReceipt, SetAccountIdContract,
+        SignWeight, SignedTransaction, SmartContractInfo, TransactionInfo, TransferAssetContract,
+        TransferContract, TriggerSmartContract, TxStatus, UnfreezeAssetContract, UnfreezeV2,
+        UpdateAccountContract, UpdateAssetContract, UpdateBrokerageContract,
+        UpdateEnergyLimitContract, UpdateSettingContract, UpdateWitnessContract, Vote,
+        VoteWitnessContract, WitnessInfo,
     },
 };
 
@@ -173,7 +174,14 @@ fn permission_from_proto(p: proto::Permission) -> Result<Permission, ResponseErr
                 .map(|a| PermissionKey { address: a, weight: k.weight })
         })
         .collect();
-    Ok(Permission { id: p.id, permission_name: p.permission_name, threshold: p.threshold, keys })
+    Ok(Permission {
+        id: p.id,
+        permission_name: p.permission_name,
+        threshold: p.threshold,
+        keys,
+        operations: OperationSet::from_bytes(&p.operations)
+            .map_err(|e| ResponseError::Malformed(format!("bad permission operations: {e}")))?,
+    })
 }
 
 pub fn account_resource_from_proto(r: proto::AccountResourceMessage) -> AccountResource {
@@ -200,28 +208,13 @@ pub fn account_resource_from_proto(r: proto::AccountResourceMessage) -> AccountR
 /// `raw_data` is a broken answer, not a missing transaction.
 pub fn signed_tx_lookup(
     tx: proto::Transaction,
+    claimed_tx_id: &[u8],
 ) -> Result<Option<SignedTransaction>, ResponseError> {
     if tx == proto::Transaction::default() {
         return Ok(None);
     }
 
-    signed_tx_from_proto(tx).map(Some)
-}
-
-pub fn signed_tx_from_proto(tx: proto::Transaction) -> Result<SignedTransaction, ResponseError> {
-    let signatures: Vec<RecoverableSignature> = tx
-        .signature
-        .iter()
-        .filter_map(|s| {
-            RecoverableSignature::from_bytes(s)
-                .inspect_err(|e| warn!("skipping malformed signature: {e}"))
-                .ok()
-        })
-        .collect();
-
-    let raw = RawTransaction::from_node_encoded(tx.encode_to_vec(), &[])?;
-
-    Ok(SignedTransaction { raw, signatures })
+    SignedTransaction::from_node_encoded(tx.encode_to_vec(), claimed_tx_id).map(Some)
 }
 
 /// Returns `Ok(None)` when the node has not yet indexed the transaction
@@ -242,20 +235,28 @@ pub fn transaction_info_from_proto(
 
     let receipt = info.receipt.unwrap_or_default();
     let contract_result = match receipt.result {
+        0 => ContractResult::Default,
         1 => ContractResult::Success,
         2 => ContractResult::Revert,
+        3 => ContractResult::BadJumpDestination,
+        4 => ContractResult::OutOfMemory,
+        5 => ContractResult::PrecompiledContract,
+        6 => ContractResult::StackTooSmall,
+        7 => ContractResult::StackTooLarge,
+        8 => ContractResult::IllegalOperation,
+        9 => ContractResult::StackOverflow,
         10 => ContractResult::OutOfEnergy,
-        r if r != 0 => ContractResult::Failed,
-        _ => ContractResult::Default,
+        11 => ContractResult::OutOfTime,
+        12 => ContractResult::JvmStackOverflow,
+        13 => ContractResult::UnknownFailure,
+        14 => ContractResult::TransferFailed,
+        15 => ContractResult::InvalidCode,
+        other => ContractResult::Other(other),
     };
 
     // Contract failures do not always set the top-level result code. A default
     // receipt keeps the top-level verdict for system contracts and transfers.
-    let status = if info.result != 0
-        || matches!(
-            contract_result,
-            ContractResult::Revert | ContractResult::OutOfEnergy | ContractResult::Failed
-        ) {
+    let status = if info.result != 0 || contract_result.is_failure() {
         TxStatus::Failed
     } else {
         TxStatus::Success
@@ -281,20 +282,60 @@ pub fn transaction_info_from_proto(
         Some(String::from_utf8_lossy(&info.res_message).into_owned())
     };
 
+    let internal_transactions = info
+        .internal_transactions
+        .into_iter()
+        .map(internal_transaction_from_proto)
+        .collect::<Result<Vec<_>, ResponseError>>()?;
+
     Ok(Some(TransactionInfo {
         tx_id,
         block_number: info.block_number,
         block_timestamp: info.block_time_stamp,
         status,
-        energy_usage: receipt.energy_usage_total,
+        fee: Trx::from_sun_unchecked(info.fee),
+        energy_usage_total: receipt.energy_usage_total,
         energy_fee: Trx::from_sun_unchecked(receipt.energy_fee),
         net_usage: receipt.net_usage,
         net_fee: Trx::from_sun_unchecked(receipt.net_fee),
+        receipt: ResourceReceipt {
+            energy_usage: receipt.energy_usage,
+            energy_fee: Trx::from_sun_unchecked(receipt.energy_fee),
+            origin_energy_usage: receipt.origin_energy_usage,
+            energy_usage_total: receipt.energy_usage_total,
+            net_usage: receipt.net_usage,
+            net_fee: Trx::from_sun_unchecked(receipt.net_fee),
+            energy_penalty_total: receipt.energy_penalty_total,
+        },
         contract_result,
         contract_address: opt_addr(info.contract_address),
         logs,
+        internal_transactions,
         revert_reason,
     }))
+}
+
+fn internal_transaction_from_proto(
+    tx: proto::InternalTransaction,
+) -> Result<InternalTransaction, ResponseError> {
+    let hash: [u8; 32] = tx
+        .hash
+        .try_into()
+        .map_err(|_| ResponseError::Malformed("bad internal transaction hash length".into()))?;
+
+    Ok(InternalTransaction {
+        hash: TxId::from(hash),
+        caller_address: opt_addr(tx.caller_address),
+        transfer_to_address: opt_addr(tx.transfer_to_address),
+        call_values: tx
+            .call_value_info
+            .into_iter()
+            .map(|v| CallValue { amount: v.call_value, token_id: v.token_id })
+            .collect(),
+        note: String::from_utf8_lossy(&tx.note).into_owned(),
+        rejected: tx.rejected,
+        extra: tx.extra,
+    })
 }
 
 pub fn trigger_smart_contract_to_proto(p: TriggerSmartContract) -> proto::TriggerSmartContract {
@@ -384,15 +425,24 @@ pub fn transfer_to_proto(p: TransferContract) -> proto::TransferContract {
     }
 }
 
-fn permission_to_proto(p: Permission) -> proto::Permission {
+fn permission_to_proto(
+    p: Permission,
+    r#type: proto::permission::PermissionType,
+) -> proto::Permission {
     use proto::permission::PermissionType;
+
+    let operations = match r#type {
+        PermissionType::Active => p.operations.as_bytes().to_vec(),
+        PermissionType::Owner | PermissionType::Witness => Vec::new(),
+    };
+
     proto::Permission {
-        r#type: PermissionType::Active as i32, // overridden by caller for owner/witness
+        r#type: r#type as i32,
         id: p.id,
         permission_name: p.permission_name,
         threshold: p.threshold,
         parent_id: 0,
-        operations: vec![],
+        operations,
         keys: p
             .keys
             .into_iter()
@@ -406,55 +456,12 @@ pub fn account_permission_update_to_proto(
 ) -> proto::AccountPermissionUpdateContract {
     use proto::permission::PermissionType;
 
-    let owner = p.owner.map(|perm| {
-        let mut proto_perm = permission_to_proto(perm);
-        proto_perm.r#type = PermissionType::Owner as i32;
-        proto_perm
-    });
-
-    let witness = p.witness.map(|perm| {
-        let mut proto_perm = permission_to_proto(perm);
-        proto_perm.r#type = PermissionType::Witness as i32;
-        proto_perm
-    });
-
-    // The `operations` field is a 32-byte bitfield: bit N (byte N/8, bit N%8
-    // from LSB) represents ContractType N. Only set bits for types that actually
-    // exist in the proto enum; setting a bit for a non-existent type causes
-    // "X isn't a validate ContractType" from the node.
-    //
-    // Proto ContractType values (from Tron.proto Transaction.Contract.ContractType):
-    //   Byte 0: 0–6 valid, 7 missing → 0x7f
-    //   Byte 1: 8–15 all valid       → 0xff
-    //   Byte 2: 16–20 valid, 21–23 missing → 0x1f
-    //   Byte 3: 30–31 valid, 24–29 missing → 0xc0
-    //   Byte 4: 32–33 valid, 34–39 missing → 0x03
-    //   Byte 5: 41–46 valid, 40 & 47 missing → 0x7e
-    //   Byte 6: 48–49, 51–55 valid, 50 missing → 0xfb
-    //   Byte 7: 56–59 valid, 60+ missing → 0x0f
-    //   Bytes 8–31: no valid types → 0x00
-    const ACTIVE_OPERATIONS: [u8; 32] = {
-        let mut ops = [0u8; 32];
-        ops[0] = 0x7f;
-        ops[1] = 0xff;
-        ops[2] = 0x1f;
-        ops[3] = 0xc0;
-        ops[4] = 0x03;
-        ops[5] = 0x7e;
-        ops[6] = 0xfb;
-        ops[7] = 0x0f;
-        ops
-    };
-
+    let owner = p.owner.map(|perm| permission_to_proto(perm, PermissionType::Owner));
+    let witness = p.witness.map(|perm| permission_to_proto(perm, PermissionType::Witness));
     let actives = p
         .actives
         .into_iter()
-        .map(|perm| {
-            let mut proto_perm = permission_to_proto(perm);
-            proto_perm.r#type = PermissionType::Active as i32;
-            proto_perm.operations = ACTIVE_OPERATIONS.to_vec();
-            proto_perm
-        })
+        .map(|perm| permission_to_proto(perm, PermissionType::Active))
         .collect();
 
     proto::AccountPermissionUpdateContract {
@@ -898,6 +905,7 @@ mod tests {
     use tronz_primitives::{Address, Bytes, Trx};
 
     use super::*;
+    use crate::types::{AccountPermissions, ContractKind};
 
     #[test]
     fn deploy_contract_includes_typed_abi() {
@@ -975,7 +983,7 @@ mod tests {
         assert_eq!(decoded.block_number, 123);
         assert_eq!(decoded.block_timestamp, 456);
         assert_eq!(decoded.status, TxStatus::Failed);
-        assert_eq!(decoded.energy_usage, 20);
+        assert_eq!(decoded.energy_usage_total, 20);
         assert_eq!(decoded.energy_fee, Trx::from_sun_unchecked(10));
         assert_eq!(decoded.net_usage, 30);
         assert_eq!(decoded.net_fee, Trx::from_sun_unchecked(40));
@@ -986,6 +994,91 @@ mod tests {
         assert_eq!(decoded.logs[0].topics(), [topic]);
         assert_eq!(decoded.logs[0].data.as_ref(), &[5, 6, 7]);
         assert_eq!(decoded.revert_reason.as_deref(), Some("execution reverted"));
+    }
+
+    #[test]
+    fn the_nested_receipt_keeps_the_energy_figures_apart() {
+        let info = proto::TransactionInfo {
+            id: vec![1; 32],
+            fee: 1_500,
+            receipt: Some(proto::ResourceReceipt {
+                energy_usage: 20,
+                origin_energy_usage: 70,
+                energy_fee: 10,
+                energy_usage_total: 100,
+                energy_penalty_total: 5,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+
+        assert_eq!(decoded.fee, Trx::from_sun_unchecked(1_500));
+        assert_eq!(decoded.energy_usage_total, 100, "the flat field stays the total");
+        assert_eq!(decoded.energy_usage_total, decoded.receipt.energy_usage_total);
+        assert_eq!(decoded.receipt.energy_usage, 20);
+        assert_eq!(decoded.receipt.origin_energy_usage, 70);
+        assert_eq!(decoded.receipt.energy_fee, Trx::from_sun_unchecked(10));
+        assert_eq!(decoded.receipt.energy_usage_total, 100);
+        assert_eq!(decoded.receipt.energy_penalty_total, 5);
+    }
+
+    #[test]
+    fn internal_transactions_carry_every_asset_moved_and_whether_they_stuck() {
+        let caller = tron_addr(1);
+        let callee = tron_addr(2);
+        let info = proto::TransactionInfo {
+            id: vec![1; 32],
+            internal_transactions: vec![proto::InternalTransaction {
+                hash: vec![9; 32],
+                caller_address: caller.as_bytes().to_vec(),
+                transfer_to_address: callee.as_bytes().to_vec(),
+                call_value_info: vec![
+                    proto::internal_transaction::CallValueInfo {
+                        call_value: 100,
+                        token_id: String::new(),
+                    },
+                    proto::internal_transaction::CallValueInfo {
+                        call_value: 7,
+                        token_id: "1000001".into(),
+                    },
+                ],
+                note: b"call".to_vec(),
+                rejected: true,
+                extra: String::new(),
+            }],
+            ..Default::default()
+        };
+
+        let decoded = transaction_info_from_proto(info).unwrap().unwrap();
+
+        let [internal] = decoded.internal_transactions.as_slice() else {
+            panic!("expected exactly one internal transaction")
+        };
+        assert_eq!(internal.hash, TxId::from([9; 32]));
+        assert_eq!(internal.caller_address, Some(caller));
+        assert_eq!(internal.transfer_to_address, Some(callee));
+        assert_eq!(internal.note, "call");
+        assert!(internal.rejected);
+        assert_eq!(internal.call_values.len(), 2);
+        assert_eq!(internal.call_values[0].amount, 100);
+        assert!(internal.call_values[0].token_id.is_empty(), "empty token id means TRX");
+        assert_eq!(internal.call_values[1].token_id, "1000001");
+    }
+
+    #[test]
+    fn an_internal_transaction_hash_of_the_wrong_size_is_malformed() {
+        let info = proto::TransactionInfo {
+            id: vec![1; 32],
+            internal_transactions: vec![proto::InternalTransaction {
+                hash: vec![9; 31],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        assert!(matches!(transaction_info_from_proto(info), Err(ResponseError::Malformed(_))));
     }
 
     #[test]
@@ -1010,14 +1103,32 @@ mod tests {
 
     #[test]
     fn an_empty_transaction_message_means_the_node_has_no_such_transaction() {
-        assert!(signed_tx_lookup(proto::Transaction::default()).unwrap().is_none());
+        assert!(signed_tx_lookup(proto::Transaction::default(), &[]).unwrap().is_none());
     }
 
     #[test]
     fn a_transaction_with_signatures_but_no_raw_data_is_broken_not_missing() {
         let tx = proto::Transaction { signature: vec![vec![7; 65].into()], ..Default::default() };
 
-        assert!(matches!(signed_tx_lookup(tx), Err(ResponseError::Malformed(_))));
+        assert!(matches!(signed_tx_lookup(tx, &[]), Err(ResponseError::Malformed(_))));
+    }
+
+    #[test]
+    fn transaction_lookup_checks_the_id_the_caller_requested() {
+        let tx = proto::Transaction {
+            raw_data: Some(proto::transaction::Raw {
+                contract: vec![proto::transaction::Contract::default()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let actual = RawTransaction::from_node_encoded(tx.encode_to_vec(), &[]).unwrap().tx_id();
+
+        assert!(signed_tx_lookup(tx.clone(), actual.as_slice()).unwrap().is_some());
+        assert!(matches!(
+            signed_tx_lookup(tx, &[7; 32]),
+            Err(ResponseError::Malformed(message)) if message.contains("txid")
+        ));
     }
 
     #[test]
@@ -1140,7 +1251,9 @@ mod tests {
             (1, ContractResult::Success, TxStatus::Success),
             (2, ContractResult::Revert, TxStatus::Failed),
             (10, ContractResult::OutOfEnergy, TxStatus::Failed),
-            (7, ContractResult::Failed, TxStatus::Failed),
+            (7, ContractResult::StackTooLarge, TxStatus::Failed),
+            (15, ContractResult::InvalidCode, TxStatus::Failed),
+            (99, ContractResult::Other(99), TxStatus::Failed),
             (0, ContractResult::Default, TxStatus::Success),
         ];
         for (code, expected_result, expected_status) in cases {
@@ -1393,33 +1506,73 @@ mod tests {
     }
 
     #[test]
-    fn account_permission_update_sets_types_and_active_operations() {
+    fn account_permission_update_grants_only_the_listed_operations() {
         use proto::permission::PermissionType;
 
-        let perm = |id: i32| Permission {
+        let perm = |id: i32, operations: &[ContractKind]| Permission {
             id,
             permission_name: format!("p{id}"),
             threshold: 1,
             keys: vec![PermissionKey { address: tron_addr(0xf1), weight: 1 }],
+            operations: OperationSet::try_from(operations).unwrap(),
         };
         let contract = AccountPermissionUpdateContract {
             owner_address: tron_addr(0xf0),
-            owner: Some(perm(0)),
-            witness: Some(perm(1)),
-            actives: vec![perm(2)],
+            owner: Some(perm(0, &[])),
+            witness: Some(perm(1, &[])),
+            actives: vec![perm(2, &[ContractKind::Transfer, ContractKind::TriggerSmartContract])],
         };
 
         let out = account_permission_update_to_proto(contract);
         assert_eq!(out.owner_address, tron_addr(0xf0).as_bytes().to_vec());
-        assert_eq!(out.owner.unwrap().r#type, PermissionType::Owner as i32);
-        assert_eq!(out.witness.unwrap().r#type, PermissionType::Witness as i32);
+
+        let owner = out.owner.unwrap();
+        assert_eq!(owner.r#type, PermissionType::Owner as i32);
+        assert!(owner.operations.is_empty());
+        let witness = out.witness.unwrap();
+        assert_eq!(witness.r#type, PermissionType::Witness as i32);
+        assert!(witness.operations.is_empty());
 
         let active = &out.actives[0];
         assert_eq!(active.r#type, PermissionType::Active as i32);
         assert_eq!(active.operations.len(), 32);
-        assert_eq!(&active.operations[0..8], &[0x7f, 0xff, 0x1f, 0xc0, 0x03, 0x7e, 0xfb, 0x0f]);
-        assert!(active.operations[8..].iter().all(|&b| b == 0));
         assert_eq!(active.keys[0].address, tron_addr(0xf1).as_bytes().to_vec());
+        assert_eq!(&active.operations[0..4], &[0b10, 0x00, 0x00, 0x80]);
+        assert!(active.operations[4..].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn permissions_report_the_operations_a_node_granted_them() {
+        let proto_perm = |id: i32, operations: Vec<u8>| proto::Permission {
+            id,
+            permission_name: format!("p{id}"),
+            threshold: 1,
+            keys: vec![proto::Key { address: tron_addr(0xf1).as_bytes().to_vec(), weight: 1 }],
+            operations,
+            ..Default::default()
+        };
+        let mut active_ops = vec![0u8; 32];
+        active_ops[0] = 0b10;
+        active_ops[5] = 1 << 6;
+        active_ops[25] = 1;
+
+        let owner = permission_from_proto(proto_perm(0, Vec::new())).unwrap();
+        assert!(owner.operations.is_empty());
+
+        let active = permission_from_proto(proto_perm(2, active_ops)).unwrap();
+        assert_eq!(
+            active.operations.iter().collect::<Vec<_>>(),
+            vec![
+                ContractKind::Transfer,
+                ContractKind::AccountPermissionUpdate,
+                ContractKind::Unknown(200),
+            ]
+        );
+        let permissions =
+            AccountPermissions { owner: Some(owner), witness: None, actives: vec![active] };
+        assert!(permissions.allows(0, ContractKind::AccountPermissionUpdate));
+        assert!(permissions.allows(2, ContractKind::Transfer));
+        assert!(!permissions.allows(2, ContractKind::TriggerSmartContract));
     }
 
     #[test]

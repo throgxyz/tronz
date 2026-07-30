@@ -1,11 +1,12 @@
 //! gRPC integration tests for [`SolidityGrpcTransport`].
 
+use prost::Message as _;
 use tonic::Status;
 use tronz_primitives::{Address, Bytes, Trx, TxId};
 use tronz_provider::{
     SolidityTransport,
     transport::grpc::{RetryConfig, SolidityGrpcTransport},
-    types::TriggerSmartContract,
+    types::{RawTransaction, TriggerSmartContract},
 };
 use tronz_provider_test_support::{Handle, pb, spawn};
 
@@ -73,21 +74,21 @@ async fn decodes_blocks() {
 #[tokio::test(flavor = "multi_thread")]
 async fn decodes_transaction_by_id() {
     let (addr, handle) = spawn().await;
-    handle.push_transaction(Ok(pb::Transaction {
+    let response = pb::Transaction {
         raw_data: Some(pb::transaction::Raw {
             expiration: 2_000,
             timestamp: 1_000,
             ..Default::default()
         }),
         ..Default::default()
-    }));
+    };
+    let requested =
+        RawTransaction::from_node_encoded(response.encode_to_vec(), &[]).unwrap().tx_id();
+    handle.push_transaction(Ok(response));
 
     let transport = connect(addr).await;
-    let transaction = transport
-        .get_transaction_by_id(TxId::from([3u8; 32]))
-        .await
-        .unwrap()
-        .expect("the node knows this one");
+    let transaction =
+        transport.get_transaction_by_id(requested).await.unwrap().expect("the node knows this one");
 
     assert_eq!(transaction.raw.expiration, 2_000);
     assert_eq!(transaction.raw.timestamp, 1_000);

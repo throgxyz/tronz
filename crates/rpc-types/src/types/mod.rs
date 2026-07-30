@@ -20,11 +20,12 @@ pub use account::{
 pub use block::BlockInfo;
 pub use contract::{
     AccountPermissionUpdateContract, AssetIssueContract, CancelAllUnfreezeV2Contract,
-    ClearContractAbiContract, ConstantCallResult, ContractType, CreateAccountContract,
-    CreateSmartContract, CreateWitnessContract, DelegateResourceContract, ExchangeCreateContract,
-    ExchangeInjectContract, ExchangeTransactionContract, ExchangeWithdrawContract,
-    FreezeBalanceV1Contract, FreezeBalanceV2Contract, FrozenSupply, MarketCancelOrderContract,
-    MarketSellAssetContract, ParticipateAssetIssueContract, Permission, PermissionKey,
+    ClearContractAbiContract, ConstantCallResult, ContractKind, ContractType,
+    CreateAccountContract, CreateSmartContract, CreateWitnessContract, DelegateResourceContract,
+    ExchangeCreateContract, ExchangeInjectContract, ExchangeTransactionContract,
+    ExchangeWithdrawContract, FreezeBalanceV1Contract, FreezeBalanceV2Contract, FrozenSupply,
+    MarketCancelOrderContract, MarketSellAssetContract, OperationSet, OperationSetError,
+    OperationSetIter, ParticipateAssetIssueContract, Permission, PermissionKey,
     ProposalApproveContract, ProposalCreateContract, ProposalDeleteContract, SetAccountIdContract,
     SmartContractInfo, SrVote, TransferAssetContract, TransferContract, TriggerSmartContract,
     UnDelegateResourceContract, UnfreezeAssetContract, UnfreezeBalanceV1Contract,
@@ -37,8 +38,13 @@ pub use market::{MarketOrderInfo, MarketOrderPair, MarketOrderState, MarketPrice
 pub use network::{
     AccountNet, ChainProperties, NodeAddress, NodeInfo, ProposalInfo, ProposalState, SignWeight,
 };
-pub use receipt::{ContractResult, ResourceReceipt, TransactionInfo, TxStatus};
-pub use transaction::{RawTransaction, SignedTransaction, TransactionRequest};
+pub use receipt::{
+    CallValue, ContractResult, InternalTransaction, ResourceReceipt, TransactionInfo, TxStatus,
+};
+pub use transaction::{
+    MAX_RESULT_SIZE_IN_TX, RawTransaction, SignedTransaction, TransactionContractDetails,
+    TransactionDetails, TransactionRequest,
+};
 pub use trc10::AssetInfo;
 pub use tronz_abi::{
     TronAbi, TronAbiEntry, TronAbiEntryType, TronAbiParam, TronAbiStateMutability,

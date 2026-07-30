@@ -29,9 +29,9 @@ use crate::{
     transport::TronTransport,
     types::{
         AccountInfo, AccountNet, AccountResource, BlockInfo, ChainProperties, ConstantCallResult,
-        DelegatedResource, DelegatedResourceIndex, NodeAddress, NodeInfo, RawTransaction,
-        SignWeight, SignedTransaction, SmartContractInfo, TransactionInfo, TransactionRequest,
-        TriggerSmartContract, WitnessInfo,
+        DelegatedResource, DelegatedResourceIndex, MAX_RESULT_SIZE_IN_TX, NodeAddress, NodeInfo,
+        RawTransaction, SignWeight, SignedTransaction, SmartContractInfo, TransactionInfo,
+        TransactionRequest, TriggerSmartContract, WitnessInfo,
     },
 };
 
@@ -836,10 +836,9 @@ pub trait TronProvider: ContractReadProvider {
 
     /// Estimate the bandwidth (bytes) a signed transaction will consume on-chain.
     ///
-    /// This is a pure local computation — no network call is made.
-    /// Equivalent to trident's `estimateBandwidth(Transaction)`.
+    /// Includes java-tron's fixed transaction-result allowance.
     fn estimate_bandwidth(&self, tx: &SignedTransaction) -> u64 {
-        tx.byte_size()
+        tx.encoded_len() + MAX_RESULT_SIZE_IN_TX
     }
 
     /// Fill, sign, and broadcast a pre-built request.
@@ -888,5 +887,30 @@ pub trait TronProvider: ContractReadProvider {
             .await
             .map_err(|source| Error::broadcast(tx_id, source))?;
         Ok(PendingTransaction::new(self.root().clone(), tx_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use prost::Message as _;
+    use tronz_rpc_types::{proto, types::RawTransaction};
+
+    use super::*;
+    use crate::{RootProvider, transport::mock::MockTransport};
+
+    #[test]
+    fn a_bandwidth_estimate_adds_the_result_allowance_to_the_wire_size() {
+        let encoded = proto::Transaction {
+            raw_data: Some(proto::transaction::Raw::default()),
+            ..Default::default()
+        }
+        .encode_to_vec();
+        let tx = SignedTransaction {
+            raw: RawTransaction::from_node_encoded(encoded, &[]).unwrap(),
+            signatures: Vec::new(),
+        };
+        let provider = RootProvider::new(MockTransport::new());
+
+        assert_eq!(provider.estimate_bandwidth(&tx), tx.encoded_len() + 64);
     }
 }

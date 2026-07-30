@@ -94,7 +94,7 @@ pub enum TransportErrorKind {
     },
 
     /// The channel could not be established, or was lost.
-    #[error("transport error: {0}")]
+    #[error("transport error: {}", cause_chain(_0.as_ref()))]
     Connect(#[source] Box<dyn StdError + Send + Sync + 'static>),
 
     /// A protobuf payload failed to decode.
@@ -127,6 +127,20 @@ pub enum TransportErrorKind {
     /// Deterministic, terminal failure that retry loops must not retry.
     #[error("{0}")]
     NonRetryable(#[source] Box<dyn StdError + Send + Sync + 'static>),
+}
+
+fn cause_chain(error: &(dyn StdError + 'static)) -> String {
+    let mut causes = Vec::new();
+    let mut current = Some(error);
+    while let Some(error) = current {
+        let cause = error.to_string();
+        if cause != "transport error" && causes.last() != Some(&cause) {
+            causes.push(cause);
+        }
+        current = error.source();
+    }
+
+    if causes.is_empty() { error.to_string() } else { causes.join(": ") }
 }
 
 impl From<tronz_rpc_types::ResponseError> for TransportErrorKind {
@@ -500,6 +514,40 @@ mod tests {
             let err = TransportErrorKind::rpc(code, "");
             assert!(!err.is_retryable(), "{code} should not be retryable");
         }
+    }
+
+    #[test]
+    fn a_connection_failure_reports_what_actually_went_wrong() {
+        #[derive(Debug)]
+        struct Layer(&'static str, Option<Box<Layer>>);
+
+        impl fmt::Display for Layer {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.0)
+            }
+        }
+
+        impl StdError for Layer {
+            fn source(&self) -> Option<&(dyn StdError + 'static)> {
+                self.1.as_deref().map(|layer| layer as &(dyn StdError + 'static))
+            }
+        }
+
+        let tonic_shaped = Layer(
+            "transport error",
+            Some(Box::new(Layer("dns error", Some(Box::new(Layer("no such host", None)))))),
+        );
+
+        let error = TransportErrorKind::Connect(Box::new(tonic_shaped));
+
+        assert_eq!(error.to_string(), "transport error: dns error: no such host");
+    }
+
+    #[test]
+    fn a_connection_failure_with_nothing_underneath_it_still_reports_itself() {
+        let error = TransportErrorKind::Connect("invalid uri".to_string().into());
+
+        assert_eq!(error.to_string(), "transport error: invalid uri");
     }
 
     #[test]

@@ -169,7 +169,7 @@ impl SolidityTransport for SolidityGrpcTransport {
     ) -> TransportResult<Option<SignedTransaction>> {
         let req = proto::BytesMessage { value: tx_id.as_slice().to_vec() };
         let tx = solidity_unary!(self, get_transaction_by_id, req)?;
-        Ok(codec::signed_tx_lookup(tx)?)
+        Ok(codec::signed_tx_lookup(tx, tx_id.as_slice())?)
     }
 
     async fn get_transaction_info(&self, tx_id: TxId) -> TransportResult<Option<TransactionInfo>> {

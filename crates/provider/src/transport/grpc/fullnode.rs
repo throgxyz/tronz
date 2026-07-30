@@ -273,13 +273,7 @@ impl GrpcTransport {
 /// signatures, producing the wire `Transaction` used for broadcast and for
 /// sign-weight / approved-list queries.
 fn signed_to_proto(tx: &SignedTransaction) -> Result<proto::Transaction, TransportErrorKind> {
-    use prost::Message as _;
-
-    let mut proto_tx = proto::Transaction::decode(tx.raw.encoded())?;
-    for sig in &tx.signatures {
-        proto_tx.signature.push(sig.to_bytes().to_vec().into());
-    }
-    Ok(proto_tx)
+    Ok(tx.to_proto()?)
 }
 
 /// Decode a lowercase hex string into bytes using only the standard library.
@@ -402,7 +396,7 @@ impl TronTransport for GrpcTransport {
     ) -> TransportResult<Option<SignedTransaction>> {
         let req = proto::BytesMessage { value: tx_id.as_slice().to_vec() };
         let tx = retry_unary!(self, wallet_client, get_transaction_by_id, req)?;
-        Ok(codec::signed_tx_lookup(tx)?)
+        Ok(codec::signed_tx_lookup(tx, tx_id.as_slice())?)
     }
 
     async fn get_transaction_info(&self, tx_id: TxId) -> TransportResult<Option<TransactionInfo>> {
@@ -1397,6 +1391,29 @@ mod tests {
             }),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn queried_signatures_are_not_appended_twice_when_reencoded() {
+        let mut first = vec![1u8; 65];
+        first[64] = 0;
+        let mut second = vec![2u8; 65];
+        second[64] = 1;
+        let original = proto::Transaction {
+            raw_data: Some(proto::transaction::Raw {
+                contract: vec![proto::transaction::Contract::default()],
+                ..Default::default()
+            }),
+            signature: vec![first.into(), second.into()],
+            ret: vec![proto::transaction::Result::default()],
+        };
+
+        let signed = codec::signed_tx_lookup(original.clone(), &[]).unwrap().unwrap();
+        let reencoded = signed_to_proto(&signed).unwrap();
+
+        assert_eq!(reencoded.signature, original.signature);
+        assert_eq!(reencoded.signature.len(), 2);
+        assert_eq!(reencoded.ret, original.ret);
     }
 
     #[test]

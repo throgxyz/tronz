@@ -1,6 +1,6 @@
 //! TRON native contract types and their parameter structs.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 use tronz_abi::TronAbi;
 use tronz_primitives::{Address, B256, Bytes, ResourceCode, Trx};
@@ -143,6 +143,375 @@ impl ContractType {
             ContractType::ExchangeTransaction(c) => c.owner_address,
             ContractType::MarketSellAsset(c) => c.owner_address,
             ContractType::MarketCancelOrder(c) => c.owner_address,
+        }
+    }
+}
+
+/// A native contract kind without its parameters.
+///
+/// Unknown protobuf values are preserved.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ContractKind {
+    /// Activate a new account by sending TRX to it.
+    CreateAccount,
+    /// Transfer TRX.
+    Transfer,
+    /// Transfer a TRC10 token.
+    TransferAsset,
+    /// Vote for a TRC10 token (unused on-chain).
+    VoteAsset,
+    /// Vote for super representatives.
+    VoteWitness,
+    /// Apply to become a super representative candidate.
+    CreateWitness,
+    /// Issue (create) a new TRC10 native token.
+    AssetIssue,
+    /// Update a super representative's public URL.
+    UpdateWitness,
+    /// Participate in a TRC10 token ICO.
+    ParticipateAssetIssue,
+    /// Update account name.
+    UpdateAccount,
+    /// Stake TRX for a resource (Stake 1.0, legacy).
+    FreezeBalanceV1,
+    /// Unstake TRX (Stake 1.0, legacy).
+    UnfreezeBalanceV1,
+    /// Claim accumulated block/vote rewards.
+    WithdrawBalance,
+    /// Release frozen TRC10 token supply after the lock period.
+    UnfreezeAsset,
+    /// Update TRC10 token metadata.
+    UpdateAsset,
+    /// Submit a chain-parameter governance proposal.
+    ProposalCreate,
+    /// Approve or disapprove a governance proposal.
+    ProposalApprove,
+    /// Cancel a governance proposal.
+    ProposalDelete,
+    /// Set a short alphanumeric on-chain account ID.
+    SetAccountId,
+    /// Reserved by java-tron, with no message defined for it.
+    Custom,
+    /// Deploy a new smart contract.
+    CreateSmartContract,
+    /// Call/trigger a smart contract.
+    TriggerSmartContract,
+    /// Reserved by java-tron for a query, not a transaction.
+    GetContract,
+    /// Update the caller-energy-percentage setting on a smart contract.
+    UpdateSetting,
+    /// Create a new TRC10 exchange pair.
+    ExchangeCreate,
+    /// Inject liquidity into an exchange pair.
+    ExchangeInject,
+    /// Withdraw liquidity from an exchange pair.
+    ExchangeWithdraw,
+    /// Execute a trade on an exchange pair.
+    ExchangeTransaction,
+    /// Update the per-call origin energy limit on a smart contract.
+    UpdateEnergyLimit,
+    /// Update account permissions (multisig).
+    AccountPermissionUpdate,
+    /// Clear a deployed smart contract's ABI.
+    ClearContractAbi,
+    /// Update a super representative's brokerage ratio.
+    UpdateBrokerage,
+    /// Shielded (private) transfer.
+    ShieldedTransfer,
+    /// Place a limit sell order on the order-book DEX.
+    MarketSellAsset,
+    /// Cancel an open market order.
+    MarketCancelOrder,
+    /// Stake TRX for a resource (Stake 2.0).
+    FreezeBalanceV2,
+    /// Unstake TRX (Stake 2.0).
+    UnfreezeBalanceV2,
+    /// Withdraw TRX from expired unfreeze windows.
+    WithdrawExpireUnfreeze,
+    /// Delegate a resource to another account.
+    DelegateResource,
+    /// Reclaim a delegated resource.
+    UnDelegateResource,
+    /// Cancel all in-progress unfreeze operations.
+    CancelAllUnfreezeV2,
+    /// A contract type this build does not know, keeping the protobuf id.
+    Unknown(i32),
+}
+
+impl From<i32> for ContractKind {
+    fn from(v: i32) -> Self {
+        match v {
+            0 => Self::CreateAccount,
+            1 => Self::Transfer,
+            2 => Self::TransferAsset,
+            3 => Self::VoteAsset,
+            4 => Self::VoteWitness,
+            5 => Self::CreateWitness,
+            6 => Self::AssetIssue,
+            8 => Self::UpdateWitness,
+            9 => Self::ParticipateAssetIssue,
+            10 => Self::UpdateAccount,
+            11 => Self::FreezeBalanceV1,
+            12 => Self::UnfreezeBalanceV1,
+            13 => Self::WithdrawBalance,
+            14 => Self::UnfreezeAsset,
+            15 => Self::UpdateAsset,
+            16 => Self::ProposalCreate,
+            17 => Self::ProposalApprove,
+            18 => Self::ProposalDelete,
+            19 => Self::SetAccountId,
+            20 => Self::Custom,
+            30 => Self::CreateSmartContract,
+            31 => Self::TriggerSmartContract,
+            32 => Self::GetContract,
+            33 => Self::UpdateSetting,
+            41 => Self::ExchangeCreate,
+            42 => Self::ExchangeInject,
+            43 => Self::ExchangeWithdraw,
+            44 => Self::ExchangeTransaction,
+            45 => Self::UpdateEnergyLimit,
+            46 => Self::AccountPermissionUpdate,
+            48 => Self::ClearContractAbi,
+            49 => Self::UpdateBrokerage,
+            51 => Self::ShieldedTransfer,
+            52 => Self::MarketSellAsset,
+            53 => Self::MarketCancelOrder,
+            54 => Self::FreezeBalanceV2,
+            55 => Self::UnfreezeBalanceV2,
+            56 => Self::WithdrawExpireUnfreeze,
+            57 => Self::DelegateResource,
+            58 => Self::UnDelegateResource,
+            59 => Self::CancelAllUnfreezeV2,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+impl ContractKind {
+    /// Returns the protobuf id.
+    pub const fn id(&self) -> i32 {
+        match self {
+            Self::CreateAccount => 0,
+            Self::Transfer => 1,
+            Self::TransferAsset => 2,
+            Self::VoteAsset => 3,
+            Self::VoteWitness => 4,
+            Self::CreateWitness => 5,
+            Self::AssetIssue => 6,
+            Self::UpdateWitness => 8,
+            Self::ParticipateAssetIssue => 9,
+            Self::UpdateAccount => 10,
+            Self::FreezeBalanceV1 => 11,
+            Self::UnfreezeBalanceV1 => 12,
+            Self::WithdrawBalance => 13,
+            Self::UnfreezeAsset => 14,
+            Self::UpdateAsset => 15,
+            Self::ProposalCreate => 16,
+            Self::ProposalApprove => 17,
+            Self::ProposalDelete => 18,
+            Self::SetAccountId => 19,
+            Self::Custom => 20,
+            Self::CreateSmartContract => 30,
+            Self::TriggerSmartContract => 31,
+            Self::GetContract => 32,
+            Self::UpdateSetting => 33,
+            Self::ExchangeCreate => 41,
+            Self::ExchangeInject => 42,
+            Self::ExchangeWithdraw => 43,
+            Self::ExchangeTransaction => 44,
+            Self::UpdateEnergyLimit => 45,
+            Self::AccountPermissionUpdate => 46,
+            Self::ClearContractAbi => 48,
+            Self::UpdateBrokerage => 49,
+            Self::ShieldedTransfer => 51,
+            Self::MarketSellAsset => 52,
+            Self::MarketCancelOrder => 53,
+            Self::FreezeBalanceV2 => 54,
+            Self::UnfreezeBalanceV2 => 55,
+            Self::WithdrawExpireUnfreeze => 56,
+            Self::DelegateResource => 57,
+            Self::UnDelegateResource => 58,
+            Self::CancelAllUnfreezeV2 => 59,
+            Self::Unknown(id) => *id,
+        }
+    }
+}
+
+impl fmt::Display for ContractKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown(id) => write!(f, "Unknown({id})"),
+            known => write!(f, "{known:?}"),
+        }
+    }
+}
+
+/// A 256-bit set of native contract operations.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct OperationSet([u8; 32]);
+
+impl OperationSet {
+    /// An empty operation set.
+    pub const fn empty() -> Self {
+        Self([0; 32])
+    }
+
+    /// Decodes a bitmap, accepting omitted trailing zero bytes.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, OperationSetError> {
+        if bytes.len() > 32 && bytes[32..].iter().any(|byte| *byte != 0) {
+            return Err(OperationSetError::NonZeroExcessBits);
+        }
+        let mut bitmap = [0u8; 32];
+        let copied = bytes.len().min(bitmap.len());
+        bitmap[..copied].copy_from_slice(&bytes[..copied]);
+        Ok(Self(bitmap))
+    }
+
+    /// The canonical 32-byte representation sent to a node.
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    /// Whether no operation is granted.
+    pub fn is_empty(&self) -> bool {
+        self.0.iter().all(|byte| *byte == 0)
+    }
+
+    /// Whether this set grants `kind`.
+    pub fn contains(&self, kind: ContractKind) -> bool {
+        let Ok(bit) = usize::try_from(kind.id()) else {
+            return false;
+        };
+        self.0.get(bit / 8).is_some_and(|byte| byte & (1 << (bit % 8)) != 0)
+    }
+
+    /// Add `kind`, returning whether it was newly inserted.
+    pub fn insert(&mut self, kind: ContractKind) -> Result<bool, OperationSetError> {
+        let id = kind.id();
+        let bit = usize::try_from(id)
+            .ok()
+            .filter(|bit| *bit < 256)
+            .ok_or(OperationSetError::OutOfRange(id))?;
+        let mask = 1 << (bit % 8);
+        let byte = &mut self.0[bit / 8];
+        let inserted = *byte & mask == 0;
+        *byte |= mask;
+        Ok(inserted)
+    }
+
+    /// Remove `kind`, returning whether it was present.
+    pub fn remove(&mut self, kind: ContractKind) -> bool {
+        let Ok(bit) = usize::try_from(kind.id()) else {
+            return false;
+        };
+        let Some(byte) = self.0.get_mut(bit / 8) else {
+            return false;
+        };
+        let mask = 1 << (bit % 8);
+        let removed = *byte & mask != 0;
+        *byte &= !mask;
+        removed
+    }
+
+    /// Iterate over every granted operation in numeric id order.
+    pub fn iter(&self) -> OperationSetIter<'_> {
+        OperationSetIter { set: self, next: 0 }
+    }
+
+    /// Builds a set from operation kinds.
+    pub fn try_from_iter(
+        kinds: impl IntoIterator<Item = ContractKind>,
+    ) -> Result<Self, OperationSetError> {
+        let mut set = Self::empty();
+        for kind in kinds {
+            set.insert(kind)?;
+        }
+        Ok(set)
+    }
+}
+
+impl<const N: usize> TryFrom<[ContractKind; N]> for OperationSet {
+    type Error = OperationSetError;
+
+    fn try_from(kinds: [ContractKind; N]) -> Result<Self, Self::Error> {
+        Self::try_from_iter(kinds)
+    }
+}
+
+impl TryFrom<&[ContractKind]> for OperationSet {
+    type Error = OperationSetError;
+
+    fn try_from(kinds: &[ContractKind]) -> Result<Self, Self::Error> {
+        Self::try_from_iter(kinds.iter().copied())
+    }
+}
+
+impl<'a> IntoIterator for &'a OperationSet {
+    type Item = ContractKind;
+    type IntoIter = OperationSetIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// Iterator over the operations granted by an [`OperationSet`].
+pub struct OperationSetIter<'a> {
+    set: &'a OperationSet,
+    next: usize,
+}
+
+impl Iterator for OperationSetIter<'_> {
+    type Item = ContractKind;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.next < 256 {
+            let id = self.next;
+            self.next += 1;
+            if self.set.0[id / 8] & (1 << (id % 8)) != 0 {
+                return Some(ContractKind::from(id as i32));
+            }
+        }
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, Some(256 - self.next))
+    }
+}
+
+impl fmt::Debug for OperationSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.iter()).finish()
+    }
+}
+
+/// An invalid operation bitmap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum OperationSetError {
+    /// The contract id falls outside the bitmap.
+    #[error("contract operation id {0} is outside the permission bitmap")]
+    OutOfRange(i32),
+    /// The bitmap has non-zero excess bits.
+    #[error("permission bitmap has non-zero bits beyond its 32-byte boundary")]
+    NonZeroExcessBits,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OwnerField {
+    First,
+    Second,
+}
+
+impl ContractKind {
+    pub(crate) const fn owner_field(&self) -> Option<OwnerField> {
+        match self {
+            Self::TransferAsset | Self::UpdateAccount | Self::SetAccountId => {
+                Some(OwnerField::Second)
+            }
+            Self::ShieldedTransfer | Self::Custom | Self::GetContract | Self::Unknown(_) => None,
+            _ => Some(OwnerField::First),
         }
     }
 }
@@ -471,6 +840,8 @@ pub struct Permission {
     pub threshold: i64,
     /// Keys and their weights.
     pub keys: Vec<PermissionKey>,
+    /// Contract operations granted by an active permission.
+    pub operations: OperationSet,
 }
 
 impl Permission {
@@ -745,6 +1116,19 @@ mod tests {
     // USDT contract address (mainnet), used as a stable test address.
     const ADDR: &str = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
+    #[test]
+    fn every_contract_type_the_protocol_defines_maps_to_a_kind() {
+        use crate::proto::transaction::contract::ContractType as Proto;
+
+        for id in 0..=64 {
+            if Proto::try_from(id).is_err() {
+                continue;
+            }
+
+            assert_ne!(ContractKind::from(id), ContractKind::Unknown(id), "protobuf id {id}");
+        }
+    }
+
     fn addr() -> Address {
         ADDR.parse().unwrap()
     }
@@ -904,6 +1288,7 @@ mod tests {
             permission_name: "active".to_string(),
             threshold: 3,
             keys: vec![key(1, 2), key(2, 2), key(3, 2)],
+            operations: OperationSet::try_from([ContractKind::Transfer]).unwrap(),
         }
     }
 
@@ -932,6 +1317,59 @@ mod tests {
 
         assert!(!permission.is_satisfied_by(&[key(1, 0).address]));
         assert!(permission.is_satisfied_by(&[key(1, 0).address, key(2, 0).address]));
+    }
+
+    #[test]
+    fn every_contract_kind_survives_a_round_trip_through_its_id() {
+        for id in 0..80 {
+            let kind = ContractKind::from(id);
+            assert_eq!(kind.id(), id, "{kind} does not report the id it was built from");
+        }
+        assert_eq!(ContractKind::from(4_000), ContractKind::Unknown(4_000));
+    }
+
+    #[test]
+    fn operations_bitmaps_name_the_types_their_bits_grant() {
+        let mut bitmap = [0u8; 32];
+        bitmap[0] = 0b11; // CreateAccount (0) and Transfer (1)
+        bitmap[3] = 0x80; // TriggerSmartContract (31)
+        bitmap[7] = 0x20; // a type at bit 61, which no build knows yet
+
+        let set = OperationSet::from_bytes(&bitmap).unwrap();
+        assert_eq!(
+            set.iter().collect::<Vec<_>>(),
+            vec![
+                ContractKind::CreateAccount,
+                ContractKind::Transfer,
+                ContractKind::TriggerSmartContract,
+                ContractKind::Unknown(61),
+            ]
+        );
+        assert_eq!(*set.as_bytes(), bitmap);
+    }
+
+    #[test]
+    fn a_bitmap_cannot_hold_a_type_beyond_its_256_bits() {
+        let err = OperationSet::try_from([
+            ContractKind::Transfer,
+            ContractKind::Unknown(256),
+            ContractKind::Unknown(-1),
+        ])
+        .unwrap_err();
+        assert_eq!(err, OperationSetError::OutOfRange(256));
+    }
+
+    #[test]
+    fn operation_bitmaps_normalize_only_zero_extension() {
+        let short = OperationSet::from_bytes(&[0b10]).unwrap();
+        assert!(short.contains(ContractKind::Transfer));
+        assert_eq!(short.as_bytes()[1..], [0; 31]);
+
+        let mut long = vec![0u8; 34];
+        long[0] = 0b10;
+        assert_eq!(OperationSet::from_bytes(&long).unwrap(), short);
+        long[33] = 1;
+        assert_eq!(OperationSet::from_bytes(&long), Err(OperationSetError::NonZeroExcessBits));
     }
 }
 

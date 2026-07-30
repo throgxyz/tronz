@@ -25,6 +25,10 @@ sha2        = { workspace = true }
 thiserror   = { workspace = true }
 tracing     = { workspace = true }
 
+[dev-dependencies]
+# A bandwidth test rebuilds two real Mainnet transactions from their hex.
+hex = { workspace = true }
+
 [features]
 # Builders for the node-response types, which are `#[non_exhaustive]` and so can
 # only be constructed here. For tests in dependent crates.

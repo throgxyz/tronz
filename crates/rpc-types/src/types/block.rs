@@ -1,9 +1,9 @@
 //! Block types and TAPOS extraction helpers.
 
-use tronz_primitives::B256;
+use tronz_primitives::{Address, B256};
 
-/// Summary information about a block, including the bits needed for TAPOS.
-#[derive(Clone, Debug)]
+/// Summary information about a block.
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct BlockInfo {
     /// Block height.
@@ -12,18 +12,28 @@ pub struct BlockInfo {
     pub hash: B256,
     /// Block timestamp (unix ms).
     pub timestamp: i64,
+    /// Id of the block this one builds on.
+    pub parent_hash: Option<B256>,
+    /// Merkle root of the block's transactions.
+    pub tx_trie_root: Option<B256>,
+    /// The witness (super representative) that produced the block.
+    pub witness: Option<Address>,
+    /// Block header version.
+    pub version: Option<i32>,
 }
 
 impl BlockInfo {
-    /// A block a caller already knows about.
-    ///
-    /// Normally these come from a node, but an indexer that has already fetched a
-    /// block can pass one to [`TransactionRequest::with_tapos`] and save the
-    /// round trip.
-    ///
-    /// [`TransactionRequest::with_tapos`]: crate::TransactionRequest::with_tapos
+    /// Creates a block from its TAPOS fields.
     pub const fn new(number: i64, hash: B256, timestamp: i64) -> Self {
-        Self { number, hash, timestamp }
+        Self {
+            number,
+            hash,
+            timestamp,
+            parent_hash: None,
+            tx_trie_root: None,
+            witness: None,
+            version: None,
+        }
     }
 
     /// `ref_block_bytes` = last 2 bytes of the big-endian block number.
@@ -49,15 +59,16 @@ mod tests {
 
     #[test]
     fn tapos_extraction() {
-        let block = BlockInfo {
-            number: 0x0011_2233_4455_6677,
-            hash: B256::from([
+        let block = BlockInfo::new(
+            0x0011_2233_4455_6677,
+            B256::from([
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
                 23, 24, 25, 26, 27, 28, 29, 30, 31,
             ]),
-            timestamp: 0,
-        };
+            0,
+        );
         assert_eq!(block.ref_block_bytes(), [0x66, 0x77]);
         assert_eq!(block.ref_block_hash(), [8, 9, 10, 11, 12, 13, 14, 15]);
+        assert_eq!(block.version, None);
     }
 }

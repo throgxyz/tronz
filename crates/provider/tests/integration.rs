@@ -299,7 +299,7 @@ async fn test_trx_transfer_and_receipt() {
     eprintln!("Solidified: block #{}", solidified.block_number);
 
     let info = pending.get_receipt().await.expect("get_receipt failed");
-    eprintln!("Confirmed: block #{}, energy_used={}", info.block_number, info.energy_usage);
+    eprintln!("Confirmed: block #{}, energy_used={}", info.block_number, info.energy_usage_total);
 
     assert_eq!(solidified.tx_id, info.tx_id);
     assert_eq!(

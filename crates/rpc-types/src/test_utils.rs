@@ -9,7 +9,7 @@ use tronz_primitives::{Address, B256, Trx, TxId};
 
 use crate::types::{
     BlockInfo, ContractResult, DelegatedResource, ExchangeInfo, MarketOrderInfo, MarketOrderState,
-    TransactionInfo, TxStatus, WitnessInfo,
+    ResourceReceipt, TransactionInfo, TxStatus, WitnessInfo,
 };
 
 /// A block at `number`, with a zero hash.
@@ -24,13 +24,16 @@ pub fn transaction_info(status: TxStatus) -> TransactionInfo {
         block_number: 1,
         block_timestamp: 1,
         status,
-        energy_usage: 0,
+        fee: Trx::ZERO,
+        energy_usage_total: 0,
         energy_fee: Trx::ZERO,
         net_usage: 0,
         net_fee: Trx::ZERO,
+        receipt: ResourceReceipt::default(),
         contract_result: ContractResult::Default,
         contract_address: None,
         logs: vec![],
+        internal_transactions: vec![],
         revert_reason: None,
     }
 }
