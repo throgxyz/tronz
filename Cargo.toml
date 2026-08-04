@@ -32,7 +32,7 @@ alloy-dyn-abi    = { version = "1", default-features = false, features = ["std"]
 alloy-json-abi   = { version = "1", default-features = false, features = ["std"] }
 
 # proc-macro (for tron_sol!)
-syn          = { version = "3", features = ["full", "extra-traits"] }
+syn          = { version = "2", features = ["full", "extra-traits"] }
 syn-solidity = { version = "1" }
 quote        = { version = "1" }
 proc-macro2  = { version = "1" }
@@ -79,5 +79,5 @@ thiserror = { version = "2" }
 # misc
 tracing = { version = "0.1" }
 hex     = { version = "0.4" }
-rand    = { version = "0.10" }
+rand    = { version = "0.9" }
 fastrand = { version = "2" }

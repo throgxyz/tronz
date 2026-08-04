@@ -39,8 +39,6 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
     # paste — dtolnay marked it unmaintained; no security issue, transitive dep
     { id = "RUSTSEC-2024-0436", reason = "no security impact; transitive dep we cannot remove" },
-    # proc-macro-error2 — unmaintained; transitive dep from tonic/prost ecosystem
-    { id = "RUSTSEC-2026-0173", reason = "no security impact; transitive dep we cannot remove" },
 ]
 
 # ── Sources ───────────────────────────────────────────────────────────────────
