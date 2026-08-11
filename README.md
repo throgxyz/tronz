@@ -40,7 +40,7 @@ and maintenance.
     <img src="./assets/sponsors/catfee.png" alt="CatFee logo" width="112">
   </a>
   <br>
-  <strong><a href="https://catfee.io">CatFee</a></strong>
+  <strong><a href="https://catfee.io">CatFee.IO|TRON Service Provider</a></strong>
   <br>
   <sub>Project Sponsor</sub>
 </p>
