@@ -89,8 +89,8 @@ jobs:
       - run: cargo test --workspace --doc
       - run: cargo test --all-features --workspace --doc
 
-  local-node:
-    name: local TRE integration
+  tre-integration:
+    name: TRE integration tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -109,19 +109,24 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           cache-on-failure: true
-      - name: Start local TRON node
+      - name: Start TRE node
         run: >-
-          docker run --detach --rm --name tronz-tre --publish 50051:50051
+          docker run --detach --rm --name tronz-tre
+          --publish 50051:50051 --publish 50052:50052
           tronbox/tre@sha256:f4332e11df12a9f360639a4546fd046593909630fda48af00b30410c144342f0
-      - name: Wait for local node
+      - name: Wait for TRE nodes
         env:
-          TRONZ_LOCAL_GRPC: http://127.0.0.1:50051
+          TRONZ_FULL_NODE_GRPC_ENDPOINT: http://127.0.0.1:50051
+          TRONZ_SOLIDITY_NODE_GRPC_ENDPOINT: http://127.0.0.1:50052
           RUST_BACKTRACE: "1"
         run: |
           for attempt in $(seq 1 60); do
             if cargo test -p tronz --no-default-features \
               --features provider-grpc,contract,signer-local \
-              --test local_node local_node_is_ready -- --ignored --exact; then
+              --test local_node full_node_is_ready -- --ignored --exact &&
+              cargo test -p tronz --no-default-features \
+              --features provider-grpc,contract,signer-local \
+              --test local_node solidity_node_is_ready -- --ignored --exact; then
               exit 0
             fi
             if ! docker inspect tronz-tre >/dev/null 2>&1; then
@@ -134,19 +139,19 @@ jobs:
           done
           docker logs tronz-tre
           exit 1
-      - name: Run local integration test
+      - name: Run TRE integration tests
         env:
-          TRONZ_LOCAL_GRPC: http://127.0.0.1:50051
+          TRONZ_FULL_NODE_GRPC_ENDPOINT: http://127.0.0.1:50051
+          TRONZ_SOLIDITY_NODE_GRPC_ENDPOINT: http://127.0.0.1:50052
           RUST_BACKTRACE: "1"
         run: >-
           cargo test -p tronz --no-default-features
           --features provider-grpc,contract,signer-local
-          --test local_node exercises_full_node_end_to_end
-          -- --ignored --exact --nocapture
-      - name: Print local node logs on failure
+          --test local_node -- --ignored --nocapture --test-threads=1
+      - name: Print TRE logs on failure
         if: failure()
         run: docker logs tronz-tre
-      - name: Stop local node
+      - name: Stop TRE node
         if: always()
         run: docker stop tronz-tre || true
 
@@ -339,7 +344,7 @@ jobs:
     needs:
       - test
       - doctest
-      - local-node
+      - tre-integration
       - coverage
       - feature-checks
       - typos

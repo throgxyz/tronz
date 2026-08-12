@@ -13,23 +13,28 @@ cargo build --workspace
 cargo test  --workspace
 ```
 
-### Local node integration tests
+### TRE integration tests
 
-CI runs the SDK end to end against a disposable TronBox Runtime Environment
+CI runs the SDK end-to-end tests against a disposable TronBox Runtime Environment
 (TRE) private chain. To run the same check locally:
 
 ```bash
-docker run --detach --rm --name tronz-tre --publish 50051:50051 \
+docker run --detach --rm --name tronz-tre \
+  --publish 50051:50051 --publish 50052:50052 \
   tronbox/tre@sha256:f4332e11df12a9f360639a4546fd046593909630fda48af00b30410c144342f0
 
-# Retry this readiness check while java-tron is starting.
+# Run both readiness checks after java-tron starts.
 cargo test -p tronz --no-default-features \
   --features provider-grpc,contract,signer-local \
-  --test local_node local_node_is_ready -- --ignored --exact
+  --test local_node full_node_is_ready -- --ignored --exact
 
 cargo test -p tronz --no-default-features \
   --features provider-grpc,contract,signer-local \
-  --test local_node exercises_full_node_end_to_end -- --ignored --exact --nocapture
+  --test local_node solidity_node_is_ready -- --ignored --exact
+
+cargo test -p tronz --no-default-features \
+  --features provider-grpc,contract,signer-local \
+  --test local_node -- --ignored --nocapture --test-threads=1
 
 docker stop tronz-tre
 ```
