@@ -10,6 +10,10 @@ tronz = "tronz"
 nile = "nile"
 trx = "trx"
 sun = "sun"
+# TronBox Runtime Environment.
+tre = "tre"
+# Part of TRE's deterministic recipient Base58 address.
+yuo = "yuo"
 # Proto-generated names.
 extention = "extention"   # TRON proto uses "TransactionExtention" (sic)
 # "ot" appears in the well-known TRON base58 address TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t

@@ -13,6 +13,30 @@ cargo build --workspace
 cargo test  --workspace
 ```
 
+### Local node integration tests
+
+CI runs the SDK end to end against a disposable TronBox Runtime Environment
+(TRE) private chain. To run the same check locally:
+
+```bash
+docker run --detach --rm --name tronz-tre --publish 50051:50051 \
+  tronbox/tre@sha256:f4332e11df12a9f360639a4546fd046593909630fda48af00b30410c144342f0
+
+# Retry this readiness check while java-tron is starting.
+cargo test -p tronz --no-default-features \
+  --features provider-grpc,contract,signer-local \
+  --test local_node local_node_is_ready -- --ignored --exact
+
+cargo test -p tronz --no-default-features \
+  --features provider-grpc,contract,signer-local \
+  --test local_node exercises_full_node_end_to_end -- --ignored --exact --nocapture
+
+docker stop tronz-tre
+```
+
+The fixture private keys belong only to TRE's deterministic private chain and
+must never be used on a public network.
+
 ## Code style
 
 We use `rustfmt` with the configuration in [`rustfmt.toml`](./rustfmt.toml):

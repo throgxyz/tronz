@@ -3724,6 +3724,7 @@ name = "tronz"
 version = "0.5.1"
 dependencies = [
  "anyhow",
+ "hex",
  "tokio",
  "tronz-abi",
  "tronz-contract",

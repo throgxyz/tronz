@@ -341,6 +341,15 @@ fn estimate_energy_unsupported(err: TransportErrorKind) -> TransportErrorKind {
     if unsupported { TransportErrorKind::Unsupported(err.to_string()) } else { err }
 }
 
+fn market_order_not_found(err: &TransportErrorKind) -> bool {
+    // java-tron reports a missing order as INTERNAL instead of returning an empty response.
+    matches!(
+        err,
+        TransportErrorKind::Rpc { code: RpcStatusCode::Internal, message }
+            if message.eq_ignore_ascii_case("order not found in store")
+    )
+}
+
 impl crate::transport::private::Sealed for GrpcTransport {}
 
 #[async_trait]
@@ -1300,7 +1309,11 @@ impl TronTransport for GrpcTransport {
         order_id: B256,
     ) -> TransportResult<Option<MarketOrderInfo>> {
         let req = proto::BytesMessage { value: order_id.as_slice().to_vec() };
-        let order = retry_unary!(self, wallet_client, get_market_order_by_id, req)?;
+        let order = match retry_unary!(self, wallet_client, get_market_order_by_id, req) {
+            Ok(order) => order,
+            Err(err) if market_order_not_found(&err) => return Ok(None),
+            Err(err) => return Err(err),
+        };
         if order.order_id.is_empty() {
             return Ok(None);
         }
@@ -1414,6 +1427,21 @@ mod tests {
         assert_eq!(reencoded.signature, original.signature);
         assert_eq!(reencoded.signature.len(), 2);
         assert_eq!(reencoded.ret, original.ret);
+    }
+
+    #[test]
+    fn java_tron_missing_market_order_status_is_recognised() {
+        let missing = TransportErrorKind::Rpc {
+            code: RpcStatusCode::Internal,
+            message: "order not found in store".into(),
+        };
+        let unrelated = TransportErrorKind::Rpc {
+            code: RpcStatusCode::Internal,
+            message: "database unavailable".into(),
+        };
+
+        assert!(market_order_not_found(&missing));
+        assert!(!market_order_not_found(&unrelated));
     }
 
     #[test]
