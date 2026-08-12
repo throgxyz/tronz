@@ -32,6 +32,7 @@ tronz-signer-aws = { workspace = true, optional = true }
 # programs so a reader can copy one and run it.
 [dev-dependencies]
 anyhow = "1"
+hex     = { workspace = true }
 tokio  = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [features]

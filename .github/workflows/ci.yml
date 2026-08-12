@@ -89,6 +89,67 @@ jobs:
       - run: cargo test --workspace --doc
       - run: cargo test --all-features --workspace --doc
 
+  local-node:
+    name: local TRE integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+      - name: Start local TRON node
+        run: >-
+          docker run --detach --rm --name tronz-tre --publish 50051:50051
+          tronbox/tre@sha256:f4332e11df12a9f360639a4546fd046593909630fda48af00b30410c144342f0
+      - name: Wait for local node
+        env:
+          TRONZ_LOCAL_GRPC: http://127.0.0.1:50051
+          RUST_BACKTRACE: "1"
+        run: |
+          for attempt in $(seq 1 60); do
+            if cargo test -p tronz --no-default-features \
+              --features provider-grpc,contract,signer-local \
+              --test local_node local_node_is_ready -- --ignored --exact; then
+              exit 0
+            fi
+            if ! docker inspect tronz-tre >/dev/null 2>&1; then
+              echo "TRE exited before becoming ready"
+              docker logs tronz-tre || true
+              exit 1
+            fi
+            echo "Waiting for TRE ($attempt/60)..."
+            sleep 2
+          done
+          docker logs tronz-tre
+          exit 1
+      - name: Run local integration test
+        env:
+          TRONZ_LOCAL_GRPC: http://127.0.0.1:50051
+          RUST_BACKTRACE: "1"
+        run: >-
+          cargo test -p tronz --no-default-features
+          --features provider-grpc,contract,signer-local
+          --test local_node exercises_full_node_end_to_end
+          -- --ignored --exact --nocapture
+      - name: Print local node logs on failure
+        if: failure()
+        run: docker logs tronz-tre
+      - name: Stop local node
+        if: always()
+        run: docker stop tronz-tre || true
+
   coverage:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -278,6 +339,7 @@ jobs:
     needs:
       - test
       - doctest
+      - local-node
       - coverage
       - feature-checks
       - typos
