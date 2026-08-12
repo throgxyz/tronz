@@ -1,5 +1,9 @@
 /target
 **/*.rs.bk
+# Foundry artifacts for the integration-test fixture contracts. The bytecode the
+# tests use is inlined in the Rust sources, so only the Solidity inputs are tracked.
+/crates/tronz/tests/contracts/cache
+/crates/tronz/tests/contracts/out
 # Coverage artifacts (cargo-llvm-cov)
 /lcov.info
 /*.profraw
