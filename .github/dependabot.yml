@@ -22,6 +22,14 @@ updates:
       timezone: UTC
     cooldown:
       default-days: 7
+    ignore:
+      - dependency-name: rand
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+      - dependency-name: syn
+        update-types:
+          - version-update:semver-major
     groups:
       cargo-weekly:
         patterns:
