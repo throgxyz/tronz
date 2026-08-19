@@ -7,18 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.2](https://github.com/throgxyz/tronz/compare/v0.5.1...v0.5.2) - 2026-08-19
+## [0.5.2](https://github.com/throgxyz/tronz/compare/v0.5.1...v0.5.2) - 2026-08-20
+
+### Added
+
+- Added comprehensive local TRE integration coverage ([#54](https://github.com/throgxyz/tronz/pull/54)).
+
+### Changed
+
+- Expanded TRE end-to-end coverage ([#55](https://github.com/throgxyz/tronz/pull/55)).
 
 ### Fixed
 
-- clarify delegation lock period unit
-
-### Other
-
-- *(e2e)* expand TRE end-to-end coverage ([#55](https://github.com/throgxyz/tronz/pull/55))
-- add comprehensive local TRE node integration coverage ([#54](https://github.com/throgxyz/tronz/pull/54))
-- Add more description for catfee
-- update Cargo.toml dependencies
+- Clarified that delegation lock periods are measured in blocks.
 
 ## [0.5.1](https://github.com/throgxyz/tronz/compare/v0.5.0...v0.5.1) - 2026-08-06
 
