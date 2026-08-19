@@ -6,6 +6,18 @@ publish = true
 publish_timeout = "30m"
 release_always = false
 
+[changelog]
+commit_parsers = [
+    { message = "^Merge", skip = true },
+    { message = "^feat", group = "Added" },
+    { message = "^test\\(e2e\\)", group = "Changed" },
+    { message = "^test", group = "Added" },
+    { message = "^(perf|refactor)", group = "Changed" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^(docs|chore|ci|build)", skip = true },
+    { message = ".*", skip = true },
+]
+
 [[package]]
 name = "tronz"
 changelog_include = [
