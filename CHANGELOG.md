@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3](https://github.com/throgxyz/tronz/compare/v0.5.1...v0.5.3) - 2026-08-19
+
+### Added
+
+- add comprehensive local TRE node integration coverage ([#54](https://github.com/throgxyz/tronz/pull/54))
+
+### Changed
+
+- *(e2e)* expand TRE end-to-end coverage ([#55](https://github.com/throgxyz/tronz/pull/55))
+
+### Fixed
+
+- clarify delegation lock period unit
+
 ## [0.5.2](https://github.com/throgxyz/tronz/compare/v0.5.1...v0.5.2) - 2026-08-20
 
 ### Added
