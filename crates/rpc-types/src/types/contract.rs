@@ -610,7 +610,7 @@ pub struct DelegateResourceContract {
     pub balance: Trx,
     /// Recipient of the delegation.
     pub receiver_address: Address,
-    /// Optional lock period in seconds (`None` = no lock).
+    /// Optional lock period in blocks (~3s each; `None` = no lock).
     pub lock_period: Option<i64>,
 }
 

@@ -61,9 +61,13 @@ impl<'a, P: TronProvider> DelegateBuilder<'a, P> {
         self
     }
 
-    /// Lock the delegation for `secs` seconds (max 864_000 per protocol).
-    pub fn lock_period(mut self, secs: i64) -> Self {
-        self.lock_period = Some(secs);
+    /// Lock the delegation for `blocks` blocks (~3s each, so one day is 28_800).
+    ///
+    /// The upper bound is chain parameter #78 (`getMaxDelegateLockPeriod`);
+    /// 864_000 blocks (30 days) is the documented maximum. java-tron applies its
+    /// own 86_400-block (3 day) default when a lock is requested without a period.
+    pub fn lock_period(mut self, blocks: i64) -> Self {
+        self.lock_period = Some(blocks);
         self
     }
 
