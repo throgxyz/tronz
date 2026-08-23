@@ -3746,6 +3746,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tronz-codegen"
+version = "0.0.0"
+dependencies = [
+ "prost-build",
+ "tonic-prost-build",
+]
+
+[[package]]
 name = "tronz-contract"
 version = "0.5.2"
 dependencies = [
@@ -4246,14 +4254,6 @@ name = "xmlparser"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
-
-[[package]]
-name = "xtask"
-version = "0.0.0"
-dependencies = [
- "prost-build",
- "tonic-prost-build",
-]
 
 [[package]]
 name = "yoke"

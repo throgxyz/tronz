@@ -10,7 +10,7 @@ pub(crate) use tronz_rpc_types::proto::*;
 
 /// The generated gRPC clients.
 ///
-/// `cargo xtask codegen` produces these from the same schema as the messages,
+/// `cargo codegen` produces these from the same schema as the messages,
 /// mapping the whole `protocol` package onto `tronz-rpc-types`, so a message has
 /// exactly one definition in the workspace no matter which crate names it.
 #[allow(dead_code, unused_imports, clippy::all, clippy::pedantic)]
