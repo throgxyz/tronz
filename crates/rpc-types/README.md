@@ -52,7 +52,7 @@ changes outside this crate's control; the other two change whenever the mapping
 does. Use the domain types and a provider.
 
 The schema in `proto/` is the single copy in the workspace. Both it and the
-service clients generated from it are committed, by `cargo xtask codegen`, so no
+service clients generated from it are committed, by `cargo codegen`, so no
 crate here needs `protoc` to build.
 
 ## Feature flags

@@ -1,2 +1,2 @@
 [alias]
-xtask = "run --package xtask --"
+codegen = "run --package tronz-codegen --"
