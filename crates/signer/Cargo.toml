@@ -18,8 +18,9 @@ rustdoc-args = ["--cfg", "docsrs", "-Zunstable-options", "--generate-link-to-def
 tip712 = ["dep:alloy-dyn-abi", "dep:alloy-sol-types"]
 ## Random private key generation via `LocalSigner::random`.
 rand = ["dep:rand"]
+zeroize = ["dep:zeroize"]
 ## BIP-39 mnemonic + BIP-44 HD key derivation via `MnemonicBuilder`.
-mnemonic = ["dep:coins-bip32", "dep:coins-bip39", "rand"]
+mnemonic = ["dep:coins-bip32", "dep:coins-bip39", "rand", "zeroize"]
 ## Web3 Secret Storage V3 keystore encrypt/decrypt.
 keystore = ["dep:scrypt", "dep:pbkdf2", "dep:sha2", "dep:aes", "dep:ctr", "dep:sha3", "dep:uuid", "dep:serde", "dep:serde_json", "rand"]
 
@@ -39,6 +40,10 @@ alloy-sol-types = { workspace = true, optional = true }
 coins-bip32 = { workspace = true, optional = true }
 coins-bip39 = { workspace = true, optional = true }
 rand        = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true, features = [
+    "zeroize_derive",
+    "alloc",
+] }
 
 # keystore feature
 scrypt     = { workspace = true, optional = true }
