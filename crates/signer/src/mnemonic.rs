@@ -31,6 +31,8 @@ use std::{marker::PhantomData, path::PathBuf};
 use coins_bip32::{path::DerivationPath, prelude::Parent, xkeys::XPriv};
 use coins_bip39::{English, Mnemonic, Wordlist};
 use thiserror::Error;
+#[cfg(feature = "zeroize")]
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{LocalSigner, SignerError};
 
@@ -51,15 +53,18 @@ const DEFAULT_DERIVATION_PATH: &str = "m/44'/195'/0'/0/0";
 /// 1. Supply a phrase **or** a word count for random generation.
 /// 2. Optionally set a BIP-39 passphrase, a custom derivation path, or an index shortcut.
 /// 3. Call [`build`](Self::build) / [`build_random`](Self::build_random).
+#[cfg_attr(feature = "zeroize", derive(Zeroize, ZeroizeOnDrop))]
 #[derive(Clone, Debug, PartialEq)]
 #[must_use = "builders do nothing unless `build` or `build_random` is called"]
 pub struct MnemonicBuilder<W: Wordlist = English> {
     phrase: Option<String>,
     word_count: usize,
+    #[cfg_attr(feature = "zeroize", zeroize(skip))]
     derivation_path: DerivationPath,
     password: Option<String>,
     /// If set, the mnemonic phrase is written to `write_to/<tron-address>` on
     /// random builds.
+    #[cfg_attr(feature = "zeroize", zeroize(skip))]
     write_to: Option<PathBuf>,
     _wordlist: PhantomData<W>,
 }
