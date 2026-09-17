@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3](https://github.com/throgxyz/tronz/compare/v0.5.2...v0.5.3) - 2026-09-17
+
+### Fixed
+
+- *(primitives)* validate TRX amount input before truncation ([#69](https://github.com/throgxyz/tronz/pull/69))
+
 ### Fixed
 
 - Validate complete TRX amount strings before truncating excess fractional digits.
