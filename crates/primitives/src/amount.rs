@@ -83,25 +83,32 @@ impl FromStr for Trx {
             return Err(AmountError::ParseError(s.to_owned()));
         }
 
-        let mut normalized = s.to_owned();
-        let decimal_len = if let Some(decimal_index) = normalized.find('.') {
-            normalized.remove(decimal_index);
-            normalized[decimal_index..].len()
-        } else {
-            0
-        };
+        let mut whole = String::with_capacity(s.len());
+        let mut fraction = String::new();
+        let mut in_fraction = false;
+
+        // Validate the complete input before truncating fractional digits. This
+        // prevents invalid trailing characters from being discarded as if they
+        // were excess precision.
+        for byte in s.bytes() {
+            match byte {
+                b'_' => {}
+                b'.' if !in_fraction => in_fraction = true,
+                b'0'..=b'9' if in_fraction => fraction.push(byte as char),
+                b'0'..=b'9' => whole.push(byte as char),
+                _ => return Err(AmountError::ParseError(s.to_owned())),
+            }
+        }
+
+        let decimal_len = fraction.len();
 
         // Match alloy's `parse_units`: discard fractional digits beyond the
         // selected unit precision rather than rounding or returning an error.
-        if decimal_len > 6 {
-            normalized.truncate(normalized.len() - (decimal_len - 6));
-        }
+        fraction.truncate(6);
+        whole.push_str(&fraction);
 
         let mut value = 0u64;
-        for byte in normalized.bytes() {
-            if byte == b'_' {
-                continue;
-            }
+        for byte in whole.bytes() {
             let digit = match byte {
                 b'0'..=b'9' => (byte - b'0') as u64,
                 _ => return Err(AmountError::ParseError(s.to_owned())),
@@ -254,9 +261,15 @@ mod tests {
         assert!("-1".parse::<Trx>().is_err());
         assert!("abc".parse::<Trx>().is_err());
         assert!("1.abc".parse::<Trx>().is_err());
+        assert!("1.000000garbage".parse::<Trx>().is_err());
         assert!(" 1 ".parse::<Trx>().is_err());
         assert!("+1".parse::<Trx>().is_err());
         assert!("1.金额".parse::<Trx>().is_err());
+    }
+
+    #[test]
+    fn parse_ignores_separators_when_counting_fraction_digits() {
+        assert_eq!("1.0_1".parse::<Trx>().unwrap().as_sun(), 1_010_000);
     }
 
     #[test]
